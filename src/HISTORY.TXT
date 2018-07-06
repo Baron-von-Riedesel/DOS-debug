@@ -1,0 +1,214 @@
+
+ History
+
+    0.95e [11 January 2003]  Fixed a bug in the assember.
+    0.95f [10 September 2003]  Converted to NASM; fixed some syntax
+       incompatibilities.
+    0.98 [27 October 2003]  Added EMS commands and copyright conditions.
+
+    ------- changes below done by japheth
+
+    0.99 [27 Septemb 2006]
+       - bugfix: IF was not displayed correctly.
+       - FS and GS registers displayed if cpu is 80386+.
+       - RX displays the standard 32bit registers.
+       - R register [value] understands the standard 32bit registers.
+    0.99a [28 Septemb 2006] 
+       - bugfix: JECXZ had wrong prefix (66h, should be 67h).
+       - A and D understand the 32bit opcodes LOOP(Z|NZ|E|NE)D.
+    0.99b [29 Septemb 2006]
+       - L and W now work with FAT32 drives.
+    0.99c [29 Septemb 2006]
+       - RX changed. Now it toggles 16/32 bit register dump.
+       - RN displays floating point register status.
+    0.99d [02 October 2006]
+       - bugfix: RN displayed error-pointer registers wrong.
+    0.99e [12 October 2006]
+       - XR command added to reallocate EMS handle.
+       - XA command allows to allocate zero pages on EMS 4.0.
+       - TM [0|1] added to be able to switch T to the ms-dos debug
+         compatible behaviour (that is, T jumps into 'INT xx').
+    0.99f [17 October 2006]
+       - debug's EMS functions may work even with a "hidden" EMM.
+       - bugfix: display of mappable pages didn't account for amount of
+         these pages == 0.
+    0.99g [25 October 2006]
+       - bugfix: U was unable to recognise [ESP] related memory operands
+         (i.e. mov eax,[esp]).
+    0.99h [07 November 2006]
+       - bugfix: R trying to display content of effective address has
+         caused a GPF in v86-mode if this address was FFFFh of FFFDh.
+       - IW, ID, OW and OD implemented.
+    0.99i [14 November 2006]
+       - bugfix: a child PSP was created but not terminated, causing files
+         not to be closed. It became obvious if stdin and/or stdout were
+         redirected to files ("C:\>DEBUG >yyy")
+    0.99j [16 November 2006]
+       - bugfix: using T if current instruction is an INT xx (and trace
+         mode == 0) stopped debuggee one instruction *after* the INT (due
+         to a x86 design weakness).
+       - bugfix: the 0.99i bugfix had some problems on FreeDOS.
+    1.00 [25 November 2006]
+       - bugfix: debuggee's psp was saved after program load only, but
+          this has to be done every time the debugger regains control.
+       - There is now a DPMI aware version of debug, DEBUGX, createable
+         from the source.
+       - bugfix in disassembler: RETF did not have a corresponding RETFD
+         entry (to switch with prefix 66h)
+    1.01 [26 November 2006]
+       - bugfix: MC2 didn't work.
+       - Register names can be used anywhere where a number is expected
+         as input.
+    1.02 [29 November 2006]
+       - bugfix: 'I d' and 'O d' didn't work because the parser assumed
+         ID and OD commands.
+       - DEBUGX bugfix: T= and G= didn't work in protected-mode.
+       - bugfix: loading a file at another location than cs:100h was not
+         supported in versions 0.99 - 1.01.
+       - Debugger can be loaded high.
+    1.03 [1 February 2007]
+       - DEBUG bugfix: previous version of DEBUG.COM did not reliably reset
+         "auto-reset" breakpoints (used for processing INTs).
+       - DEBUGX: DI now works in real-mode as well.
+       - DM command added.
+    1.04 [2 March 2007]
+       - making single-step through the DOS kernel possible.
+    1.05 [1 April 2007] 
+       - program exit code displayed.
+       - DM displays the PSP "name".
+       - autorepeat for D, DX, T and U added.
+       - DEBUGX: DX added.
+    1.06 [21 May 2007] 
+       - bugfix: SMSW/LMSW in assembler didn't accept a 32bit operand.
+       - bugfix: OW/OD didn't accept the value parameter.
+       - key '-' supported in E command to step backward.
+    1.07 [3 November 2007]
+       - bugfix: entering ranges with upper bound was refused.
+       - DEBUGX bugfix: if help cmd waited for a keypress, it displayed
+         garbage if cpu was in protected-mode and CWSDPMI was used.
+       - Tracing into an INT (TM 1) now works if interrupt vector points
+         to ROM code.
+    1.08 [23 November 2007]
+       - bugfix: segment prefix was lost for mnemonics without arguments
+         (patch by Oleg O. Chukaev).
+    1.09 [30 December 2007]
+       - DEBUGX: several bugfixes for A and U handling 32bit code segments.
+       - bugfix: U split lines if instruction size exceeded 6.
+       - bugfix: M didn't work with "upper bound" ranges.
+       - DEBUGX change: in 32bit code segments, U displayed ECX as first
+         operand for LOOPx to indicate that ECX is used instead of CX.
+         Now a 'D' is attached to the opcode (LOOPxD, x=Z|NZ|E|NE) instead.
+       - bugfix: A didn't choose the short (=signed) form of arith
+         instructions (adc, add, ...) if E/AX was first operand.
+    1.10 [25 January 2008]
+       - DEBUGX: to intercept DPMI initial switches to protected-mode,
+         int 2Fh is now hooked later. This allows to debug applications
+         which install their own DPMI host during initialization.
+       - DEBUGX: DL understands an optional "count" argument.
+    1.11 [06 February 2008]
+       - bugfix: debugger lost debuggee's HiWord(EFL) in real-mode.
+       - bugfix: if debuggee set CR0 AM bit and EFL AC flag, an
+         exception 11h occured in the debugger.
+       - DEBUGX bugfix: G command was unable to set/restore breakpoints if
+         HiWord(EIP) wasn't clear.
+       - DEBUGX bugfix: U ignored HiWord of argument's offset part.
+       - DEBUGX bugfix: E ignored HiWord of argument's offset part.
+       - DEBUGX bugfix: M didn't accept first argument's offset > FFFF.
+       - DEBUGX bugfix: running in NTVDM and pressing Ctrl-C while debuggee
+         is in protected-mode no longer drops to real-mode.
+       - DEBUGX: RN now renders floating point register content properly
+         (DEBUG still just displays raw hex format for size reasons).
+       - DEBUGX: DI got an optional 'count' parameter.
+       - DEBUGX: D default segment part is checked if it is valid in pmode
+         and changed to value of client's DS if no.
+    1.12 [14 February 2008]
+       - bugfix: length 0 in range wasn't interpreted as 64 kB.
+       - DEBUGX bugfix: E in prompt mode didn't work with 32bit offsets.
+       - DEBUGX bugfix: L and W didn't work with buffer offset >= 10000h.
+       - DEBUGX bugfix: Q while debuggee was in pmode caused a GPF if
+         HiWord(EIP) or HiWord(ESP) wasn't zero.
+       - DEBUGX: DI additionally displays DPMI exception vectors.
+       - DEBUGX: when running in NTVDM, DEBXXVDD.DLL will be loaded, which
+         will make L and W work with sectors on this platform.
+       - DEBUGX: DM now works in protected-mode as well.
+       - now all commands are described in DEBUG.TXT.
+    1.13 [27 February 2008]
+       - DEBUG bugfix: L and W with sectors worked for DEBUGX only in v1.12.
+    1.14 [12 January 2009]
+       - DEBUGX bugfix: 'D ip' caused a syntax error.
+       - DEBUGX bugfix: if debugger stepped into an INT in protected-mode,
+         the carry flag was cleared.
+       - H improved.
+       - source converted to Masm syntax.
+       - samples in Masm syntax added.
+    1.15 [12 April 2009]
+       - bugfix: in v1.04 - v1.14, restoring debuggee's interrupt vectors
+         23+24 caused a memory corruption (8 bytes) due to a wrong segment
+         register value.
+    1.16 [20 April 2009]
+       - bugfix: 'mnc' command was rejected. Syntax changed to 'mc n'.
+       - bugfix: in v1.14-1.15, 'g' didn't reliably detect whether a bp was
+         external.
+       - bugfix: 'g' command could get confused by opcode CD 03.
+       - DEBUGX bugfix: 'a' command ignored hiword of current offset in
+         32bit segments.
+       - DEBUGX bugfix: when debuggee was in protected-mode and then
+         terminated during execution of 'p' or 't' command, the try to
+         restore an internal bp may have caused memory corruption.
+    1.17 [28 April 2009]
+       - bugfix: R <32bit register> <new value> didn't work in v1.16.
+       - bugfix: DPMICL16.ASM wasn't a sample for a 16bit DPMI client.
+       - bugfix: under some conditions 'm' was silently rejected.
+    1.18 [18 May 2009]
+       - DEBUGX bugfix: RN required a 80386 cpu.
+       - DEBUGX bugfix: RN always assumed that current mode is real-mode.
+         However, the layout of FSAVE/FRSTOR differs for protected-mode.
+       - bugfix: 'A' command didn't accept a semi-colon right after the
+         mnemonic (example: clc;)
+       - if cpu is 80386+, the 32bit version of FSAVE/FRSTOR is used now,
+         which improves display of the FPU status.
+       - 'r' command: EFL added to 386 register display.
+       - for FLDENV, FSTENV, FSAVE and FRSTOR, 16/32 bits variants with
+         suffixes W/D were added: FLDENVW/FLDENVD, FSTENVW/FSTENVD, ...
+       - DEBUGX: 'rm' command added to display MMX registers.
+       - DEBUGX: instructions MOVD, MOVQ, EMMS added to assembler and 
+         disassembler.
+       - layout of tables in debugtbl.inc modified to make them use
+         symbolic constants and addresses. This allows to modify this
+         file directly.
+    1.19 [18 October 2010]
+       - DEBUGX bugfix: breakpoints set with G couldn't be reset if the
+         debuggee's current mode (real-mode / protected-mode) did change
+         inside G.
+    1.20 [20 October 2010]
+       - DEBUGX: bugfix of v1.19 modified to navigate around a couple of
+         CWSDPMI bugs.
+    1.21 [29 October 2010]
+       - DEBUGX bugfix: internal breakpoints set by T or P still had
+         problems if a mode switch occured.
+    1.22 [11 November 2010]
+       - DEBUGX bugfix: wrong value of PSP displayed with DM if debuggee
+         was halted in real-mode after initial switch to protected-mode.
+       - DEBUGX bugfix: line assembler didn't handle PC-relative addresses 
+         correctly if source or destination was > 0xFFFF.
+    1.23 [15 April 2011]
+       - bugfix 'a' command: entering a segment register name may have
+         "terminated" debug unexpectedly.
+       - bugfix: XS always assumed 255 EMS handles. Now it tries to get
+         the number of EMS handles by using EMS4 function 5402h.
+       - 'a' command: the segment prefix syntax as it is implemented by
+         MS debug is accepted now ( which is a segment register followed
+         by a colon ).
+       - file makex.bat added.
+    1.24 [04 July 2011]
+       - bugfix: line assembler didn't encode 32-bit addressing with SIB
+         byte correctly in v1.23.
+       - debug script DPMICL16.SCR added.
+    1.25 [08 August 2011]
+       - 2 variants (F & G) added to makex.bat
+    1.26 [__ ______ 2018]
+       - bugfix 'a' cmd: 'MOV sreg, mem' and 'MOV mem, sreg' needed a size.
+       - XM: logical page displayed was 2 digits only.
+       - DEBUGX: interrupt and exception 07 intercepted.
+       - DEBUGX: int 2Fh was "rehooked" if protected-mode debuggee caused a
+         break in real-mode.

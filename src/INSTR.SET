@@ -1,0 +1,411 @@
+#   This is "instr.set", the main instruction set description file.
+
+#   The format of this file is as follows.  First of all, blank lines
+#   and lines whose first character is a '#' are comment lines.
+
+#   Otherwise, each line consists of one or more fields, separated by
+#   spaces (but not tabs).
+
+#   The first field is the opcode field.  It looks like the following:
+#       _^nxxx
+#   or  _^nxxx/xxx
+#   or  _^nxxx#xxx
+#   or  _^nxxx*xxx
+#   Here:
+#    _   (if present) signifies that the line applies only to the
+#        assembler.
+#    ^n  (if present) is ^0 for AAD or AAM, ^1 for DB, ^2 for DW,
+#        ^3 for DD, ^4 for ORG, and ^5 for 32 bit operand prefix.
+#    xxx is an op code mnemonic.
+#    '/' mean that the following opcode is the 32-bit variant of the
+#        first one, and a 66h prefix will switch.
+#    '#' mean that the following opcode is the 32-bit variant of the
+#        first one, and a 67h prefix will switch.
+#    '*' mean that the preceding opcode occurs with a WAIT instruction;
+#        the following, without.
+
+#   The remaining fields describe the possible variants of the instruction.
+#   They have the following formats:
+#       _Lxx/r.;n
+#       _Lxx/r*;n
+#       _Lxx/r&;n
+#       _DLxx/r:kk;n
+#   Here:
+#       _   (if present) means that this variant is to be used only by
+#           the assember.
+#       D   (if present) means that this variant is to be used only by
+#           the disassembler.
+#       L   (if present) means that this is a lockable instruction.
+#       xx  are one or two bytes of the instruction field.
+#       /r  (if present) specifies the "r" part in a MOD MEM/REG byte.
+#       .   indicates that the instruction has no operands.
+#       *   indicates that the byte is a prefix (LOCK or REP...).
+#       &   indicates that the byte is a segment prefix.
+#       :kk gives an index into the file "instr.key".  That file gives
+#           the operand list associated to the key.  The key consists of
+#           two hex digits.
+#       ;n  (if present) indicates the processor on which this
+#           instruction first appeared.  Here n may be 1 through 6.
+#
+#   The order of the variants is important, because the assembler will take
+#   the first one that fits the input line.
+
+#   References:
+#
+#   Instruction set from the Intel Pentium Family User's Manual, Vol. 3:
+#   Architecture and Programming Manual.  Information on earlier processors
+#   from various Intel and third party documentation.  Information on new
+#   Pentium Pro <TM> instructions from http://x86.metronet.com
+#   (http://198.215.126.12).
+
+#   History:
+#   v1.09: - "loop" opcode has no "ecx" operand anymore in 32bit.
+#          - changed order 1 3 to 3 1 for arith opcodes.
+#   v1.10: - "loopw", "loopzw" and "loopnzw" variants added.
+#   v1.18: - "fldenvw", "fldenvd", "fstenvw", "fstenvd" variants added.
+#          - "fsavew", "fsaved", "frstorw", "frstord" variants added.
+#          - "movd" and "movq" added.
+
+aaa 37.
+^0aad d5:27
+^0aam d4:27
+aas 3f.
+adc L83/2:03 14:01 L80/2:02 L10:04 12:05
+add L83/0:03 04:01 L80/0:02 L00:04 02:05
+and L83/4:03 24:01 L80/4:02 L20:04 22:05
+arpl 63:06;2
+bound 62:07;1
+bsf 0fbc:08;3
+bsr 0fbd:08;3
+^5bswap 0fc8:09;4
+bt 0fa3:0A;3 0fba/4:0B;3
+btc L0fbb:0A;3 L0fba/7:0B;3
+btr L0fb3:0A;3 L0fba/6:0B;3
+bts L0fab:0A;3 L0fba/5:0B;3
+call e8:0C ff/2:29 ff/3:0E 9a:0D
+cbw/cwde 98.
+clc f8.
+cld fc.
+cli fa.
+clts 0f06.;2
+cmc f5.
+cmova 0f47:08;6
+cmovae 0f43:08;6
+cmovb 0f42:08;6
+cmovbe 0f46:08;6
+_cmovc 0f42:08;6
+_cmove 0f44:08;6
+cmovg 0f4f:08;6
+cmovge 0f4d:08;6
+cmovl 0f4c:08;6
+cmovle 0f4e:08;6
+_cmovna 0f46:08;6
+_cmovnae 0f42:08;6
+_cmovnb 0f43:08;6
+_cmovnbe 0f47:08;6
+_cmovnc 0f43:08;6
+_cmovne 0f45:08;6
+_cmovng 0f4e:08;6
+_cmovnge 0f4c:08;6
+_cmovnl 0f4d:08;6
+_cmovnle 0f4f:08;6
+cmovno 0f41:08;6
+_cmovnp 0f4b:08;6
+cmovns 0f49:08;6
+cmovnz 0f45:08;6
+cmovo 0f40:08;6
+_cmovp 0f4a:08;6
+cmovpe 0f4a:08;6
+cmovpo 0f4b:08;6
+cmovs 0f48:08;6
+cmovz 0f44:08;6
+cmp 83/7:03 3c:01 80/7:02 38:04 3a:05
+cmpsb a6.
+cmpsw/cmpsd a7.
+cmpxchg L0fb0:04;4
+cmpxchg8b 0fc7/1:0F;5
+cpuid 0fa2.;5
+cwd/cdq 99.
+daa 27.
+das 2f.
+_^1db
+_^3dd
+dec 48:11 Lfe/1:10 DLff/1:10
+div f6/6:10
+_^2dw
+emms 0f77.;5
+enter c8:12;1
+f2xm1 d9f0.
+fabs d9e1.
+fadd d8/0:13 dc/0:14 d8c0:15 dcc0:16
+faddp dec0:17 _dec1.
+fiadd da/0:18 de/0:19
+fbld df/4:1A
+fbstp df/6:1A
+fchs d9e0.
+fclex*fnclex dbe2.
+_fcmova dbd0:15;6
+_fcmovae dbc0:15;6
+fcmovb dac0:15;6
+fcmovbe dad0:15;6
+fcmove dac8:15;6
+_fcmovna dad0:15;6
+_fcmovnae dac0:15;6
+fcmovnb dbc0:15;6
+fcmovnbe dbd0:15;6
+fcmovne dbc8:15;6
+fcmovnu dbd8:15;6
+_fcmovnz dbc8:15;6
+fcmovu dad8:15;6
+_fcmovz dac8:15;6
+fcom d8/2:13 dc/2:14 d8d0:1C _d8d1.
+fcomi dbf0:1C;6 _dbf1.;6
+fcomip dff0:1C;6 _dff1.;6
+fcomp d8/3:13 dc/3:14 d8d8:1C _d8d9.
+fcompp ded9.
+fcos d9ff.;3
+fdecstp d9f6.
+fdisi*fndisi dbe1.
+fdiv d8/6:13 dc/6:14 d8f0:15 dcf8:16
+fdivp def8:17 _def9.
+fidiv da/6:18 de/6:19
+fdivr d8/7:13 dc/7:14 d8f8:15 dcf0:16
+fdivrp def0:17 _def1.
+fidivr da/7:18 de/7:19
+feni*fneni dbe0.
+ffree ddc0:1B
+ficom da/2:18 de/2:19
+ficomp da/3:18 de/3:19
+fild db/0:18 df/0:19 df/5:0F
+fincstp d9f7.
+finit*fninit dbe3.
+fist db/2:18 df/2:19
+fistp db/3:18 df/3:19 df/7:0F
+fld d9/0:13 dd/0:14 db/5:1D d9c0:1B
+fld1 d9e8.
+fldl2t d9e9.
+fldl2e d9ea.
+fldpi d9eb.
+fldlg2 d9ec.
+fldln2 d9ed.
+fldz d9ee.
+fldcw*fnldcw d9/5:19
+fldenv d9/4:1E
+_fldenvw/fldenvd d9/4:1E
+fmul d8/1:13 dc/1:14 d8c8:15 dcc8:16
+fmulp dec8:17 _dec9.
+fimul da/1:18 de/1:19
+fnop d9d0.
+fpatan d9f3.
+fprem d9f8.
+fprem1 d9f5.;3
+fptan d9f2.
+frndint d9fc.
+frstor dd/4:1E
+_frstorw/frstord dd/4:1E
+fsave*fnsave dd/6:1E
+_fsavew/fsaved dd/6:1E
+fscale d9fd.
+fsetpm*fnsetpm dbe4.;2
+fsin d9fe.;3
+fsincos d9fb.;3
+fsqrt d9fa.
+fst d9/2:13 dd/2:14 ddd0:1B
+fstp d9/3:13 dd/3:14 db/7:1D ddd8:1B
+fstcw*fnstcw d9/7:19
+fstenv*fnstenv d9/6:1E
+_fstenvw/fstenvd d9/6:1E
+fstsw*fnstsw dfe0:1F dd/7:19
+fsub d8/4:13 dc/4:14 d8e0:15 dce8:16
+fsubp dee8:17 _dee9.
+fisub da/4:18 de/4:19
+fsubr d8/5:13 dc/5:14 d8e8:15 dce0:16
+fsubrp dee0:17 _dee1.
+fisubr da/5:18 de/5:19
+ftst d9e4.
+fucom dde0:1C;3 _dde1.;3
+fucomi dbe8:1C;6 _dbe9.;6
+fucomip dfe8:1C;6 _dfe9.;6
+fucomp dde8:1C;3 _dde9.;3
+fucompp dae9.;3
+_fwait 9b.
+fxam d9e5.
+fxch d9c8:1C _d9c9.
+fxtract d9f4.
+fyl2x d9f1.
+fyl2xp1 d9f9.
+hlt f4.
+idiv f6/7:10
+imul f6/5:10 0faf:08;3 6b:20;1 _6b:21;1 69:22;1 _69:23;1
+in e4:24 ec:25
+inc 40:11 Lfe/0:10 DLff/0:10
+insb 6c.;1
+insw/insd 6d.;1
+int cc:26 cd:27
+into ce.
+invd 0f08.;4
+invlpg 0f01/7:1E;4
+iret/iretd cf.
+ja 77:28 0f87:0C;3
+jae 73:28 0f83:0C;3
+jb 72:28 0f82:0C;3
+jbe 76:28 0f86:0C;3
+_jc 72:28 0f82:0C;3
+jcxz#jecxz e3:28
+_je 74:28 0f84:0C;3
+jg 7f:28 0f8f:0C;3
+jge 7d:28 0f8d:0C;3
+jl 7c:28 0f8c:0C;3
+jle 7e:28 0f8e:0C;3
+_jna 76:28 0f86:0C;3
+_jnae 72:28 0f82:0C;3
+_jnb 73:28 0f83:0C;3
+_jnbe 77:28 0f87:0C;3
+_jnc 73:28 0f83:0C;3
+_jne 75:28 0f85:0C;3
+_jng 7e:28 0f8e:0C;3
+_jnge 7c:28 0f8c:0C;3
+_jnl 7d:28 0f8d:0C;3
+_jnle 7f:28 0f8f:0C;3
+jno 71:28 0f81:0C;3
+_jnp 7b:28 0f8b:0C;3
+jns 79:28 0f89:0C;3
+jnz 75:28 0f85:0C;3
+jo 70:28 0f80:0C;3
+_jp 7a:28 0f8a:0C;3
+jpe 7a:28 0f8a:0C;3
+jpo 7b:28 0f8b:0C;3
+js 78:28 0f88:0C;3
+jz 74:28 0f84:0C;3
+jmp eb:28 e9:0C ff/4:29 ff/5:0E ea:0D
+lahf 9f.
+lar 0f02:08;2
+lds c5:07
+lss 0fb2:07;3
+les c4:07
+lfs 0fb4:07;3
+lgs 0fb5:07;3
+lea 8d:07
+leave c9.;1
+lgdt 0f01/2:1E;2
+lidt 0f01/3:1E;2
+lldt 0f00/2:2A;2
+lmsw 0f01/6:2A;2
+lock f0*
+lodsb ac.
+lodsw/lodsd ad.
+_loop e2:28
+loopw#loopd e2:28
+_loopz e1:28
+_loope e1:28
+_loopew#looped e1:28
+loopzw#loopzd e1:28
+_loopnz e0:28
+_loopne e0:28
+_loopnew#loopned e0:28
+loopnzw#loopnzd e0:28
+lsl 0f03:08;2
+ltr 0f00/3:2A;2
+# F=mov a,[mem], G=mov [mem],a  4=mov a,r
+mov a0:2D a2:2E 88:04 8a:05 8c:2B 8e:2C b0:2F b8:30 c6/0:02 0f20:47;3 0f22:48;3 0f21:49;3 0f23:4A;3 0f24:4B;3 0f26:4C;3
+movd 0f6e:4D;5 0f7e:4E;5
+movq 0f6f:4F;5 0f7f:50;5
+movsb a4.
+movsw/movsd a5.
+movsx 0fbe:31;3 0fbf:32;3
+movzx 0fb6:31;3 0fb7:32;3
+mul f6/4:10
+neg Lf6/3:10
+nop 90.
+not Lf6/2:10
+or L83/1:03 0c:01 L80/1:02 L08:04 0a:05
+_^4org
+out e6:33 ee:34
+outsb 6e.;1
+outsw/outsd 6f.;1
+pop 8f/0:35 58:11 1f:44 07:41 17:43 0fa1:45;3 0fa9:46;3
+popa/popad 61.;1
+popf/popfd 9d.
+push 50:11 ff/6:29 6a:37;1 68:36;1 0e:42 16:43 1e:44 06:41 0fa0:45;3 0fa8:46;3
+pusha/pushad 60.;1
+pushf/pushfd 9c.
+rcl d0/2:38 d2/2:39 c0/2:3A;1
+rcr d0/3:38 d2/3:39 c0/3:3A;1
+rol d0/0:38 d2/0:39 c0/0:3A;1
+ror d0/1:38 d2/1:39 c0/1:3A;1
+rdmsr 0f32.;5
+rep f3*
+repe f3*
+repne f2*
+ret c3. c2:3B
+retf/retfd cb. ca:3B
+rsm 0faa.;5
+sahf 9e.
+_sal d0/4:38 d2/4:39 c0/4:3A;1
+sar d0/7:38 d2/7:39 c0/7:3A;1
+seg _26:41 _2e:42 _36:43 _3e:44 _64:45 _65:46
+es _26&
+cs _2e&
+ss _36&
+ds _3e&
+fs _64&
+gs _65&
+shl d0/4:38 d2/4:39 c0/4:3A;1
+shr d0/5:38 d2/5:39 c0/5:3A;1
+sbb L83/3:03 1c:01 L80/3:02 L18:04 1a:05
+scasb ae.
+scasw/scasd af.
+seta 0f97:3C;3
+setae 0f93:3C;3
+setb 0f92:3C;3
+setbe 0f96:3C;3
+_setc 0f92:3C;3
+_sete 0f94:3C;3
+setg 0f9f:3C;3
+setge 0f9d:3C;3
+setl 0f9c:3C;3
+setle 0f9e:3C;3
+_setna 0f96:3C;3
+_setnae 0f92:3C;3
+_setnb 0f93:3C;3
+_setnbe 0f97:3C;3
+_setnc 0f93:3C;3
+_setne 0f95:3C;3
+_setng 0f9e:3C;3
+_setnge 0f9c:3C;3
+_setnl 0f9d:3C;3
+_setnle 0f9f:3C;3
+setno 0f91:3C;3
+_setnp 0f9b:3C;3
+setns 0f99:3C;3
+setnz 0f95:3C;3
+seto 0f90:3C;3
+_setp 0f9a:3C;3
+setpe 0f9a:3C;3
+setpo 0f9b:3C;3
+sets 0f98:3C;3
+setz 0f94:3C;3
+sgdt 0f01/0:1E;2
+sidt 0f01/1:1E;2
+shld 0fa4:3D;3 0fa5:3E;3
+shrd 0fac:3D;3 0fad:3E;3
+sldt 0f00/0:29;2
+smsw 0f01/4:29;2
+stc f9.
+std fd.
+sti fb.
+stosb aa.
+stosw/stosd ab.
+str 0f00/1:2A;2
+sub L83/5:03 2c:01 L80/5:02 L28:04 2a:05
+test a8:01 f6/0:02 84:04 _84:05
+verr 0f00/4:2A;2
+verw 0f00/5:2A;2
+wait 9b.
+wbinvd 0f09.;4
+wrmsr 0f30.;5
+xadd L0fc0:04;4
+xchg 90:3F _90:40 _L86:04 L86:05
+xlat _d7.
+xlatb d7.
+xor L83/6:03 34:01 L80/6:02 L30:04 32:05
