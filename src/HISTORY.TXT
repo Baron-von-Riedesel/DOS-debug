@@ -206,9 +206,11 @@
        - debug script DPMICL16.SCR added.
     1.25 [08 August 2011]
        - 2 variants (F & G) added to makex.bat
-    1.26 [__ ______ 2018]
+    1.26 [16 January 2020]
        - bugfix 'a' cmd: 'MOV sreg, mem' and 'MOV mem, sreg' needed a size.
-       - XM: logical page displayed was 2 digits only.
+       - bugfix 'xm' cmd: logical page displayed was 2 digits only.
        - DEBUGX: interrupt and exception 07 intercepted.
        - DEBUGX: int 2Fh was "rehooked" if protected-mode debuggee caused a
          break in real-mode.
+       - bugfix 'xs' cmd: no of pages of just the first handle was displayed,
+         and the handle total was not correct.

@@ -7416,7 +7416,7 @@ xs3:
 	mov ah,4dh		;function 14 - get all handle pages
 	mov di,offset line_out
 	call emscall
-	and bx,bx
+	and bx,bx		;has returned no of entries in BX
 	jz xs5
 	mov si,di
 @@:
@@ -7473,7 +7473,7 @@ xs7:
 	call sumshow	;print the line
 	mov ah,4bh		;function 12 - get handle count
 	call emscall
-	xchg ax,bx		;ax = number of handles allocated
+	push bx
 
 ;--- try EMS 4.0 function 5402h to get total number of handles
 
@@ -7484,6 +7484,7 @@ xs7:
 	jz @F
 	mov dx,0ffh		;total number of handles
 @@:
+	pop ax			;ax = number of handles allocated
 	mov bx,offset xsstrhd
 	call sumshow	;print the line
 	ret				;done
@@ -7588,7 +7589,9 @@ hndlshow proc
 	push dx
 	mov dx,offset xsstr1
 	mov cx,size_xsstr1
+	push bx
 	call stdout
+	pop bx
 	pop dx
 	ret
 hndlshow endp
@@ -11306,7 +11309,11 @@ puts:
 	mov dx,offset line_out
 	sub cx,dx
 
-stdout proc			;write DS:DX, size CX to STDOUT (1)
+;--- fall thru'
+;--- stdout: write DS:DX, size CX to STDOUT (1)
+;--- modifies bx,ax
+
+stdout proc
 	call InDos
 	jnz @F
 	mov bx,1		;standard output
