@@ -8331,6 +8331,8 @@ rawnext:
 	jz del_key
 	cmp al,7Fh
 	jz del_key
+	cmp cx, LINE_IN_LEN - 2
+	jae rawnext
 	stosb
 	inc cx
 	call stdoutal
