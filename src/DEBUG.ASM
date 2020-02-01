@@ -8310,27 +8310,19 @@ gl4:
 gl5:
 endif
 	mov dx,offset line_in
-	call InDos
-	jnz rawinput
-	mov ah,0ah		;buffered keyboard input
-	call doscall
-gl6:
-	mov al,10
-	call stdoutal
-	mov si,offset line_in + 2
-	call skipwhite
-	ret
-
-rawinput:
-	push di
 	push ds
 	pop es
 	inc dx
 	inc dx
 	mov di,dx
+	xor cx,cx
 rawnext:
 	mov ah,00h
 	int 16h
+	cmp ah, 48h ;up arrow
+	je recall
+	cmp ah, 50h ;down arrow
+	je clear
 	cmp al,0
 	jz rawnext
 	cmp al,0E0h
@@ -8340,24 +8332,66 @@ rawnext:
 	cmp al,7Fh
 	jz del_key
 	stosb
+	inc cx
 	call stdoutal
-	cmp al,0Dh
+	cmp al,CR
 	jnz rawnext
+	push di
 	dec di
 	sub di,dx
 	mov ax,di
 	mov di,dx
 	mov byte ptr [di-1],al
-	dec dx
-	dec dx
 	pop di
-	jmp gl6
+gl6:
+	mov al,10
+	call stdoutal
+	mov si,offset line_in + 2
+	call skipwhite
+	cmp si, di
+	je @F		;don't save empty line
+	lea cx, [di+1]
+	sub cx, si
+	push si
+	push di
+	dec si
+	mov di,offset last_line_in + 2
+	rep movsb   ;save input for recall
+	pop di
+	pop si
+@@:	ret
+
 del_key:
-	cmp di,dx
-	jz rawnext
+	jcxz rawnext
 	dec di
+	dec cx
 	call fullbsout
 	jmp rawnext
+
+recall:
+	jne rawnext
+	call clearline
+	mov si,offset last_line_in + 2
+	xor cx,cx
+@@:	lodsb
+	cmp al,CR
+	je rawnext
+	call stdoutal
+	stosb
+	inc cx
+	jmp @B
+
+clear:
+	call clearline
+	jmp rawnext
+
+clearline:
+	jcxz cl1
+@@:	call fullbsout
+	loop @B
+	mov di,dx
+cl1:
+	ret
 
 getline endp
 
@@ -11485,9 +11519,10 @@ _DATA segment
 
 ;--- I/O buffers.  (End of permanently resident part.)
 
-line_in		db 255,0,CR				;length = 257
-line_out	equ line_in+LINE_IN_LEN+1;length = 1 + 263
-real_end	equ line_in+LINE_IN_LEN+1+264
+last_line_in	db 255,0,CR,LINE_IN_LEN-3 dup(0)    ;length = 257
+line_in			db 255,0,CR                         ;length = 257
+line_out		equ line_in+LINE_IN_LEN+1           ;length = 1 + 263
+real_end		equ line_out+264
 
 _DATA ends
 
