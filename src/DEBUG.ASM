@@ -8325,15 +8325,17 @@ rawnext:
 	je recall_up
 	cmp ah, 50h ;down arrow
 	je recall_dn
-	cmp al,0
-	jz rawnext
 	cmp al,0E0h
 	jz rawnext
 	cmp al,08h
 	jz del_key
 	cmp al,7Fh
 	jz del_key
-	cmp cx, LINE_IN_LEN - 2
+	cmp al,CR
+	je @F
+	cmp al,20h
+	jb rawnext
+@@:	cmp cx, LINE_IN_LEN - 2
 	jae rawnext
 	stosb
 	inc cx
