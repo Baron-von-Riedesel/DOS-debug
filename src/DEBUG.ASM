@@ -8465,6 +8465,10 @@ first:
 initialized:
 	add di,sizeof llnode
 	push cx
+	repe cmpsb                  ;check if last entry is identical
+	pop cx
+	je fail                     ;don't store duplicates
+	push cx
 	mov cx,offset line_history + LINE_HISTORY_LEN
 	sub cx,di
 	mov al,CR
