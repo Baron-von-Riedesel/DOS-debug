@@ -8444,20 +8444,20 @@ hist_recall endp
 ;   HIST_STORE - Store line in input history
 ;   Entry   SI  Input line
 ;           CX  Line length
-;   Uses    BX,CX,DX,DI
+;   Uses    BX,CX,DX,DI,SI
 
 hist_store proc
-	push si
 	push ax
-	mov dx,si
 	mov bx,[line_hist_begin]
 	mov di,[line_hist_end]
 	test di,di
 	jz first
 	add di,sizeof llnode
+	push si
 	push cx
 	repe cmpsb                  ;check if last entry is identical
 	pop cx
+	pop si
 	je fail                     ;don't store duplicates
 	push cx
 	mov cx,offset line_history + LINE_HISTORY_LEN
@@ -8465,22 +8465,21 @@ hist_store proc
 	mov al,CR
 	repne scasb                 ;find end of last node
 	pop cx
-	mov si,di
 check_overflow:
-	mov di,si
-	add di,cx
-	add di,sizeof llnode        ;di = end of new node
-	cmp di,offset line_history + LINE_HISTORY_LEN
+	mov dx,di
+	add dx,cx
+	add dx,sizeof llnode        ;dx = end of new node
+	cmp dx,offset line_history + LINE_HISTORY_LEN
 	jb no_overflow              ;does it fit?
-	cmp si,offset line_history
+	cmp di,offset line_history
 	je fail                     ;fail if new node would be larger than buffer
-	mov si,offset line_history  ;restart from beginning
+	mov di,offset line_history  ;restart from beginning
 	jmp check_overflow
 no_overflow:
-	cmp si,bx
+	cmp di,bx
 	ja no_overlap               ;can't overlap if buffer isn't full yet
 check_overlap:
-	cmp di,bx
+	cmp dx,bx
 	jb no_overlap               ;does it overwrite the first node(s)?
 	mov bx,[bx.llnode.next]
 	test bx,bx
@@ -8490,18 +8489,15 @@ no_overlap:
 	mov [bx.llnode.prev],0      ;[bx] is now the first node
 	mov [line_hist_begin],bx
 	mov bx,[line_hist_end]
-	mov [line_hist_end],si      ;add node at the end
-	mov [bx.llnode.next],si
-	mov [si.llnode.prev],bx
-	mov [si.llnode.next],0
-	mov di,si
+	mov [line_hist_end],di      ;add node at the end
+	mov [bx.llnode.next],di
+	mov [di.llnode.prev],bx
+	mov [di.llnode.next],0
 store:
 	add di,sizeof llnode
-	mov si,dx
 	rep movsb                   ;store string in new node
 fail:
 	pop ax
-	pop si
 	ret
 
 first:
