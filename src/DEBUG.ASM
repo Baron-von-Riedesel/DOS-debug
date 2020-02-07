@@ -8453,16 +8453,7 @@ hist_store proc
 	mov bx,[line_hist_begin]
 	mov di,[line_hist_end]
 	test di,di
-	jnz initialized
-first:
-	mov di,offset line_history  ;create first node
-	mov bx,di
-	mov [line_hist_begin],di
-	mov [line_hist_end],di
-	mov [di.llnode.next],0
-	mov [di.llnode.prev],0
-	jmp store
-initialized:
+	jz first
 	add di,sizeof llnode
 	push cx
 	repe cmpsb                  ;check if last entry is identical
@@ -8475,7 +8466,8 @@ initialized:
 	repne scasb                 ;find end of last node
 	pop cx
 	mov si,di
-@@:	mov di,si
+check_overflow:
+	mov di,si
 	add di,cx
 	add di,sizeof llnode        ;di = end of new node
 	cmp di,offset line_history + LINE_HISTORY_LEN
@@ -8483,7 +8475,7 @@ initialized:
 	cmp si,offset line_history
 	je fail                     ;fail if new node would be larger than buffer
 	mov si,offset line_history  ;restart from beginning
-	jmp @B
+	jmp check_overflow
 no_overflow:
 	cmp si,bx
 	ja no_overlap               ;can't overlap if buffer isn't full yet
@@ -8511,6 +8503,15 @@ fail:
 	pop ax
 	pop si
 	ret
+
+first:
+	mov di,offset line_history  ;create first node
+	mov bx,di
+	mov [line_hist_begin],di
+	mov [line_hist_end],di
+	mov [di.llnode.next],0
+	mov [di.llnode.prev],0
+	jmp store
 hist_store endp
 
 ;   BUFSETUP - Set up buffer reading.  This just means discard an LF
