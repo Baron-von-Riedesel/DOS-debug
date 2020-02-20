@@ -1,5 +1,5 @@
 ;   DEBUG.ASM Masm/JWasm assembler source for a clone of DEBUG.COM
-;           Version 1.26, 08/25/2011.
+;           Version 1.27, ??.02.2020.
 
 ;   To assemble, use:
 ;       jwasm -D?PM=0 -bin -Fo debug.com debug.asm
@@ -76,6 +76,9 @@ CATCHEXC07 equ 0	;catch exception 07h in protected-mode
 CATCHEXC0C equ 1	;catch exception 0Ch in protected-mode
 MMXSUPP    equ 1	;support MMX specific commands
 DXSUPP     equ 1	;support DX command
+ifndef DXUNREAL
+DXUNREAL   equ 0	;set to 1 if unreal-mode is to be used by DX cmd
+endif
 else
 VDD        equ 0
 NOEXTENDER equ 0
@@ -3998,7 +4001,58 @@ endif
 
 if DXSUPP
 
+if DXUNREAL
+
+    align 4
+gdt label qword
+	dw -1,0,9200h,0CFh	; 32-bit flat data descriptor
+	dw -1,0,9200h,0		; 16-bit data descriptor
+GDTR label fword
+	dw 3*8-1
+	dd 0
+
+SEL_FLAT equ 8
+SEL_DATA16 equ 16
+
+	.386p
+;--- set/reset unreal mode
+setdspm:
+	mov ax,cs
+	movzx eax,ax
+	shl eax,4
+	add eax,offset gdt-8
+	mov dword ptr cs:[GDTR+2],eax
+	lgdt cs:[GDTR]
+	mov eax,cr0
+	inc ax
+	mov cr0,eax
+	jmp @F
+@@:
+	mov ds,cx
+	dec ax
+	mov cr0,eax
+	jmp @F
+@@:
+	ret
+
 	.386
+;--- exception 0D: no need to check if it's a real exception,
+;--- since interrupts were disabled.
+int0d:
+	push ds
+	push eax
+	push cx
+	mov cx,SEL_FLAT
+	call setdspm
+	pop cx
+	pop eax
+	mov al,0
+	pop ds
+	iret
+endif
+
+	.386
+
 extmem proc
 	mov dx,word ptr [x_addr+0]
 	mov bx,word ptr [x_addr+2]
@@ -4012,38 +4066,71 @@ extmem proc
 	push bx
 	push dx
 	pop ebp
+
+if DXUNREAL
+;--- the dx cmd, when using int 15h,ah=87, has the
+;--- side effect that unreal-mode most likely is disabled
+;--- after the call. Setting DXUNREAL=1 avoids that,
+;--- but has the disadvantange that DX won't work in v86-mode!
+
+	smsw ax			; don't use ispm, since that won't detect v86! 
+	test al,1
+	jnz extmem_exit
+	push ds
+	push cs
+	push offset int0d
+	pop ebx
+	xor ecx,ecx
+	mov ds,cx
+	mov esi,ebp
+	mov al,1
+	mov cl,20h
+	mov edi,offset line_out+128
+	cli
+	xchg ebx,ds:[0dh*4]
+	db 67h
+	rep movsd
+	xchg ebx,ds:[0dh*4]
+	dec al    ;has an exception occured?
+	jz @F     ;if no, don't reset unreal mode!
+	mov cx,SEL_DATA16
+	call setdspm
+@@:
+	sti
+	pop ds
+else
 	mov di,offset line_out	;create a GDT for Int 15h, ah=87h
 	xor ax,ax
-	mov cx,24	;init 6 descriptors
+	mov cx,24	;init 6 descriptors (48 bytes)
 	rep stosw
 	sub di,4*8
-	mov ax,007Fh
+	mov ax,007Fh;limit of source (128 bytes)
 	stosw
-	mov ax,dx
+	mov ax,dx   ;base[0-15] of source
 	stosw
-	mov al,bl
+	mov al,bl   ;base[16-23] of source
 	stosb
 	mov ax,0093h
 	stosw
-	mov al,bh
+	mov al,bh   ;base[24-31] of source
 	stosb
-	mov ax,007Fh
+	mov ax,007Fh;limit of dest
 	stosw
 	lea eax,[line_out+128]
 	movzx ebx,[pspdbg]
 	shl ebx,4
 	add eax,ebx
-	stosw
+	stosw       ;base[0-15] of dest
 	shr eax,16
-	stosb
+	stosb       ;base[16-23] of dest
 	mov bl,ah
 	mov ax,0093h
 	stosw
 	mov al,bl
-	stosb
+	stosb       ;base[24-31] of dest
 	call ispm
-	mov si,offset line_out
-	mov cx,0040h
+	mov si,offset line_out ;ds:si -> GDT
+	mov cx,0040h	;number of word to copy
 	mov ah,87h
 	jz @F
 	invoke intcall, 15h, cs:[pspdbg]
@@ -4052,6 +4139,7 @@ extmem proc
 	int 15h
 i15ok:
 	jc extmem_exit
+endif
 	mov si,offset line_out+128
 	mov ch,8h
 nextline:
@@ -5425,6 +5513,9 @@ endif
 @@:
 	call setespefl
 
+;--- we calculate the stack space used by previous dos call (ax=4b01)
+;--- and use the result (in spadjust) to adjust the field PSP:[2Eh]
+;--- in the debugger's PSP whenever the debuggee is to be executed ("run").
 	mov ax,sp
 	sub ax,ds:[SPSAV]
 	cmp ax,80h
@@ -5432,6 +5523,9 @@ endif
 	mov ax,80h
 @@:
 	mov [spadjust],ax
+
+;--- use the values for CS:IP SS:SP returned by the loader
+
 	les si,dword ptr [execblk.sssp]
 	lodsw es:[si]	;recover ax
 	mov [regs.rAX],ax
@@ -5445,13 +5539,16 @@ endif
 	pop es
 	clc
 
+;--- get the debuggee's PSP and store it in debuggee's DS,ES
+
 	call getpsp
 	xchg ax,bx		;mov ax,bx
 	mov [pspdbe],ax
 	mov di,offset regs.rDS
 	stosw
 	stosw			;regs.rES
-	call setpspdbg
+
+	call setpspdbg	;switch back to debugger's PSP
 
 ;--- Finish up.  Set termination address.
 
@@ -11510,7 +11607,7 @@ initcont:
 ;--- Debug initialization code.
 ;---------------------------------------
 
-imsg1	db DBGNAME,' version 1.26.  Debugger.',CR,LF,CR,LF
+imsg1	db DBGNAME,' version 1.27.  Debugger.',CR,LF,CR,LF
 	db 'Usage: ', DBGNAME, ' [[drive:][path]progname [arglist]]',CR,LF,CR,LF
 	db '  progname (executable) file to debug or examine',CR,LF
 	db '  arglist parameters given to program',CR,LF,CR,LF

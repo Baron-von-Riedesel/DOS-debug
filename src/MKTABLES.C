@@ -255,7 +255,7 @@ unsigned char getmachine(char **pp)
 	if (*p < '0' || *p > '6')
 		linenofail("bad machine type");
 	value = *p++ - '0';
-	add_to_asmtab(ASM_MACH0 + value);
+	add_to_asmtab((unsigned char)(ASM_MACH0 + value));
 	*pp = p;
 	return value;
 }
@@ -668,12 +668,12 @@ void read_is(FILE *f1)
 				break;
 			case '*':	/* lock or rep... prefix */
 				add_to_asmtab(ASM_LOCKREP);
-				add_to_asmtab(atab_inf);	/* special case */
+				add_to_asmtab((unsigned char)atab_inf);	/* special case */
 				atab_addendum = '\0';
 				break;
 			case '&':	/* segment prefix */
 				add_to_asmtab(ASM_SEG);
-				add_to_asmtab(atab_inf);	/* special case */
+				add_to_asmtab((unsigned char)atab_inf);	/* special case */
 				atab_addendum = '\0';
 				break;
 			case ':': {
@@ -719,10 +719,10 @@ void read_is(FILE *f1)
 			if (atab_addendum != '\0' && dis_only == False ) {
 				atab_inf = atab_inf * (unsigned short) (n_ol_types + 1)
 					+ atab_key;
-				add_to_asmtab(atab_inf >> 8);
+				add_to_asmtab((unsigned char)(atab_inf >> 8));
 				if ((atab_inf >> 8) >= ASM_MACH0)
 					fail("Assembler table is too busy");
-				add_to_asmtab(atab_inf);
+				add_to_asmtab((unsigned char)atab_inf);
 				if (atab_xtra != 0)
 					add_to_asmtab(atab_xtra);
 			}
@@ -1098,7 +1098,7 @@ void dumptables(FILE *f2)
 			k++;
 			if ((k & 3) == 0) {
 				fprintf(f2, "\t;%02X", k - 4);
-				auxstr = "\n\t\dw ";
+				auxstr = "\n\tdw ";
 			} else
 				auxstr = ",";
 		}

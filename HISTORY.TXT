@@ -214,3 +214,7 @@
          break in real-mode.
        - bugfix 'xs' cmd: no of pages of just the first handle was displayed,
          and the handle total was not correct.
+    1.27 [ ?? 2020]
+       - added new variant DEBUGXU.COM. This version does not use int 15h, 
+         ah=87h inside the DX command, thus avoiding to disable a possibly
+         active unreal mode.
