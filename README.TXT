@@ -1,9 +1,10 @@
 
- 1. About
+ 1. About Debug and DebugX
 
-    This is a clone of the MS-DOS DEBUG command. Some minor things aren't
+    Debug is a clone of the MS-DOS DEBUG command. Some minor things aren't
     implemented. OTOH it has many features not available in the original
-    MS DEBUG. For details see below.
+    MS DEBUG. For details see below. DebugX is an extended version of Debug,
+    that allows to debug protected-mode (DPMI) DOS programs.
 
 
  2. Files Overview
@@ -18,7 +19,7 @@
     readme.txt    this file.
     history.txt   list of changes.
     debug.txt     a MS-Debug tutorial originally written by Michael Webster,
-                  extended to describe all additional features of DEBUG/X.
+                  extended to describe all additional features of Debug(X).
     SAMPLES       contains samples of 16 and 32-bit DPMI clients in Masm
                   syntax.
 
@@ -35,7 +36,7 @@
                   be translated with Open Watcom's 16bit compiler WCC.
     make.bat      batch file to (re)create debug.com and debugx.com.
     makec.bat     batch file to (re)create mktables.exe.
-    makex.bat     batch file to create special versions of debugx.
+    makex.bat     batch file to create special versions of Debugx.
 
     Note: files mktables.c and instr.* are to be removed in one of the next
     versions of Debug. Then file debugtbl.inc is supposed to be modified
@@ -44,11 +45,11 @@
 
  3. Added/Missing Features
 
-  a. This debugger extends the MS-Debug in the following ways:
+  a. Debug extends MS-Debug in the following ways:
 
    - The assembler and disassembler support all publicly documented
      instructions for Intel chips through the Pentium Pro (P6), except for
-     the MMX instructions (as for debugx, MMX is partially supported since
+     the MMX instructions (as for DebugX, MMX is partially supported since
      v1.18). The assembler and disassembler inform you if any instruction is 
      inappropriate for the current processor.
 
@@ -105,21 +106,20 @@
    - 'dm' displays the DOS memory control block (MCB) chain and the
      current PSP.
 
-   - if DOS has set its InDOS flag, DEBUG will avoid to use int 21h
+   - if DOS has set its InDOS flag, Debug will avoid to use int 21h
      internally, which allows to single-step through DOS code.
 
    - 'd', 't' and 'u' are automatically repeated if a blank line is
      entered.
 
-  b. A DPMI aware version of the debugger, DEBUGX, is available, with the
-     following additional features:
+  b. DebugX has the following additional features:
 
    - besides real-mode applications it can debug both 16-bit and 32-bit
      DPMI clients.
      [To debug DPMI clients a DPMI host has to be installed. Tested with
       cwsdpmi, hdpmi, WinXP NTVDM, 32rtm. In DosEmu and Windows 95/98/ME
       DOS boxes it is required to single-step through the initial switch
-      to protected-mode, else DEBUGX will loose control of the debuggee.]
+      to protected-mode, else DebugX will loose control of the debuggee.]
 
    - 'dl': display LDT descriptor(s) (in protected-mode only)
 
@@ -127,11 +127,13 @@
 
    - 'dx': display extended memory (read via Int 15h, ah=87h). Requires a
      80386 cpu. 'dx' is automatically repeated if a blank line is entered.
+     Be aware that Int 15h, ah=87h most likely will disable "unreal"-mode
+     if it was enabled. This may be an unwanted side effect during debugging.
 
    - 'rn' displays FPU registers in "readable" format.
 
-   - when running in a Windows XP DOS bos, DEBUGX will try to load and use
-     DEBXXVDD.DLL. This DLL will allow DEBUGX to successfully execute its
+   - when running in a Windows XP DOS bos, DebugX will try to load and use
+     DEBXXVDD.DLL. This DLL will allow DebugX to successfully execute its
      low-level disk access commands L and W in this OS - if the user has
      administrator rights. DEBXXVDD.DLL is public domain, the source can
      be downloaded from http://www.japheth.de/debxxf.html. Please
@@ -140,34 +142,39 @@
 
    - 'rm' displays MMX registers.
 
-  c. Optionally, one may create special-purpose versions of DEBUG.
+  c. Optionally, one may create special-purpose versions of DebugX.
      Run file makex.bat to create them; you'll need the JWasm assembler
      for a successful run. The additional versions are:
   
-   - DebugxD.COM: a version which doesn't hook int 01 and int 03. This
-     allows to debug this version with a "normal" version of DEBUG.
+   - DebugXD.COM: a version which doesn't hook int 01 and int 03. This
+     allows to debug this version with a "normal" version of Debug(X).
 
-   - DebugxE.COM: a version which hooks interrupts 06, 0Ch and 0Dh in
+   - DebugXE.COM: a version which hooks interrupts 06, 0Ch and 0Dh in
      real-mode. This is for - rare - cases when such exceptions may
      occur in real-mode applications.
 
-   - DebugxF.COM: a version which hooks interrupt 31h in protected-mode
+   - DebugXF.COM: a version which hooks interrupt 31h in protected-mode
      and then rejects any attempt to modify exception vectors 01, 03,
      0Dh and 0Eh. This allows to debug DOS-extended applications that
      modify these vectors.
 
-   - DebugxG.COM: a version that is in DOS device driver format. This
+   - DebugXG.COM: a version that is in DOS device driver format. This
      variant can be used to debug other device drivers. There are a
      few peculiarities: commands N and Q are rejected, commands
      R and W can't be used to read/write files and interrupt 06 (invalid
      opcode exception) is hooked.
+
+   - DebugXU.COM: a version that uses "unreal" mode to access extended
+     memory for the DX command. This is useful to debug applications
+     that set/use "unreal" mode themselves, because DebugXU will not
+     change the current "unreal" state by its DX command.
 
   d. The following features of MS Debug are not implemented:
 
    - Loading of .HEX files.
 
 
- 4. How to rebuild the DEBUG.COM/DEBUGX.COM Binaries
+ 4. How to rebuild the Debug.COM/DebugX.COM Binaries
 
     MAKE.BAT is intended for rebuilding the debugger binaries. The
     recommended tool for this step is to use the JWasm assembler.

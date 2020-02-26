@@ -318,25 +318,25 @@ CONST segment
 
 ;--- cmds b,j,k,v,y and z don't exist yet
 
-cmdlist	dw aa,cmd_error,cc,ddd
-		dw ee,ff,gg,hh
-		dw ii,cmd_error,cmd_error,ll
-		dw mmm
+cmdlist	dw a_cmd,cmd_error,c_cmd,d_cmd
+		dw e_cmd,f_cmd,g_cmd,h_cmd
+		dw i_cmd,cmd_error,cmd_error,l_cmd
+		dw m_cmd
 if DRIVER
 		dw cmd_error	;no N for the driver variant
 else
-		dw nn
+		dw n_cmd
 endif
-		dw oo,pp
+		dw o_cmd,p_cmd
 if DRIVER
 		dw cmd_error	;no Q for the driver variant
 else
-		dw qq
+		dw q_cmd
 endif
-		dw rr,sss,tt
-		dw uu,cmd_error,ww
+		dw r_cmd,s_cmd,t_cmd
+		dw u_cmd,cmd_error,w_cmd
 if EMSCMD
-		dw xx
+		dw x_cmd
 else
 		dw cmd_error
 endif
@@ -616,7 +616,11 @@ PPLEN	equ $ - ppinfo
 
 ;--- Strings.
 
+ifdef PROMPT
+prompt1	db @CatStr(!',%PROMPT,!')
+else
 prompt1	db '-'		;main prompt
+endif
 prompt2	db ':'		;prompt for register value
 if ?PM
 prompt3	db '#'		;protected-mode prompt
@@ -1706,7 +1710,7 @@ nowrite:
 	ret
 writeasmn endp
 
-aa proc
+a_cmd proc
 	mov [errret],offset aa01
 	cmp al,CR
 	je aa01			;if end of line
@@ -3387,7 +3391,7 @@ aasizchk:
 	pop ax		;discard return address
 	jmp ao50
 
-aa endp
+a_cmd endp
 
 ;--- Do reg/mem processing.
 ;--- in: DI->OPRND
@@ -3616,7 +3620,7 @@ aagetreg endp
 
 ;--- C command - compare bytes.
 
-cc proc
+c_cmd proc
 	call parsecm		;parse arguments (sets DS:e/si, ES:e/di, e/cx)
 if ?PM
 	cmp cs:[bAddr32],0
@@ -3739,7 +3743,7 @@ cc2:
 	push ss
 	pop es
 	ret
-cc endp
+c_cmd endp
 
 if ?PM
 
@@ -4182,7 +4186,7 @@ endif
 
 ;--- D command - hex/ascii dump.
 
-ddd proc
+d_cmd proc
 	cmp al,CR
 	jne dd1		;if an argument was given
 lastddd:
@@ -4376,14 +4380,14 @@ dd11:
 	inc dx		;set up the address for the next 'D' command.
 	mov [d_addr],dx
 	ret
-ddd endp
+d_cmd endp
 
 errorj4:
 	jmp cmd_error
 
 ;--- E command - edit memory.
 
-ee proc
+e_cmd proc
 	call prephack
 	mov bx,[regs.rDS]
 	call getaddr	;get address into bx:(e)dx
@@ -4579,11 +4583,11 @@ ee15:
 
 ee16:
 	jmp putsline	;call putsline and return
-ee endp
+e_cmd endp
 
 ;--- F command - fill memory
 
-ff proc
+f_cmd proc
 	xor cx,cx		;get address range (no default length)
 	mov bx,[regs.rDS]
 	call getrange	;get address range into bx:(e)dx/(e)cx
@@ -4676,7 +4680,7 @@ ff_exit:
 	push ss		;restore es
 	pop es
 	ret
-ff endp
+f_cmd endp
 
 ;--- breakpoints are stored in line_out, with this format
 ;--- WORD cnt
@@ -4807,7 +4811,7 @@ endif
 
 ;--- G command - go.
 
-gg proc
+g_cmd proc
 	xchg ax,bx		;mov bx,ax
 	mov ax,[regs.rCS]	;save original CS
 ;	mov [run_cs],ax
@@ -4891,11 +4895,11 @@ endif
 gg_exit:
 	jmp ue_int		;print messages and quit.
 
-gg endp
+g_cmd endp
 
 ;--- H command - hex addition and subtraction.
 
-hh proc
+h_cmd proc
 	call getdword	;get dword in BX:DX
 	push bx
 	push dx
@@ -4950,11 +4954,11 @@ hh32:
 	call hexword
 	call putsline
 	ret
-hh endp
+h_cmd endp
 
 ;--- I command - input from I/O port.
 
-ii proc
+i_cmd proc
 	mov bl,0
 	mov ah,al
 	and ah,TOUPPER
@@ -4996,7 +5000,7 @@ ii_4:
 ii_5:
 	call putsline
 	ret
-ii endp
+i_cmd endp
 
 if ?PM
 LoadSDA:
@@ -5252,7 +5256,7 @@ ensuredebuggeeloaded endp
 
 ;--- L command - read a program, or disk sectors, from disk.
 
-ll proc
+l_cmd proc
 	call parselw	;parse it, addr in bx:(e)dx
 	jz ll1			;if request to read program
 if NOEXTENDER
@@ -5303,7 +5307,7 @@ ll2:
 endif
 	jmp cmd_error	;can only load .com or .exe at cs:100
 
-ll endp
+l_cmd endp
 
 if DRIVER eq 0
 
@@ -5587,7 +5591,7 @@ endif
 ;--- 0 or 1 arguments are handled by the 'M [cpu]' code
 ;--- also check if command is MC, MC2 or MNC
 
-mmm proc
+m_cmd proc
 	cmp al,CR
 	jz mach
 	mov ah,[si-2]
@@ -5666,7 +5670,7 @@ endif
 	movsb			;one more byte
 	cld				;restore flag
 	jmp ee0a		;restore ds and es and undo the int pointer hack
-mmm endp
+m_cmd endp
 
 ;--- 'm'achine command:  set machine type.
 
@@ -5760,7 +5764,7 @@ CONST ends
 
 if DRIVER eq 0
 
-nn proc
+n_cmd proc
 	mov di,DTA		;destination address
 
 ;--- Copy and canonicalize file name.
@@ -5854,7 +5858,7 @@ nn3d:
 	dec ax
 	stosb
 	ret
-nn endp
+n_cmd endp
 
 endif
 
@@ -5927,7 +5931,7 @@ DoFCB endp
 
 ;--- O command - output to I/O port.
 
-oo proc
+o_cmd proc
 	mov bl,0
 	mov ah,al
 	and ah,TOUPPER
@@ -5979,7 +5983,7 @@ oo_5:
 	out dx,eax
 	ret
 	.8086
-oo endp
+o_cmd endp
 
 ;--- ensure segment in BX is writeable
 ;--- out: Carry=1 if segment not writeable
@@ -6203,7 +6207,7 @@ IsUnexpInt3 endp
 
 ;--- P command - proceed (i.e., skip over call/int/loop/string instruction).
 
-pp proc
+p_cmd proc
 	call parse_pt	;process arguments
 
 ;--- Do it <CX=count> times.  First check the type of instruction.
@@ -6401,13 +6405,13 @@ endif
 	pop ds
 	ret
 
-pp endp
+p_cmd endp
 
 if DRIVER eq 0
 
 ;--- Q command - quit.
 
-qq proc
+q_cmd proc
 
 if ?PM
 	mov byte ptr [dpmidisable+1],0	;disble DPMI hook
@@ -6473,7 +6477,7 @@ norestore:
 	int 20h			;won't work if format == MZ!
 	jmp cmdloop		;returned? then something is terribly wrong.
 
-qq endp
+q_cmd endp
 
 endif
 
@@ -6530,7 +6534,7 @@ rn endp
 
 ;--- R command - manipulate registers.
 
-rr proc
+r_cmd proc
 	cmp al,CR
 	jne @F		;if there's an argument
 	jmp dumpregs
@@ -6678,7 +6682,7 @@ rr1aX:
 rr1bX:
 	ret
 
-rr endp
+r_cmd endp
 
 rr_err:
 	dec si		;back up one before flagging an error
@@ -6687,7 +6691,7 @@ errorj9:
 
 ;--- S command - search for a string of bytes.
 
-sss proc
+s_cmd proc
 	mov bx,[regs.rDS]	;get search range
 	xor cx,cx
 	call getrangeX	;get address range into BX:(E)DX..BX:(E)CX
@@ -6746,7 +6750,7 @@ sss2:
 	loop sss1		;go back for more
 sss3:
 	jmp unhack		;set debugger's int 23/24
-sss endp
+s_cmd endp
 
 ttmode proc
 	call skipcomma
@@ -6784,7 +6788,7 @@ ttmode endp
 
 ;--- T command - Trace.
 
-tt proc
+t_cmd proc
 	mov ah,al
 	and ah,TOUPPER
 	cmp ah,'M'
@@ -6799,7 +6803,7 @@ tt1:
 	loop tt1
 	ret
 
-tt endp
+t_cmd endp
 
 ;--- trace one instruction
 
@@ -7041,7 +7045,7 @@ endif
 
 ;--- U command - disassemble.
 
-uu proc
+u_cmd proc
 	mov [lastcmd],offset lastuu	
 	cmp al,CR
 	jne uu1		;if an address was given
@@ -7105,7 +7109,7 @@ uu3:
 	cmp ax,bx
 	jnb uu3		;if we haven't reached the goal
 	ret
-uu endp
+u_cmd endp
 
 
 lockdrive:
@@ -7145,7 +7149,7 @@ unlockdrive:
 
 ;--- W command - write a program, or disk sectors, to disk.
 
-ww proc
+w_cmd proc
 	call parselw	;parse L and W argument format (out: bx:(e)dx=address)
 	jz write_file	;if request to write program
 if NOEXTENDER
@@ -7215,7 +7219,7 @@ ww1::				;<--- entry from ll
 ww3:
 	jmp cmdloop		;can't ret because stack is wrong
 
-ww endp
+w_cmd endp
 
 ;--- Write to file.  First check the file extension.
 ;--- size of file is in client's BX:CX, 
@@ -7401,7 +7405,7 @@ xd endp
 
 ;--- x main dispatcher
 
-xx proc
+x_cmd proc
 	cmp al,'?'
 	je xhelp		;if a call for help
 	or al,TOLOWER
@@ -7421,7 +7425,7 @@ xhelp:
 	mov dx,offset xhelpmsg
 	mov cx,size_xhelpmsg
 	jmp stdout	;print string and return
-xx endp
+x_cmd endp
 
 ;--- XR - Reallocate EMS handle.
 
@@ -8490,7 +8494,7 @@ bs3:
 	ret
 
 bs4:
-	jmp qq		;quit:  we've hit an eof
+	jmp q_cmd	;quit:  we've hit an eof
 
 bufsetup endp
 
@@ -10463,6 +10467,11 @@ dop_segreg:
 ;--- Sign-extended immediate byte (OP_IMMS8). "push xx"
 
 dop_imms8:
+	call dischk32d
+	jz @F
+	call showdwd
+	sub di,4
+@@:
 	call disgetbyte
 	cmp al,0
 	xchg ax,bx		;mov bl,al
@@ -12001,7 +12010,7 @@ init11:
 init12:
 	dec si
 	lodsb
-	call nn		;process the rest of the line
+	call n_cmd		;process the rest of the line
 
 endif
 

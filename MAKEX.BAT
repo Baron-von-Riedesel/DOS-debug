@@ -2,7 +2,7 @@
 rem create special DEBUG versions
 
 echo creating debugxD - debug version of debugx
-jwasm -c -nologo -D?PM=1 -bin -Fo build\DEBUGXD.COM -Fl=build\DEBUGXD.LST -DCATCHINT01=0 -DCATCHINT03=0 src\debug.asm
+jwasm -c -nologo -D?PM=1 -bin -Fo build\DEBUGXD.COM -Fl=build\DEBUGXD.LST -DCATCHINT01=0 -DCATCHINT03=0 -DPROMPT=] src\debug.asm
 
 echo creating debugxE - checks for exc 06, 0C and 0D in real-mode
 jwasm -c -nologo -D?PM=1 -bin -Fo build\DEBUGXE.COM -Fl=build\DEBUGXE.LST -DCATCHINT06=1 -DCATCHINT0C=1 -DCATCHINT0D=1 src\debug.asm
