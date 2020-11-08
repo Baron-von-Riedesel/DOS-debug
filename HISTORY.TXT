@@ -214,10 +214,16 @@
          break in real-mode.
        - bugfix 'xs' cmd: no of pages of just the first handle was displayed,
          and the handle total was not correct.
-    1.27 [ ?? 2020]
+    1.27 [08 November 2020]
        - added new variant DEBUGXU.COM. This version does not use int 15h, 
          ah=87h inside the DX command, thus avoiding to disable a possibly
          active unreal mode. The catch is that this version's DX command won't
          work in V86 mode.
-       - disassembler handles operand size prefix for one-byte push command
-         correctly: 66h, 6Ah, 00h -> 'PUSH DWORD +00'.
+       - disassembler handles operand size prefix for one-byte "push <imm>" 
+         opcodes correctly. OTOH, for 2/4 byte "push <imm>" opcodes, the 
+         disassembler no longer displays the operand size, since the size
+         is obvious.
+       - if InDOS flag is set, a '!' is preceding the debugger prompt.
+       - BIOS used when waiting for a key in help msg display.
+       - 'e' cmd uses BIOS if InDOS flag set.
+

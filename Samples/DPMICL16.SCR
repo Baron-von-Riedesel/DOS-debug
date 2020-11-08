@@ -1,0 +1,76 @@
+;
+;--- script for DEBUG/DEBUGX to generate DPMICL16.COM.
+;--- to create the file enter: debug <DPMICL16.SCR
+a
+    pop ax          ;get word saved on stack for COM files
+    mov bx, sp
+    shr bx, 4
+    jnz 10B
+    mov bx,1000     ;it was a full 64kB stack
+;10B
+    mov ah, 4A      ;free unused memory
+    int 21
+    mov ax, 1687    ;DPMI host installed?
+    int 2F
+    and ax, ax
+    jnz 156 ; nohost
+    push es         ;save DPMI entry address
+    push di
+    and si, si      ;requires host client-specific DOS memory?
+    jz 128 ; nomemneeded
+    mov bx, si
+    mov ah, 48      ;alloc DOS memory
+    int 21
+    jc 172 ; nomem
+    mov es, ax
+;nomemneeded:
+    mov bp, sp
+    mov ax, 0000    ;start a 16-bit client
+    call far ptr [bp]   ;initial switch to protected-mode
+    jc 1A0 ; initfailed
+;
+;--- now in protected-mode
+;
+    call 1CC ; printstring
+    db "welcome in protected-mode",0D,0A,0
+    mov ax, 4C00    ;normal client exit
+    int 21
+;
+;nohost:
+    call 1C0 ;error
+    db "no DPMI host installed",0D,0A,'$'
+;nomem:
+    call 1C0 ;error
+    db "not enough DOS memory for initialisation",0D,0A,'$'
+;initfailed:
+    call 1C0 ;error
+    db "DPMI initialisation failed",0D,0A,'$'
+;error:
+    push cs
+    pop ds
+    pop dx
+    mov ah, 9
+    int 21
+    mov ax, 4C00
+    int 21
+;
+;--- print a string in protected-mode with simple
+;--- DOS commands not using pointers.
+;
+;printstring:
+    pop si
+    lodsb
+    and al,al
+    jz 1DA ; stringdone
+    mov dl,al
+    mov ah,2
+    int 21
+    jmp 1CD ;printstring+1
+;stringdone:
+    push si
+    ret
+
+n DPMICL16.COM
+r cx DC
+w 100
+q

@@ -23,8 +23,8 @@
     SAMPLES       contains samples of 16 and 32-bit DPMI clients in Masm
                   syntax.
 
-    The following files are also part of the distribution, but
-    they're only needed if debug.com or debugx.com is to be rebuilt:
+    The following files, which may be distributed separately, are needed if 
+    debug.com or debugx.com is to be rebuilt:
 
     debug.asm     Assembler source code for both debug.com and debugx.com.
                   Assemble with JWasm or Masm (see Make.bat).
