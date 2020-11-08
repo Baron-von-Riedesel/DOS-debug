@@ -476,6 +476,7 @@ endif
 
 ;--- Parameter block for exec call.
 
+if DRIVER eq 0
 EXECS struc
 environ dw ?	; +0 environment segment
 cmdtail dd ?	; +2 address of command tail to copy
@@ -486,6 +487,7 @@ csip    dd ?	;+18 initial CS:IP
 EXECS ends
 
 execblk	EXECS {0,0,5ch,6ch,0,0}
+endif
 
 REGS struct
 rDI		dw ?,?	;+00 edi
@@ -616,6 +618,7 @@ PPLEN	equ $ - ppinfo
 
 ;--- Strings.
 
+    db '!'      ;additional prompt if InDos flag is set
 ifdef PROMPT
 prompt1	db @CatStr(!',%PROMPT,!')
 else
@@ -623,10 +626,11 @@ prompt1	db '-'		;main prompt
 endif
 prompt2	db ':'		;prompt for register value
 if ?PM
+	db '!'
 prompt3	db '#'		;protected-mode prompt
 endif
 
-helpmsg db DOSNAME, ' ', DBGNAME2, ' v1.26 help screen',CR,LF
+helpmsg db DOSNAME, ' ', DBGNAME2, ' v1.27 help screen',CR,LF
 	db 'assemble',9,	'A [address]',CR,LF
 	db 'compare',9,9,	'C range address',CR,LF
 	db 'dump',9,9,		'D [range]',CR,LF
@@ -1442,6 +1446,7 @@ if DRIVER eq 0
 	call createdummytask	;if no task is active, create a dummy one
 @@:
 endif
+	mov cx,1
 	mov dx,offset prompt1
 if ?PM
 	call ispm
@@ -1449,7 +1454,11 @@ if ?PM
 	mov dx,offset prompt3
 @@:
 endif
-	mov cx,1
+	call InDos
+	jz @F
+	dec dx          ;if inside DOS, display a '!' before the real prompt
+	inc cx
+@@:
 	call getline	;prompted input
 	cmp al,CR
 	jnz @F
@@ -1496,21 +1505,23 @@ printhelp:
 	jmp cmdloop		;done
 
 waitkey proc
-	cmp [notatty],0
+	cmp [notatty],0     ;stdin a file?
 	jnz nowait
-	test [stdoutf],80h	;is stdout a device?
+	test [stdoutf],80h	;stdout a file?
 	jz nowait
 	push es
 	mov ax,40h		;0040h is a bimodal segment/selector
 	mov es,ax
-	cmp byte ptr es:[84h],30
+	cmp byte ptr es:[84h],30  ;rows >= 30?
 	pop es
 	jnc nowait
 	mov dx,offset presskey
 	mov cx,sizeof presskey
 	call stdout
-	mov ah,8
-	int 21h
+;	mov ah,8		;use DOS
+;	int 21h
+	mov ah,0		;v1.27: use BIOS
+	int 16h
 	mov al,CR
 	call stdoutal
 nowait:
@@ -4507,8 +4518,14 @@ ee8:
 	jmp ee10
 
 ee9:
+	call InDos      ;v1.27: use BIOS if InDOS
+	jnz @F
 	mov ah,8		;console input without echo
 	int 21h
+	jmp ee10
+@@:
+	mov ah,0h
+	int 16h
 
 ee10:
 	cmp al,' '
@@ -5228,10 +5245,12 @@ nodosextinst:
 	jmp int21ah9
 endif
 
+if DRIVER eq 0
 isdebuggeeloaded:
 	mov ax,[pspdbe]
 	cmp ax,[pspdbg]
 	ret
+endif
 
 ;--- ensure a debuggee is loaded
 ;--- set SI:DI to CS:IP, preserve AX, BX, DX
@@ -6738,9 +6757,7 @@ sss1_1:
 	stosw			;+2=11
 	mov cx,11
 	lea dx,[di-11]
-	push bx
 	call stdout		;write to stdout
-	pop bx
 	pop dx
 	mov di,si
 	call dohack		;set debuggee's int 23/24
@@ -7690,9 +7707,7 @@ hndlshow proc
 	push dx
 	mov dx,offset xsstr1
 	mov cx,size_xsstr1
-	push bx
 	call stdout
-	pop bx
 	pop dx
 	ret
 hndlshow endp
@@ -7844,8 +7859,8 @@ run proc
 	call setint2324	;set debuggee's int 23/24
 
 	mov [run_sp],sp	;save stack position
-	sub sp,[spadjust]
 if DRIVER eq 0
+	sub sp,[spadjust]
 	mov ds:[SPSAV],sp
 endif
 	cli
@@ -8315,7 +8330,6 @@ endif
 	ret
 
 stdoutal:
-	push bx
 	push cx
 	push dx
 	push ax
@@ -8325,7 +8339,6 @@ stdoutal:
 	pop ax
 	pop dx
 	pop cx
-	pop bx
 	ret
 
 fullbsout:
@@ -8367,7 +8380,7 @@ if DRIVER eq 0
 	call bufsetup
 	pushf
 endif
-	call stdout
+	call stdout ;write prompt (string DX, size CX)
 if DRIVER eq 0
 	popf
 	jc gl5		;if tty input
@@ -10464,14 +10477,35 @@ dop_segreg:
 	add al,16
 	jmp dop35		;go print it out
 
+showsizeop:
+;--- for PUSH imm8 add D/W to opcode if size differs from default (WORD/DWORD)
+	cmp [instru],6ah
+	jnz sso_skip
+	call dischk32d
+@@:
+if ?PM
+	mov ah,[bCSAttr]
+	.286
+	shr ah,2		;40h -> 10h (=PRE32D)
+	.8086
+else
+	mov ah,0
+endif
+	mov al,'W'
+	test ah,PRE32D
+	jnz @F
+	mov al,'D'
+@@:
+	xor ah,[preflags]
+	test ah,PRE32D
+	jz sso_skip
+	mov [di-4],al
+sso_skip:
+	ret
 ;--- Sign-extended immediate byte (OP_IMMS8). "push xx"
 
 dop_imms8:
-	call dischk32d
-	jz @F
-	call showdwd
-	sub di,4
-@@:
+	call showsizeop
 	call disgetbyte
 	cmp al,0
 	xchg ax,bx		;mov bl,al
@@ -11417,14 +11451,16 @@ puts:
 
 ;--- fall thru'
 ;--- stdout: write DS:DX, size CX to STDOUT (1)
-;--- modifies bx,ax
+;--- modifies ax
 
 stdout proc
 	call InDos
+	push bx
 	jnz @F
 	mov bx,1		;standard output
 	mov ah,40h		;write to file
 	call doscall
+	pop bx
 	ret
 @@:					;use BIOS for output
 	jcxz nooutput
@@ -11438,6 +11474,7 @@ stdout proc
 	loop @B
 	pop si
 nooutput:
+	pop bx
 	ret
 stdout endp
 
@@ -11714,16 +11751,16 @@ if DRIVER
 	mov ax,bx
 else
 	mov ax,cs
-endif
 	mov word ptr [execblk.cmdtail+2],ax
 	mov word ptr [execblk.fcb1+2],ax
 	mov word ptr [execblk.fcb2+2],ax
+endif
 	mov [pspdbg],ax
 
 ;--- Check for console input vs. input from a file or other device.
 
 	mov ax,4400h	;IOCTL--get info
-	xor bx,bx
+	xor bx,bx       ;stdin
 	int 21h
 	jc @F			;if not device
 	and dl,81h		;check if console device
@@ -11732,7 +11769,7 @@ endif
 	mov [notatty],0	;it _is_ a tty
 @@:
 	mov ax,4400h	;IOCTL--get info
-	mov bx,1
+	mov bx,1        ;stdout
 	int 21h
 	jc @F
 	mov [stdoutf],dl

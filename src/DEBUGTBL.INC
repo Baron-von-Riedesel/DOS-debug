@@ -58,7 +58,8 @@ oplists label byte
 	opl OP_IMM8, OP_ALL+OP_AX	; idx=50, ofs=93h
 	opl OP_DX, OP_ALL+OP_AX	; idx=51, ofs=96h
 	opl OP_1632+OP_M	; idx=52, ofs=99h
-	opl OP_SHOSIZ, OP_1632+OP_IMM	; idx=53, ofs=9Bh
+;	opl OP_SHOSIZ, OP_1632+OP_IMM	; idx=53, ofs=9Bh
+	opl OP_1632+OP_IMM	; idx=53, ofs=9Bh
 	opl OP_SHOSIZ, OP_IMMS8	; idx=54, ofs=9Eh
 	opl OP_ALL+OP_RM, OP_1	; idx=55, ofs=A1h
 	opl OP_ALL+OP_RM, OP_CL	; idx=56, ofs=A4h

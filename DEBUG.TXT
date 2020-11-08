@@ -86,7 +86,14 @@ offset address with a colon. Some examples using the Dump command:
 -D DS:100 102
 -D SS:20 L 4
 
-[ENH: DEBUGX understand this additional syntax:
+[ENH: the command prompt is changed if the debuggee has been stopped
+inside DOS - a '!' will precede the default prompt ('!-' instead of
+just '-'). DEBUGX changes the prompt to '#' if debuggee is in protected-
+mode. Prompt '!#', which means "inside DOS" AND "in protected-mode",
+is also possible, if the debuggee has been stopped in a so-called
+DPMI real-mode callback.
+
+As for the Dump command, DEBUGX understands this additional syntax:
 
 #D $F000:FFF6
 
@@ -97,9 +104,8 @@ if debuggee is in protected-mode and the segment part of the starting
 address is a 32bit selector, the offset parts of the starting and ending
 address - as well as the length - can be 32bit. Examples:
 
--D DS:110000 110FFF
--D CS:400000 L 20000
-
+#D DS:110000 110FFF
+#D CS:400000 L 20000
 ]
 
 ---
@@ -251,15 +257,15 @@ The Go command (G), when used without a parameter, causes DEBUG to
 copy the contents of the register variables to the actual CPU
 registers and effectively jump to the instruction at CS:IP, giving
 full control to the program being debugged. DEBUG will reassert
-control when the program terminates normally, or DEBUG will not
-reassert control. The optional address parameter can be used to
-specify the starting address. The optional breakpoint list can
-be used to specify up to 10 temporary breakpoint addresses.
-To differentiate the address parameter from the breakpoint list,
-the address parameter must be preceded with an "=". Note that the
-breakpoint addresses must coincide with the start of a valid
-instruction. To resume execution after a breakpoint, use the Go
-command without a parameter.
+control when the program terminates normally, a debug exception
+(exception 01) or a hard-coded breakpoint (INT 03) is reached.
+ The optional address parameter can be used to specify the starting
+address. The optional breakpoint list can be used to specify up to
+10 temporary breakpoint addresses. To differentiate the address 
+parameter from the breakpoint list, the address parameter must be
+preceded with an "=". Note that the breakpoint addresses must coincide
+with the start of a valid instruction. To resume execution after a
+breakpoint, use the Go command without a parameter.
 
 Syntax: G [=address] [break0 break1...]
 
