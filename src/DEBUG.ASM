@@ -1,5 +1,5 @@
 ;   DEBUG.ASM Masm/JWasm assembler source for a clone of DEBUG.COM
-;           Version 1.27, ??.02.2020.
+;           Version 1.28, 14.02.2021.
 
 ;   To assemble, use:
 ;       jwasm -D?PM=0 -bin -Fo debug.com debug.asm
@@ -76,8 +76,8 @@ CATCHEXC07 equ 0	;catch exception 07h in protected-mode
 CATCHEXC0C equ 1	;catch exception 0Ch in protected-mode
 MMXSUPP    equ 1	;support MMX specific commands
 DXSUPP     equ 1	;support DX command
-ifndef DXUNREAL
-DXUNREAL   equ 0	;set to 1 if unreal-mode is to be used by DX cmd
+ifndef USEUNREAL
+USEUNREAL  equ 0	;set to 1 if debug is to use unreal-mode (for DX/EX cmd)
 endif
 else
 VDD        equ 0
@@ -146,6 +146,22 @@ CEIV	equ 12h	;Critical Error Interrupt Vector (int 24h)
 PARENT	equ 16h	;segment of parent PSP
 SPSAV	equ 2eh	;Save the stack pointer here
 DTA		equ 80h	;Program arguments; also used to store file name (N cmd)
+endif
+
+ifdef _DEBUG
+dprintf proto c text:ptr, args:vararg
+@dprintf macro text:req,args:vararg
+local sym
+CONST segment
+sym	db text,10,0
+CONST ends
+	pushcontext cpu
+	.386
+	invoke dprintf, offset sym, args
+	popcontext cpu
+endm
+else
+@dprintf textequ <;>
 endif
 
 ;--- mne macro, used for the assembler mnemonics table
@@ -630,7 +646,7 @@ if ?PM
 prompt3	db '#'		;protected-mode prompt
 endif
 
-helpmsg db DOSNAME, ' ', DBGNAME2, ' v1.27 help screen',CR,LF
+helpmsg db DOSNAME, ' ', DBGNAME2, ' v1.28 help screen',CR,LF
 	db 'assemble',9,	'A [address]',CR,LF
 	db 'compare',9,9,	'C range address',CR,LF
 	db 'dump',9,9,		'D [range]',CR,LF
@@ -4016,7 +4032,7 @@ endif
 
 if DXSUPP
 
-if DXUNREAL
+if USEUNREAL
 
     align 4
 gdt label qword
@@ -4068,7 +4084,7 @@ endif
 
 	.386
 
-extmem proc
+dx_cmd proc
 	mov dx,word ptr [x_addr+0]
 	mov bx,word ptr [x_addr+2]
 	call skipwhite
@@ -4077,20 +4093,20 @@ extmem proc
 	call getdword	;get linear address into bx:dx
 	call chkeol		;expect end of line here
 @@:
-	mov [lastcmd],offset extmem
+	mov [lastcmd],offset dx_cmd
 	push bx
 	push dx
 	pop ebp
 
-if DXUNREAL
+if USEUNREAL
 ;--- the dx cmd, when using int 15h,ah=87, has the
 ;--- side effect that unreal-mode most likely is disabled
-;--- after the call. Setting DXUNREAL=1 avoids that,
+;--- after the call. Setting USEUNREAL=1 avoids that,
 ;--- but has the disadvantange that DX won't work in v86-mode!
 
 	smsw ax			; don't use ispm, since that won't detect v86! 
 	test al,1
-	jnz extmem_exit
+	jnz dx_exit
 	push ds
 	push cs
 	push offset int0d
@@ -4153,7 +4169,7 @@ else
 @@:
 	int 15h
 i15ok:
-	jc extmem_exit
+	jc dx_exit
 endif
 	mov si,offset line_out+128
 	mov ch,8h
@@ -4188,10 +4204,10 @@ nextbyte:
 	dec ch
 	jnz nextline
 	mov [x_addr],ebp
-extmem_exit:
+dx_exit:
 	ret
 	.8086
-extmem endp
+dx_cmd endp
 
 endif
 
@@ -4232,7 +4248,7 @@ if DXSUPP
 	jnz @F
 	cmp [machine],3
 	jb @F
-	jmp extmem
+	jmp dx_cmd
 @@:
 endif
 if MCB
@@ -4242,17 +4258,20 @@ if MCB
 @@:
 endif
 dd1_1:
-	mov cx,80h		;default length
+	sizeprfX		;clear hiword ecx (14.2.2021)
+	xor cx,cx
+	mov cl,80h		;default length
 	mov bx,[regs.rDS]
-	call getrangeX	;get address range into bx:(e)dx
+	call getrangeX	;get address range into bx:(e)dx ... bx:(e)cx
 	call chkeol		;expect end of line here
 
 	mov [d_addr+4],bx	;save segment (offset is saved later)
 	sizeprfX	;mov esi,edx
 	mov si,dx
+	sizeprfX	;mov edx,ecx (14.2.2021)
 	mov dx,cx		;dx = end address
     
-	jmp dd2_1
+;	jmp dd2_1
 
 ;--- Parsing is done.  Print first line.
 
@@ -4406,7 +4425,7 @@ e_cmd proc
 	cmp al,CR
 	je ee1			;if prompt mode
 	push dx			;save destination offset
-	call getstr		;get data bytes
+	call getstr		;get data bytes SI -> lineout
 	mov cx,di
 	mov dx,offset line_out
 	sub cx,dx		;length of byte string
@@ -4473,9 +4492,7 @@ ee3:				;<--- next byte
 	mov ax,'  '		;print old value of byte
 	stosw
 	call dohack		;set debuggee's int 23/24
-	push bx
 	call readmem	;read mem at BX:(E)DX
-	pop bx
 	call unhack		;set debugger's int 23/24
 	call hexbyte
 	mov al,'.'
@@ -6184,21 +6201,37 @@ done:
 	ret
 writemem endp
 
-;--- read byte at BX:EDX into AL
+;--- read byte from memory
+;--- in:  BX:(E)DX=address
+;--- out: AL=byte
+;--- used by e_cmd prompt mode
 
 readmem proc
 if ?PM
-	call getselattr
+;	cmp [bAddr32],0
+	call getselattr	;attribute of selector in BX, Z if 16-bit
 endif
 	push ds
 	mov ds,bx
-	sizeprfX	;mov ebx,edx
-	mov bx,dx
+;--- 14.2.2021: the assumption that the address prefix 67h
+;--- will change "mov al,[bx]" to "mov al,[ebx]" was somewhat "obvious",
+;--- but nevertheless WRONG; the first is encoded 8A 07, the latter 67 8A 03!
+;	sizeprfX	;mov ebx,edx
+;	mov bx,dx
 if ?PM
-	jz $+3
-	db 67h		;mov al,[ebx]
+;	jz $+3
+;	db 67h		;mov al,[ebx]
+	jz @F
+	.386
+	mov al,[edx]
+	.8086
+	jmp readmem_1
+@@:
 endif
+	xchg bx,dx
 	mov al,[bx]
+	xchg bx,dx
+readmem_1:
 	pop ds
 	ret
 readmem endp
@@ -11622,6 +11655,13 @@ hook2f endp
 
 endif
 
+ifdef _DEBUG
+	pushcontext cpu
+	.386
+	include dprintf.inc
+	popcontext cpu
+endif
+
 _TEXT ends
 
 _DATA segment
@@ -11653,7 +11693,7 @@ initcont:
 ;--- Debug initialization code.
 ;---------------------------------------
 
-imsg1	db DBGNAME,' version 1.27.  Debugger.',CR,LF,CR,LF
+imsg1	db DBGNAME,' version 1.28.  Debugger.',CR,LF,CR,LF
 	db 'Usage: ', DBGNAME, ' [[drive:][path]progname [arglist]]',CR,LF,CR,LF
 	db '  progname (executable) file to debug or examine',CR,LF
 	db '  arglist parameters given to program',CR,LF,CR,LF

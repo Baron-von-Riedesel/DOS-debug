@@ -226,4 +226,9 @@
        - if InDOS flag is set, a '!' is preceding the debugger prompt.
        - BIOS used when waiting for a key in help msg display.
        - 'e' cmd uses BIOS if InDOS flag set.
+    1.28 [14 Februar 2021]
+       - bugfix 'e' cmd: used wrong offset when reading from 32-bit segments.
+       - bugfix 'd' cmd: hiword(ecx) wasn't cleared, resulting in a "default"
+         length for 32-bit segment dump > 128.
+       - added debug displays (created if _DEBUG is defined)
 

@@ -14,4 +14,4 @@ echo creating debugxG - device driver version of debugx
 jwasm -c -nologo -D?PM=1 -mz -Fo build\DEBUGXG.EXE -Fl=build\DEBUGXG.LST -DCATCHINT06=1 -DDRIVER=1 src\debug.asm
 
 echo creating debugxU - dx cmd uses unreal mode
-jwasm -c -nologo -D?PM=1 -bin -Fo build\DEBUGXU.COM -Fl=build\DEBUGXU.LST -DDXUNREAL=1 -DCATCHINT0D=1 src\debug.asm
+jwasm -c -nologo -D?PM=1 -bin -Fo build\DEBUGXU.COM -Fl=build\DEBUGXU.LST -DUSEUNREAL=1 -DCATCHINT0D=1 src\debug.asm
