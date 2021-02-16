@@ -9,8 +9,11 @@ handle_char proc
 	call @F
 	mov al,10
 @@:
+	push bx
+	xor bx,bx
 	mov ah,0Eh
 	int 10h
+	pop bx
 	ret
 
 handle_char endp

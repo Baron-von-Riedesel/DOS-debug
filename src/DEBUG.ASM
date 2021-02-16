@@ -157,7 +157,11 @@ sym	db text,10,0
 CONST ends
 	pushcontext cpu
 	.386
+ifb <args>
+	invoke dprintf, offset sym
+else
 	invoke dprintf, offset sym, args
+endif
 	popcontext cpu
 endm
 else
@@ -4822,6 +4826,8 @@ back_after_switch:
 	xor [regs.msw],-1
 	retn
 
+;--- save/restore task state in ES:(E)DI
+
 sr_state::
 	sizeprf		;xor edi,edi
 	xor di,di	;clears hiword EDI if cpu >= 386
@@ -4884,6 +4890,7 @@ if ?PM
 	push [regs.msw]	;save old MSW
 endif
 	call run		;run the program
+	@dprintf "g_cmd: run returned, ds=%X, spadjust=%X, spsav=%lX", ds, spadjust, dword ptr ds:[SPSAV]
 if ?PM
 	call getcsattr
 	mov [bCSAttr],al
@@ -7893,8 +7900,17 @@ run proc
 
 	mov [run_sp],sp	;save stack position
 if DRIVER eq 0
+ if 1
+	; 16.2.2021: check if saved SS is debugger's SS. If no, don't adjust saved SP.
+	; SS may be != saved SS if debugger is stopped in protected-mode - then the
+	; current DPMI real-mode stack may be stored in SPSAV.
+	mov ax,ss
+	cmp ax,ds:[SPSAV+2]
+	jnz @F
+ endif
 	sub sp,[spadjust]
 	mov ds:[SPSAV],sp
+@@:
 endif
 	cli
 	mov sp,offset regs
@@ -7952,10 +7968,14 @@ int22:
 	cli
 	mov cs:[run_int],offset progtrm	;remember interrupt type
 	mov cs:[lastcmd],offset dmycmd
+if 0
 	mov ax,cs
 	mov ss,ax
 	mov ds,ax
 	jmp intrtn1		;jump to register saving routine (sort of)
+else
+	jmp intrtn_progtrm
+endif
 
 ;--- Interrupt 0 (divide error) handler.
 
@@ -8047,6 +8067,7 @@ intrtn proc
 	pop cs:[regs.rIP]		;recover things from stack
 	pop cs:[regs.rCS]
 	pop cs:[regs.rFL]
+intrtn_progtrm::
 	mov cs:[regs.rSS],ss	;save stack position
 	sizeprf
 	mov cs:[regs.rSP],sp
@@ -11511,6 +11532,13 @@ nooutput:
 	ret
 stdout endp
 
+ifdef _DEBUG
+	pushcontext cpu
+	.386
+	include dprintf.inc
+	popcontext cpu
+endif
+
 if DRIVER eq 0
 createdummytask proc
 
@@ -11653,13 +11681,6 @@ hook2f_2:
 	ret
 hook2f endp
 
-endif
-
-ifdef _DEBUG
-	pushcontext cpu
-	.386
-	include dprintf.inc
-	popcontext cpu
 endif
 
 _TEXT ends
