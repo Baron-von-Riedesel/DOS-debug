@@ -234,4 +234,6 @@
        - DEBUGX bugfix g/t/p-cmd: if debuggee is stopped in protected-mode,
          saved stack at debugger's PSP:[2Eh] must not be "adjusted".
        - added debug displays (created if _DEBUG is defined)
+       - DEBUGX: int 2Fh, ax=1686h to detect mode no longer used - this makes 
+         interrupt 2Fh traceable.
 

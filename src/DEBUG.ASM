@@ -1,5 +1,5 @@
 ;   DEBUG.ASM Masm/JWasm assembler source for a clone of DEBUG.COM
-;           Version 1.28, 14.02.2021.
+;           Version 1.28, 10.03.2021.
 
 ;   To assemble, use:
 ;       jwasm -D?PM=0 -bin -Fo debug.com debug.asm
@@ -76,6 +76,7 @@ CATCHEXC07 equ 0	;catch exception 07h in protected-mode
 CATCHEXC0C equ 1	;catch exception 0Ch in protected-mode
 MMXSUPP    equ 1	;support MMX specific commands
 DXSUPP     equ 1	;support DX command
+DPMIMSW    equ 0	;1=use int 2F,ax=1686h to detect mode, 0=use value of cs
 ifndef USEUNREAL
 USEUNREAL  equ 0	;set to 1 if debug is to use unreal-mode (for DX/EX cmd)
 endif
@@ -8120,10 +8121,20 @@ intrtn1::		;<--- entry for int 22
 	sti					;interrupts back on
 
 if ?PM
+;--- calling int 2Fh here is a problem, since breakpoints aren't reset yet.
+;--- this makes it impossible to trace this interrupt.
+if DPMIMSW
 	mov ax,1686h
 	int 2Fh
 	cmp ax,1
 	sbb ax,ax
+else
+	mov ax,cs
+	sub ax,[pspdbg]	;Z=rm,NZ=pm
+	cmp ax,1		;C=rm,NC=pm
+	sbb ax,ax		;-1=rm,0=pm
+	xor ax,-1		;0=rm,-1=pm
+endif
 	mov [regs.msw],ax	;0000=real-mode, FFFF=protected-mode
 endif
 
