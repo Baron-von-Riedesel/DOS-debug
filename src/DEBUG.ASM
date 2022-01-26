@@ -435,6 +435,7 @@ lastcmd	dw dmycmd
 eqflag	db 0		;flag indicating presence of '=' argument
 bInit	db 0		;0=ensure a valid opcode is at debuggee's CS:IP
 fileext	db 0		;file extension (0 if no file name)
+numchrs	db 0		;number of chars typed when entering a byte in 'Edit' mode
 
 EXT_OTHER	equ 1
 EXT_COM		equ 2
@@ -4509,6 +4510,7 @@ ee3:				;<--- next byte
 	pop bx
 	mov si,offset line_out+16	;address of buffer for characters
 	xor cx,cx		;number of characters so far
+	mov [numchrs],0
 
 ee4:
 	cmp [notatty],0
@@ -4564,6 +4566,7 @@ ee10:
 	call getnyb
 	jc ee4			;if it's not a hex character
 	inc cx
+	mov [numchrs],cl	;record the number of characters entered
 	lodsb			;get the character back
 	jmp ee12
 ee112:
@@ -4606,7 +4609,15 @@ ee14:
 	inc dx			;increment offset
 	mov di,offset line_out
 	cmp al,CR
-	je ee16			;if done
+
+	; Work-around a bug where when 'D' or '0D' is enetered,
+	; the user is (incorrectly) returned to the DEBUG prompt.
+	jne ee14a
+	cmp [numchrs],0
+	je ee16
+	jmp ee3
+ee14a:
+
 	test dl,7
 	jz ee15			;if new line
 	not cx
