@@ -226,7 +226,7 @@
        - if InDOS flag is set, a '!' is preceding the debugger prompt.
        - BIOS used when waiting for a key in help msg display.
        - 'e' cmd uses BIOS if InDOS flag set.
-    1.28 [16 Februar 2021]
+    1.28 [10 March 2022]
        - DEBUGX bugfix e-cmd: used wrong offset when reading from 32-bit 
          segments.
        - DEBUGX bugfix d-cmd: hiword(ecx) wasn't cleared, resulting in a
@@ -236,4 +236,4 @@
        - added debug displays (created if _DEBUG is defined)
        - DEBUGX: int 2Fh, ax=1686h to detect mode no longer used - this makes 
          interrupt 2Fh traceable.
-
+       - 'e' cmd: don't stop input after byte '0d' has been entered.

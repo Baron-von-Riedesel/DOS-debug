@@ -4587,6 +4587,7 @@ ee13:
 	jcxz ee14		;if no change for this byte
 	mov [si],al		;terminate the string
 	sub si,cx		;point to beginning
+	push ax			;v1.29: save/restore value of AL to avoid stop if 'D' is entered
 	push cx
 	push dx
 	lodsb
@@ -4596,6 +4597,7 @@ ee13:
 	pop cx
 	call dohack		;set debuggee's int 23/24
 	call writemem	;write AL at BX:(E)DX
+	pop ax
 	mov di,offset run2324	;debuggee's int 23/24
 	call prehak1	;copy things back
 	call unhack		;set debugger's int 23/24
@@ -8132,8 +8134,8 @@ else
 	mov ax,cs
 	sub ax,[pspdbg]	;Z=rm,NZ=pm
 	cmp ax,1		;C=rm,NC=pm
-	sbb ax,ax		;-1=rm,0=pm
-	xor ax,-1		;0=rm,-1=pm
+	cmc             ;NC=rm,C=pm
+	sbb ax,ax		;0=rm,-1=pm
 endif
 	mov [regs.msw],ax	;0000=real-mode, FFFF=protected-mode
 endif
