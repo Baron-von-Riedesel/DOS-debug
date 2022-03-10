@@ -158,7 +158,7 @@
      0Dh and 0Eh. This allows to debug DOS-extended applications that
      modify these vectors.
 
-   - DebugXG.COM: a version that is in DOS device driver format. This
+   - DebugXG.EXE: a version that is in DOS device driver format. This
      variant can be used to debug other device drivers. There are a
      few peculiarities: commands N and Q are rejected, commands
      R and W can't be used to read/write files and interrupt 06 (invalid
