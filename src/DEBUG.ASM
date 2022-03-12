@@ -4478,8 +4478,13 @@ e_cmd proc
 	pop di
 	mov ax,cx
 	dec ax
+if ?PM
+	cmp [bAddr32],0	;v1.29: if limit is > 64kB, skip test
+	jnz @F
+endif
 	add ax,di
 	jc errorj4		;if it wraps around
+@@:
 	call dohack		;set debuggee's int 23/24
 	mov si,dx
 	mov es,bx
