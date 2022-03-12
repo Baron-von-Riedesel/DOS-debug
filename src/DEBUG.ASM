@@ -1767,7 +1767,7 @@ aa01:
 	mov bp,offset hexword
 if ?PM
 	mov bx,[a_addr+4]
-	call getselattr
+	call getseldefsize
 	mov [bCSAttr],al
 	jz @F
 	mov bp,offset hexdword
@@ -4290,8 +4290,8 @@ if 0;PM
 	mov bx,[regs.rDS]
 	mov [d_addr+4],bx
 	.8086
-endif
 dd2_1:
+endif
 	mov [lastcmd],offset lastddd
 	mov ax,[d_addr+4]
 	call hexword
@@ -4341,6 +4341,22 @@ dd3:
 ;--- Begin main loop over lines of output.
 
 dd4:
+if ?PM
+	and bp,bp
+	jz dd4a
+	.386
+	mov ecx,esi
+	or cl,0fh
+	cmp ecx,edx
+	jb @F
+	mov ecx,edx
+@@:
+	sub ecx,esi
+	inc ecx
+	.8086
+	jmp dd4b
+dd4a:
+endif
 	mov cx,si
 	or cl,0fh
 	cmp cx,dx		;compare with end address
@@ -4349,6 +4365,7 @@ dd4:
 @@:
 	sub cx,si
 	inc cx			;cx = number of bytes to print this line
+dd4b:
 	call dohack		;set debuggee's int 23/24
 	mov ds,[d_addr+4]
 dd6:
@@ -4380,6 +4397,11 @@ dd9:
 	mov ax,'  '
 	stosw
 	stosb
+if ?PM
+	and bp,bp
+	jz $+3
+	db 66h			;inc esi
+endif
 	inc si
 	jmp dd9
 
@@ -4394,10 +4416,23 @@ dd10:
 	push dx
 	call putsline
 	pop dx
+if ?PM
+	and bp,bp
+	jz @F
+	.386
+	dec esi
+	cmp esi, edx
+	jae dd11
+	inc esi
+	.8086
+	jmp dd10a
+@@:
+endif
 	dec si
 	cmp si,dx
-	jae dd11		;if we're done
+	jae dd11
 	inc si
+dd10a:
 if 0
 	mov di,offset line_out+5	;set up for next time
 	mov ax,si
@@ -4412,7 +4447,13 @@ else
 	jmp dd2
 endif
 dd11:
+if ?PM
+	and bp,bp
+	jz $+3
+	db 66h		;inc edx
+endif
 	inc dx		;set up the address for the next 'D' command.
+	sizeprfX	;mov [d_addr],edx
 	mov [d_addr],dx
 	ret
 d_cmd endp
@@ -4568,6 +4609,12 @@ ee10:
 	jmp ee12
 ee112:
 	call stdoutal
+if ?PM
+	cmp [bAddr32],0
+	jz @F
+	db 66h			;dec edx
+@@:
+endif
 	dec dx			;decrement offset part
 	mov di,offset line_out
 	jmp ee15
@@ -4605,6 +4652,12 @@ ee13:
 ;--- End the loop over bytes.
 
 ee14:
+if ?PM
+	cmp [bAddr32],0
+	jz @F
+	db 66h			;inc edx
+@@:
+endif
 	inc dx			;increment offset
 	mov di,offset line_out
 	cmp al,CR
@@ -6082,13 +6135,13 @@ setrmaddr:		;<--- set selector in BX to segment address in DX
 	.8086
 
 ;--- out: AL= HiByte of attributes of current CS
-;--- out: ZF=1 if descriptor is 16bit
+;--- out: ZF=1 if descriptor's default-size is 16bit
 ;--- called by P, T, U
 ;--- modifies EAX, BX
 
 getcsattr proc
 	mov bx,[regs.rCS]
-getselattr::	;<--- any selector in BX
+getseldefsize::	;<--- any selector in BX
 	mov al,00
 	cmp [machine],3
 	jb @F
@@ -6102,6 +6155,21 @@ getselattr::	;<--- any selector in BX
 	test al,40h
 	ret
 getcsattr endp
+
+getselattr proc
+	xor ax,ax
+	cmp [machine],3
+	jb @F
+	call ispm
+	jz @F
+	.386
+	lsl eax,ebx
+	shr eax,16
+	.8086
+@@:
+	and ax,ax
+	ret
+getselattr endp
 
 endif ;PM
 
@@ -6219,7 +6287,7 @@ writemem endp
 readmem proc
 if ?PM
 ;	cmp [bAddr32],0
-	call getselattr	;attribute of selector in BX, Z if 16-bit
+	call getselattr	;attribute of selector in BX, Z if default-size is 16-bit
 endif
 	push ds
 	mov ds,bx
@@ -8861,16 +8929,16 @@ seteq endp
 
 getofsforbx proc
 if ?PM
-	push ax		;needed?
+	push ax
 	call getselattr
 	pop ax
 	jz gofbx_2
-	.386
 	mov [bAddr32],1
 	push bx
 	call getdword
 	push bx
 	push dx
+	.386
 	pop edx
 	pop bx
 	ret
@@ -8890,21 +8958,14 @@ errorj10:
 
 getlenforbx proc
 if ?PM
-	call ispm
-	jz glfbx_1
-	cmp [machine],3
-	jb glfbx_1
-	.386
-	push ecx
-	lar ecx,ebx
-	test ecx,400000h	;is segment 32bit?
-	pop ecx
+	call getselattr
 	jz glfbx_1
 	push dx
 	push bx
 	call getdword
 	push bx
 	push dx
+	.386
 	pop ecx
 	pop bx
 	pop dx
@@ -9460,7 +9521,7 @@ disasm proc				;<--- entry with disflags set
 	mov word ptr [preflags],ax	;clear preflags and preused
 if ?PM
 	mov bx,[u_addr+4]
-	call getselattr
+	call getseldefsize
 	mov [bCSAttr],al
 	jz @F
 	or [preflags], PRE32D or PRE32A

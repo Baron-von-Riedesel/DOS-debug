@@ -236,4 +236,9 @@
        - added debug displays (created if _DEBUG is defined)
        - DEBUGX: int 2Fh, ax=1686h to detect mode no longer used - this makes 
          interrupt 2Fh traceable.
-       - 'e' cmd: don't stop input after byte '0d' has been entered.
+       - bugfix 'e' cmd: don't stop input after byte '0d' has been entered.
+    1.29 [__ _____ 2022]
+       - DEBUGX bugfix c/d/e/m/s-cmd: an offset beyond 0ffffh was rejected if
+         the segment descriptor's 'default-size' flag wasn't set.
+       - DEBUGX bugfix e-cmd interactive mode: offset increment and decrement
+         was always 16-bit only.
