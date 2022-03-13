@@ -4278,41 +4278,29 @@ dd1_1:
     
 ;	jmp dd2_1
 
-;--- Parsing is done.  Print first line.
+;--- Parsing is done.  Print first/next line.
+;--- DI=output pos, BX=segment/selector
+;--- E/SI=src offset, E/DX=end src
 
 dd2:
-if 0;PM
-	call ispm
-	jz dd2_1
-	.286
-	verr bx
-	jz dd2_1
-	mov bx,[regs.rDS]
-	mov [d_addr+4],bx
-	.8086
-dd2_1:
-endif
 	mov [lastcmd],offset lastddd
-	mov ax,[d_addr+4]
+;	mov ax,[d_addr+4]
+	mov ax,bx
 	call hexword
 	mov al,':'
 	stosb
-	mov ax,si
 if ?PM
 	xor bp,bp
-	push ax
-	call getselattr		;sets Z flag
-	pop ax
+	call getseglimit	;Z flag set if segment limit is <= 64 kB
 	jz @F
 	inc bp
 	.386
 	shld eax,esi,16		;AX=HiWord(esi)
 	.8086
 	call hexword
-	mov ax,si
 @@:
 endif
-
+	mov ax,si
 	and al,0f0h
 	push ax
 	call hexword
@@ -4337,10 +4325,8 @@ dd3:
 	pop ax
 	inc ax
 	jmp dd3
-
-;--- Begin main loop over lines of output.
-
 dd4:
+
 if ?PM
 	and bp,bp
 	jz dd4a
@@ -4391,21 +4377,17 @@ dd8:
 	inc bx
 	loop dd6
 
+	push si
 dd9:
 	test si,0fh		;space out till end of line
 	jz dd10
 	mov ax,'  '
 	stosw
 	stosb
-if ?PM
-	and bp,bp
-	jz $+3
-	db 66h			;inc esi
-endif
 	inc si
 	jmp dd9
-
 dd10:
+	pop si
 	push ss		;restore ds
 	pop ds
 	sizeprfX	;mov [d_addr],esi
@@ -4416,6 +4398,8 @@ dd10:
 	push dx
 	call putsline
 	pop dx
+	mov di,offset line_out	;set up for next time
+	mov bx,[d_addr+4]
 if ?PM
 	and bp,bp
 	jz @F
@@ -4425,36 +4409,15 @@ if ?PM
 	jae dd11
 	inc esi
 	.8086
-	jmp dd10a
+	jmp dd2
 @@:
 endif
 	dec si
 	cmp si,dx
 	jae dd11
 	inc si
-dd10a:
-if 0
-	mov di,offset line_out+5	;set up for next time
-	mov ax,si
-	call hexword
-	inc di
-	inc di
-	lea bx,[di+50]
-	jmp dd4
-else
-	mov di,offset line_out
-	mov bx,[d_addr+4]
 	jmp dd2
-endif
 dd11:
-if ?PM
-	and bp,bp
-	jz $+3
-	db 66h		;inc edx
-endif
-	inc dx		;set up the address for the next 'D' command.
-	sizeprfX	;mov [d_addr],edx
-	mov [d_addr],dx
 	ret
 d_cmd endp
 
@@ -6161,7 +6124,10 @@ getseldefsize::	;<--- any selector in BX
 	ret
 getcsattr endp
 
-getselattr proc
+;--- in: segment/selector in BX
+;--- out: ZF=1 if in real-mode or segment limit is <= 64 kB
+
+getseglimit proc
 	xor ax,ax
 	cmp [machine],3
 	jb @F
@@ -6174,7 +6140,7 @@ getselattr proc
 @@:
 	and ax,ax
 	ret
-getselattr endp
+getseglimit endp
 
 endif ;PM
 
@@ -6256,7 +6222,7 @@ if ?PM
 	call verifysegm	;make bx a writeable segment
 	jc done
 	push ax
-	call getselattr
+	call getseglimit
 	pop ax
 	jz weip16
 	.386
@@ -6292,7 +6258,7 @@ writemem endp
 readmem proc
 if ?PM
 ;	cmp [bAddr32],0
-	call getselattr	;attribute of selector in BX, Z if default-size is 16-bit
+	call getseglimit	;attribute of selector in BX, Z if limit is <= 0ffffh
 endif
 	push ds
 	mov ds,bx
@@ -7120,7 +7086,7 @@ clear_tf_onstack proc
 	mov es,[regs.rSS]
 if ?PM
 	mov bx,es
-	call getselattr
+	call getseglimit
 	jz @F
 	.386
 	mov ebx,dword ptr [regs.rSP]
@@ -8935,7 +8901,7 @@ seteq endp
 getofsforbx proc
 if ?PM
 	push ax
-	call getselattr
+	call getseglimit
 	pop ax
 	jz gofbx_2
 	mov [bAddr32],1
@@ -8963,7 +8929,7 @@ errorj10:
 
 getlenforbx proc
 if ?PM
-	call getselattr
+	call getseglimit
 	jz glfbx_1
 	push dx
 	push bx
