@@ -32,11 +32,7 @@ GDTR label fword        ; Global Descriptors Table Register
 
     .code
 
-	.386
-    include printf.inc
-
-    .386p
-
+    .386
     assume DS:DGROUP
 
 myint0d1 proc
@@ -100,7 +96,7 @@ start16 proc
     mov es,ax
     mov edi,es:[0dh*4]
 
-	int 3
+    int 3
     call EnableUnreal
 
     mov ax,cs
@@ -135,6 +131,8 @@ exit:
     mov ax,4c00h
     int 21h
 start16 endp
+
+    .386p
 
 EnableUnreal proc
     cli

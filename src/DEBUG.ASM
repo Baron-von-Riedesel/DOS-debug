@@ -6128,6 +6128,7 @@ getcsattr endp
 ;--- out: ZF=1 if in real-mode or segment limit is <= 64 kB
 
 getseglimit proc
+	push ax
 	xor ax,ax
 	cmp [machine],3
 	jb @F
@@ -6139,6 +6140,7 @@ getseglimit proc
 	.8086
 @@:
 	and ax,ax
+	pop ax
 	ret
 getseglimit endp
 
@@ -6221,9 +6223,7 @@ if ?PM
 	jz weip16
 	call verifysegm	;make bx a writeable segment
 	jc done
-	push ax
 	call getseglimit
-	pop ax
 	jz weip16
 	.386
 	mov ds,bx
@@ -8900,9 +8900,7 @@ seteq endp
 
 getofsforbx proc
 if ?PM
-	push ax
 	call getseglimit
-	pop ax
 	jz gofbx_2
 	mov [bAddr32],1
 	push bx
@@ -8926,6 +8924,7 @@ errorj10:
 ;--- a range is entered with the L/ength argument
 ;--- get a valid length for segment in BX
 ;--- L=0 means 64 kB (at least in 16bit mode)
+;--- return with NC if value ok.
 
 getlenforbx proc
 if ?PM
