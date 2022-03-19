@@ -244,3 +244,6 @@
          was always 16-bit only.
        - DEBUGX bugfix e-cmd non-interactive mode: skip test for 16-bit wrap 
          if segment is larger than 64 kB.
+       - debugxg bugfix: in v1.28, the driver version crashed when it became
+         active because the new mode detection code always returned status
+         "in protected-mode".

@@ -1,5 +1,5 @@
 ;   DEBUG.ASM Masm/JWasm assembler source for a clone of DEBUG.COM
-;           Version 1.28, 10.03.2021.
+;           Version 1.29, __.__.2022.
 
 ;   To assemble, use:
 ;       jwasm -D?PM=0 -bin -Fo debug.com debug.asm
@@ -651,7 +651,7 @@ if ?PM
 prompt3	db '#'		;protected-mode prompt
 endif
 
-helpmsg db DOSNAME, ' ', DBGNAME2, ' v1.28 help screen',CR,LF
+helpmsg db DOSNAME, ' ', DBGNAME2, ' v1.29 help screen',CR,LF
 	db 'assemble',9,	'A [address]',CR,LF
 	db 'compare',9,9,	'C range address',CR,LF
 	db 'dump',9,9,		'D [range]',CR,LF
@@ -11758,7 +11758,7 @@ initcont:
 ;--- Debug initialization code.
 ;---------------------------------------
 
-imsg1	db DBGNAME,' version 1.28.  Debugger.',CR,LF,CR,LF
+imsg1	db DBGNAME,' version 1.29.  Debugger.',CR,LF,CR,LF
 	db 'Usage: ', DBGNAME, ' [[drive:][path]progname [arglist]]',CR,LF,CR,LF
 	db '  progname (executable) file to debug or examine',CR,LF
 	db '  arglist parameters given to program',CR,LF,CR,LF
@@ -11851,9 +11851,13 @@ endif
 initcode proc
 	cld
 if DRIVER
+ if 0
 	mov ah,51h
 	int 21h
 	mov ax,bx
+ else
+    mov ax,cs
+ endif
 else
 	mov ax,cs
 	mov word ptr [execblk.cmdtail+2],ax
