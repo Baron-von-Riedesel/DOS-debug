@@ -7086,7 +7086,8 @@ clear_tf_onstack proc
 	mov es,[regs.rSS]
 if ?PM
 	mov bx,es
-	call getseglimit
+;	call getseglimit      ; v1.29: segment limit doesn't matter,
+	call getseldefsize    ; check defsize if ESP is to be used.
 	jz @F
 	.386
 	mov ebx,dword ptr [regs.rSP]
