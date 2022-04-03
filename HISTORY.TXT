@@ -247,6 +247,6 @@
        - regression in debugxg. v1.28: the driver version crashed when it 
          became active because the new mode detection code always returned 
          status "in protected-mode".
-       - regression in DEBUGX, v1.28: trace flag onto stack wasn't cleared if
-         debuggee was in protected-mode, its stack was 32-bit and ESP was 
-         greater 0ffffh.
+       - regression in DEBUGX, v1.28: on rare conditions, the debugger used
+         a wrong pointer (debuggee's SS:ESP instead of SS:SP) to clear TF on 
+         the debuggee's stack.
