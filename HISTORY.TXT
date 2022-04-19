@@ -250,3 +250,5 @@
        - regression in DEBUGX, v1.28: on rare conditions, the debugger used
          a wrong pointer (debuggee's SS:ESP instead of SS:SP) to clear TF on 
          the debuggee's stack.
+       - clear TF if child process is to be canceled ( else a "memory corrupt"
+         error may appear in DOS ).

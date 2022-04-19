@@ -7874,6 +7874,7 @@ cmd_error endp
 freemem proc
 	mov [regs.rCS],cs
 	mov [regs.rIP],offset fmem2
+	mov [regs.rFL], 202h; v1.29: ensure TF is clear ( TF=1 may cause "memory corrupt" error if returning to DOS )
 if ?PM
 	xor ax,ax
 	mov [regs.rIP+2],ax
@@ -7881,7 +7882,7 @@ if ?PM
 endif
 	mov [regs.rSS],ss
 	push ax
-	mov [regs.rSP],sp	;save sp-2
+	mov [regs.rSP],sp	; save sp-2
 	pop ax
 	call run
 	ret
