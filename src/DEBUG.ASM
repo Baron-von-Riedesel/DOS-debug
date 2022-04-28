@@ -125,6 +125,7 @@ endif
 ifndef CATCHINT31
 CATCHINT31 equ 0	;hook DPMI int 31h
 endif
+SAVEINT21  equ ?PM	;save DPMI int 21h
 ifndef DRIVER
 DRIVER     equ 0	;support to be loaded as device driver in CONFIG.SYS
 endif
@@ -993,6 +994,9 @@ dpmi32    db 0	;00=16-bit client, else 32-bit client
 bNoHook2F db 0	;1=int 2F, ax=1687h cannot be hooked (win3x/9x dos box, DosEmu?)
 bCSAttr   db 0	;current code attribute (D bit).
 bAddr32   db 0	;Address attribute. if 1, hiword(edx) is valid
+if SAVEINT21
+oldint21  df 0
+endif
 if CATCHINT31
 oldint31  df 0
 endif
@@ -1168,6 +1172,15 @@ endif
 	add dx,exc01-exc00
 	cmp si,offset endexctab
 	jb @B
+
+if SAVEINT21       ; save int 21h pm to restore it in case we quit while still in pm
+	mov bl,21h
+	mov ax,0204h
+	int 31h
+	sizeprf	;mov dword ptr [oldint21],edx
+	mov word ptr oldint21+0, dx
+	mov word ptr oldint21+4, cx
+endif
 
 if CATCHINT31
 	mov bl,31h
@@ -6540,7 +6553,7 @@ endif
 nextint:
 	lodsb
 	mov bl,al
-	add si,2	;skip rest of INTITEM
+	add si,2	; skip rest of INTITEM
 	xchg si,di
 	lodsw
 	mov dx,ax
@@ -6550,6 +6563,19 @@ nextint:
 	jz norestore
 	and ax,ax
 	jz norestore
+if ?PM
+;--- v1.29: the vectors stored in inttab are real-mode vectors,
+;--- so use the corresponding DPMI functions if still in pm!
+	call ispm
+	jz @F
+	push cx
+	mov cx, ax
+	mov ax, 0201h
+	int 31h
+	pop cx
+	jmp norestore
+@@:
+endif
 	push ds
 	mov ds,ax
 	mov al,bl
@@ -6558,6 +6584,18 @@ nextint:
 	pop ds
 norestore:
 	loop nextint
+
+if SAVEINT21
+	call ispm
+	jz @F
+	sizeprf
+	mov dx, word ptr [oldint21+0]
+	mov cx, word ptr [oldint21+4]
+	mov bl, 21h
+	mov ax, 0205h
+	int 31h
+@@:
+endif
 
 ;--- Restore termination address.
 
@@ -6575,7 +6613,12 @@ norestore:
 ;--- and load the error code returned by the debuggee
 ;--- into AL.
 
+if ?PM
+	mov ax,4c00h
+	int 21h
+else
 	int 20h			;won't work if format == MZ!
+endif
 	jmp cmdloop		;returned? then something is terribly wrong.
 
 q_cmd endp

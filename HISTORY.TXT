@@ -252,3 +252,9 @@
          the debuggee's stack.
        - clear TF if child process is to be canceled ( else a "memory corrupt"
          error may appear in DOS ).
+       - DEBUGX: when quitting while still in protected-mode, restore interrupt
+         vectors using the appropriate DPMI functions. 
+       - DEBUGX: save protected-mode interrupt vector 21h and restore it when
+         quitting while in protected-mode.
+       - DEBUGX: use int 21h, ax=4C00h to quit. Using int 20h may not work if
+         debuggee is still in protected-mode.
