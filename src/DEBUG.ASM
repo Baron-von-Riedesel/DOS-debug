@@ -4565,7 +4565,8 @@ ee9:
 	call InDos      ;v1.27: use BIOS if InDOS
 	jnz @F
 	mov ah,8		;console input without echo
-	int 21h
+;	int 21h         ;v1.29: don't use INT instruction;
+	call doscall	;might make debuggee run if int 21h is intercepted
 	jmp ee10
 @@:
 	mov ah,0h
@@ -6563,19 +6564,6 @@ nextint:
 	jz norestore
 	and ax,ax
 	jz norestore
-if ?PM
-;--- v1.29: the vectors stored in inttab are real-mode vectors,
-;--- so use the corresponding DPMI functions if still in pm!
-	call ispm
-	jz @F
-	push cx
-	mov cx, ax
-	mov ax, 0201h
-	int 31h
-	pop cx
-	jmp norestore
-@@:
-endif
 	push ds
 	mov ds,ax
 	mov al,bl
@@ -6584,18 +6572,6 @@ endif
 	pop ds
 norestore:
 	loop nextint
-
-if SAVEINT21
-	call ispm
-	jz @F
-	sizeprf
-	mov dx, word ptr [oldint21+0]
-	mov cx, word ptr [oldint21+4]
-	mov bl, 21h
-	mov ax, 0205h
-	int 31h
-@@:
-endif
 
 ;--- Restore termination address.
 
@@ -6613,12 +6589,7 @@ endif
 ;--- and load the error code returned by the debuggee
 ;--- into AL.
 
-if ?PM
-	mov ax,4c00h
-	int 21h
-else
 	int 20h			;won't work if format == MZ!
-endif
 	jmp cmdloop		;returned? then something is terribly wrong.
 
 q_cmd endp
@@ -7255,16 +7226,16 @@ uu3:
 u_cmd endp
 
 
-lockdrive:
+lockdrive:          ;lock logical volume
 	push ax
 	push bx
 	push cx
 	push dx
 	mov bl,al
 	inc bl
-	mov bh,0
-	mov cx,084Ah
-	mov dx,0001h
+	mov bh,0		;lock level (0 means what?)
+	mov cx,084Ah	;isn't this for non-FAT32 drives only?
+	mov dx,0001h	;permission flags (1=allow writes)
 	mov ax,440Dh
 	int 21h
 	pop dx
@@ -7279,9 +7250,9 @@ unlockdrive:
 	push dx
 	mov bl,al
 	inc bl
-	mov bh,0
-	mov cx,086Ah
-	mov dx,0001h
+;	mov bh,0		;bh has no meaning for unlock
+	mov cx,086Ah	;isn't this for non-FAT32 drives only?
+;	mov dx,0001h
 	mov ax,440Dh
 	int 21h
 	pop dx
@@ -7915,6 +7886,17 @@ cmd_error endp
 ;--- FREEMEM - cancel child process
 
 freemem proc
+if SAVEINT21
+	call ispm
+	jz @F
+	sizeprf
+	mov dx, word ptr [oldint21+0]   ; v1.29: reset pm int 21h vector
+	mov cx, word ptr [oldint21+4]
+	mov bl, 21h
+	mov ax, 0205h
+	int 31h
+@@:
+endif
 	mov [regs.rCS],cs
 	mov [regs.rIP],offset fmem2
 	mov [regs.rFL], 202h; v1.29: ensure TF is clear ( TF=1 may cause "memory corrupt" error if returning to DOS )

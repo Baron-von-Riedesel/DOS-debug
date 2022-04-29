@@ -381,9 +381,10 @@ The Quit command (Q) should be a no-brainer.
 Syntax: Q
 
 [DEBUGX: a DPMI client must always be terminated in protected-mode
- via an int 21h, AH=4Ch call. If the debugger becomes active while 
- the client runs real-mode code, the Q command should not be used,
- since the DPMI host won't be able to do the necessary clean-up work.
+ via an int 21h, AH=4Ch call. If the debugger becomes active in 
+ real-mode after the debuggee has done its initial switch to 
+ protected-mode, the Q command should not be used, since the DPMI
+ host won't be able to do the necessary clean-up work.
 ]
 ---
 

@@ -258,3 +258,5 @@
          quitting while in protected-mode.
        - DEBUGX: use int 21h, ax=4C00h to quit. Using int 20h may not work if
          debuggee is still in protected-mode.
+       - DEBUGX, e-cmd: don't use int 21h, ah=8 directly in interactive mode.
+       - volume unlock: removed setting registers dx/bh, since useless.
