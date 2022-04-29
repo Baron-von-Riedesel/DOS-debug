@@ -686,6 +686,9 @@ endif
 if DRIVER eq 0
 	db 'quit',9,9,		'Q',CR,LF
 endif
+if ?PM
+	db 'forced pm quit',9, 'QQ',CR,LF
+endif
 	db 'register',9,	'R [register [value]]',CR,LF
 if ?PM
 helpmsg2 label byte
@@ -6535,7 +6538,27 @@ endif
 
 ;--- cancel child's process if any
 ;--- this will drop to real-mode if debuggee is in pmode
-
+if ?PM
+;--- v1.29: debugx: if debuggee is in pm, make 'q' not quit, just exit from pm
+	call ispm
+	jz realquit
+ if SAVEINT21
+ 	and al,TOUPPER
+	cmp al,'Q'		;"qq" entered?
+	jnz @F
+;--- v1.29: reset pm int 21h vector if 'qq' has been entered
+	sizeprf	; mov edx, dword ptr [oldint21+0]
+	mov dx, word ptr [oldint21+0]
+	mov cx, word ptr [oldint21+4]
+	mov bl, 21h
+	mov ax, 0205h
+	int 31h
+@@:
+ endif
+	call freemem
+	ret
+realquit:
+endif
 	call freemem
 
 if VDD
@@ -7886,17 +7909,7 @@ cmd_error endp
 ;--- FREEMEM - cancel child process
 
 freemem proc
-if SAVEINT21
-	call ispm
-	jz @F
-	sizeprf
-	mov dx, word ptr [oldint21+0]   ; v1.29: reset pm int 21h vector
-	mov cx, word ptr [oldint21+4]
-	mov bl, 21h
-	mov ax, 0205h
-	int 31h
-@@:
-endif
+
 	mov [regs.rCS],cs
 	mov [regs.rIP],offset fmem2
 	mov [regs.rFL], 202h; v1.29: ensure TF is clear ( TF=1 may cause "memory corrupt" error if returning to DOS )

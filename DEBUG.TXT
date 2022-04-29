@@ -380,11 +380,21 @@ The Quit command (Q) should be a no-brainer.
 
 Syntax: Q
 
-[DEBUGX: a DPMI client must always be terminated in protected-mode
- via an int 21h, AH=4Ch call. If the debugger becomes active in 
- real-mode after the debuggee has done its initial switch to 
- protected-mode, the Q command should not be used, since the DPMI
- host won't be able to do the necessary clean-up work.
+[DEBUGX: If the debuggee is in protected-mode ( indicated by the
+ '#' prompt ), Q will just make the debuggee to terminate and
+ leave protected-mode. DEBUGX's real-mode prompt '-' should then
+ appear. Entering 'q' again should now quit the debugger.
+  If 'Q' doesn't leave protected-mode, then there's a problem
+ with the debuggee or the DPMI host. In this case command variant
+ 'QQ' may be tried. It forces an exit, although it might prevent
+ the debuggee to do protected-mode clean-up work.
+
+  Note: Once a DPMI client program has done an initial switch to
+ protected-mode, it must be terminated by an int 21h, ah=4Ch call
+ in this mode. If the debugger becomes active in real-mode while
+ the debuggee is still running in protected-mode, the Q command
+ should not be used, since the DPMI host won't be able to do the
+ necessary clean-up work.
 ]
 ---
 
