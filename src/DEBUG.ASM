@@ -6539,7 +6539,7 @@ endif
 ;--- cancel child's process if any
 ;--- this will drop to real-mode if debuggee is in pmode
 if ?PM
-;--- v1.29: debugx: if debuggee is in pm, make 'q' not quit, just exit from pm
+;--- v1.29: debugx: if debuggee is in pm, 'q' will try to terminate it - else it really quits
 	call ispm
 	jz realquit
  if SAVEINT21
@@ -6556,7 +6556,7 @@ if ?PM
 @@:
  endif
 	call freemem
-	ret
+	jmp ue_int
 realquit:
 endif
 	call freemem
@@ -7925,7 +7925,11 @@ endif
 	call run
 	ret
 fmem2:
+if ?PM
+	mov ax,4cffh
+else
 	mov ax,4c00h	;quit
+endif
 	int 21h
 freemem endp
 
