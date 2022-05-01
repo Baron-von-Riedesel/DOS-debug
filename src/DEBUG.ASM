@@ -1070,6 +1070,7 @@ endif
 	int 31h
 	jc fataldpmierr
 	mov ds,ax
+	@dprintf "installdpmi: client entered pm"
 	mov [cssel],cs
 	mov [dssel],ds
 	mov cx,2		;alloc 2 descriptors
