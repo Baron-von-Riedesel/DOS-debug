@@ -88,6 +88,9 @@ DBGNAME2   equ <"Debug">
 MMXSUPP    equ 0	;support MMX specific commands
 DXSUPP     equ 0
 endif
+ifndef VXCHG
+VXCHG      equ 0	;1=support video page exchange for text mode fullscreen debugging
+endif
 
 DOSNAME    equ <"DOS">
 MCB        equ 1	;support DM command
@@ -356,7 +359,13 @@ else
 		dw q_cmd
 endif
 		dw r_cmd,s_cmd,t_cmd
-		dw u_cmd,cmd_error,w_cmd
+		dw u_cmd
+if VXCHG
+		dw v_cmd
+else
+		dw cmd_error
+endif
+		dw w_cmd
 if EMSCMD
 		dw x_cmd
 else
@@ -395,12 +404,24 @@ endif
 pInDOS	dd 0		;far16 address of InDOS flag (real mode)
 if ?PM
 InDosSel dw 0		;selector value for pInDOS in protected-mode
+ if VXCHG
+xmsdrv	dd 0
+XMSM struct
+size_  dd ?
+srchdl dw ?
+srcadr dd ?
+dsthdl dw ?
+dstadr dd ?
+XMSM ends
+xmsmove  XMSM <>
+csrpos dw 0
+ endif
 endif
 if USESDA
 pSDA	dd 0		;far16 address of DOS swappable data area (real-mode)
-if ?PM
+ if ?PM
 SDASel	dw 0		;selector value for pSDA in protected-mode
-endif
+ endif
 endif
 hakstat	db 0		;whether we have hacked the vectors or not
 machine	db 0		;cpu (0=8086,1,2,3=80386,...)
@@ -705,6 +726,9 @@ endif
 	db 'trace',9,9,	'T [=address] [count]',CR,LF
 	db 'trace mode',9,	'TM [0|1]',CR,LF
 	db 'unassemble',9,	'U [range]',CR,LF
+if VXCHG
+	db 'view screen',9,	'V',CR,LF
+endif
 if DRIVER eq 0
 	db 'write program',9,'W [address]',CR,LF
 endif
@@ -6570,6 +6594,15 @@ if VDD
 @@:
 endif
 
+if VXCHG
+	mov dx,[xmsmove.dsthdl]
+	and dx, dx
+	jz @F
+	mov ah,0Ah
+	call [xmsdrv]
+@@:
+endif
+
 ;--- Restore interrupt vectors.
 
 	mov di,offset intsave
@@ -7980,6 +8013,12 @@ setint2324 endp
 ;--- This is the routine that starts up the running program.
 
 run proc
+
+if VXCHG
+	mov al, 0
+	call swapvideo
+endif
+
 	call seteq		;set CS:E/IP to '=' address
 	mov bx,[pspdbe]
 	call setpsp		;set debuggee's PSP
@@ -8244,9 +8283,112 @@ endif
 	mov di,offset progexit
 	call hexword
 @@:
+if VXCHG
+	mov al, 1
+	call swapvideo
+endif
 	ret
 
 intrtn endp
+
+if VXCHG
+
+;--- show debuggee screen
+
+v_cmd proc
+	mov al,0
+	call swapvideo
+	push es
+	mov ax, 0040h
+	mov es, ax
+	mov dx, es:[50h]
+	mov bh, es:[62h]
+	pop es
+	mov ah, 2
+	int 10h
+	mov ah, 10h
+	int 16h
+	mov al, 1
+	call swapvideo
+	ret
+v_cmd endp
+
+;--- AL=0: save debugger screen, restore debuggee screen
+;--- AL=1: save debuggee screen, restore debugger screen
+
+swapvideo proc
+	mov si, offset xmsmove
+	cmp [si].XMSM.dsthdl,0
+	jz done
+	.286
+	shl ax, 14      ; 0->0000, 1 -> 4000h
+	mov word ptr [si].XMSM.dstadr, ax
+	push 0040h
+	pop es
+	mov ax, es:[4Ch]
+	mov word ptr [si].XMSM.size_, ax
+	mov ax, es:[4Eh]
+	mov word ptr [si].XMSM.srcadr+0, ax
+
+	mov ax, es:[50h]  ;cursor pos
+	xchg ax, [csrpos]
+    mov es:[50h], ax
+
+	push ds
+	pop es
+	mov ah,0Bh
+	call runxms
+	call swapsrcdst
+	xor byte ptr [si].XMSM.srcadr+1, 40h
+	mov ah,0Bh
+	call runxms
+	call swapsrcdst
+;	xor byte ptr [si].XMSM.dstadr+1, 40h
+	ret
+swapinpm:
+done:
+	ret
+	.8086
+swapsrcdst:
+	mov ax, [si].XMSM.srchdl
+	mov cx, word ptr [si].XMSM.srcadr+0
+	mov dx, word ptr [si].XMSM.srcadr+2
+	xchg ax, [si].XMSM.dsthdl
+	xchg cx, word ptr [si].XMSM.dstadr+0
+	xchg dx, word ptr [si].XMSM.dstadr+2
+	mov [si].XMSM.srchdl, ax
+	mov word ptr [si].XMSM.srcadr+0, cx
+	mov word ptr [si].XMSM.srcadr+2, dx
+	ret
+runxms:
+if ?PM
+	call ispm
+	jnz @F
+endif
+	call [xmsdrv]
+	ret
+if ?PM
+@@:
+	.386
+	pushd 0          ; ss:sp
+	push [xmsdrv]    ; cs:ip
+	pushd 0          ; fs,gs
+	push [pspdbg]    ; ds
+	push 0           ; es
+	pushf
+	pushad
+	mov edi, esp
+	xor cx, cx
+	mov bh, 0
+	mov ax,301h
+	int 31h
+	popad
+	.8086
+	add sp, sizeof RMCS-32
+	ret
+endif
+swapvideo endp
+endif
 
 ;--- this is low-level, called on entry into the debugger.
 ;--- the debuggee's registers have already been saved here.
@@ -11797,6 +11939,40 @@ initcont:
 	jz @F
 	call loadfile
 @@:
+if VXCHG
+	mov ax,4300h
+	int 2Fh
+	cmp al,80h
+	jnz noxmm
+	mov ax,4310h
+	int 2Fh
+	mov word ptr [xmsdrv+0],bx
+	mov word ptr [xmsdrv+2],es
+	.286
+	mov dx,32           ; alloc 32 kB EMB
+	mov ah,9
+	call [xmsdrv]
+	cmp ax,1
+	jnz noxmm
+	mov si, offset xmsmove
+	mov [si].XMSM.dsthdl, dx
+	mov byte ptr [si].XMSM.dstadr+1, 40h
+	push 0
+	pop es
+	mov ax,es:[44Ch]
+	mov word ptr [si].XMSM.size_, ax
+	mov ax, es:[44Eh]
+	mov word ptr [si].XMSM.srcadr+0, ax
+	mov word ptr [si].XMSM.srcadr+2, 0B800h
+	mov ax, es:[450h]
+	mov [csrpos], ax
+	mov ah, 0Bh
+	call [xmsdrv]
+	.8086
+noxmm:
+	push ds
+	pop es
+endif
 	jmp cmdloop
 
 ;---------------------------------------
@@ -11897,7 +12073,7 @@ initcode proc
 	cld
 if DRIVER
  if 0
-	mov ah,51h
+	mov ah,51h	; don't fiddle with PSPs in the driver version!
 	int 21h
 	mov ax,bx
  else

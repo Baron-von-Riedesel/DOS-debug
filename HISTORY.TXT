@@ -259,3 +259,5 @@
          exit protected-mode and debugx's real-mode prompt '-' should appear.
        - DEBUGX: new command variant 'qq' to terminate a DPMI client that has
          intercepted protected-mode int 21h and refuses to quit.
+       - another variant - DEBUGXV - may be created. It allows to swap video
+         screen between debugger and debuggee.

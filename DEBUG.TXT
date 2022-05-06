@@ -763,10 +763,11 @@
  that happen when one tries to display memory that is inaccessible; 
  such faults usually can be safely ignored.
  
-  While the debuggee is in protected-mode, the behavior of DEBUGX's
- Q command is changed: it won't exit the debugger session, but just exit
+  As it has been mentioned at the Q command: when the debuggee is in
+ protected-mode, the behavior of DEBUGX's Q command differs from that
+ in real-mode: it won't exit the debugger session, but just exit
  protected-mde, that is, terminate the DPMI client and fall back to
- its real-mode prompt. Another Q then will quit the debugger, as usual.
+ the real-mode prompt. Another Q cmd will then quit the debugger.
  Sometimes Q may not work to exit protected-mode, then one can try
  to forcably terminate the debuggee with the command variant QQ.
   
