@@ -1,5 +1,5 @@
 ;   DEBUG.ASM Masm/JWasm assembler source for a clone of DEBUG.COM
-;           Version 1.29, __.__.2022.
+;           Version 1.29, 08.05.2022.
 
 ;   To assemble, use:
 ;       jwasm -D?PM=0 -bin -Fo debug.com debug.asm
@@ -89,7 +89,7 @@ MMXSUPP    equ 0	;support MMX specific commands
 DXSUPP     equ 0
 endif
 ifndef VXCHG
-VXCHG      equ 0	;1=support video page exchange for text mode fullscreen debugging
+VXCHG      equ 0	;1=support video swap so outputs remain separated
 endif
 
 DOSNAME    equ <"DOS">
@@ -404,8 +404,8 @@ endif
 pInDOS	dd 0		;far16 address of InDOS flag (real mode)
 if ?PM
 InDosSel dw 0		;selector value for pInDOS in protected-mode
- if VXCHG
-xmsdrv	dd 0
+endif
+if VXCHG
 XMSM struct
 size_  dd ?
 srchdl dw ?
@@ -413,9 +413,10 @@ srcadr dd ?
 dsthdl dw ?
 dstadr dd ?
 XMSM ends
-xmsmove  XMSM <>
-csrpos dw 0
- endif
+xmsdrv	dd 0        ; XMM driver address, obtained thru int 2F, ax=4310h
+xmsmove  XMSM <>    ; XMS block move struct, used to save/restore screens
+csrpos dw 0         ; cursor position of currently inactive screen
+vrows  db 0         ; current rows; to see if debuggee changed video mode
 endif
 if USESDA
 pSDA	dd 0		;far16 address of DOS swappable data area (real-mode)
@@ -6598,7 +6599,11 @@ if VXCHG
 	mov dx,[xmsmove.dsthdl]
 	and dx, dx
 	jz @F
-	mov ah,0Ah
+	push dx
+	mov al,0             ; restore debuggee screen
+	call swapscreen
+	pop dx
+	mov ah,0Ah           ; and free XMS handle
 	call [xmsdrv]
 @@:
 endif
@@ -8015,8 +8020,8 @@ setint2324 endp
 run proc
 
 if VXCHG
-	mov al, 0
-	call swapvideo
+	mov al, 0       ;restore debuggee screen
+	call swapscreen
 endif
 
 	call seteq		;set CS:E/IP to '=' address
@@ -8284,8 +8289,24 @@ endif
 	call hexword
 @@:
 if VXCHG
-	mov al, 1
-	call swapvideo
+	mov al, 1           ; restore debugger screen
+	call swapscreen
+	push es
+	mov ax, 0040h
+	mov es, ax
+	mov al, es:[84h]    ; did the number of screen rows change?
+	cmp al, [vrows]
+	mov [vrows], al
+	jz @F
+	mov dh,al           ; yes. we cannot fully restore, but at least
+	mov dl,0            ; clear bottom line to ensure the debugger displays
+	mov es:[50h],dx     ; will be seen.
+	mov bx,0007h        ; BH=video page, BL=attribute
+	mov cx,80           ; CX=columns
+	mov ax,0920h        ; AL=char to display
+	int 10h
+@@:
+	pop es
 endif
 	ret
 
@@ -8293,30 +8314,30 @@ intrtn endp
 
 if VXCHG
 
-;--- show debuggee screen
+;--- show debuggee screen, wait for a keypress, then restore debugger screen
 
 v_cmd proc
 	mov al,0
-	call swapvideo
+	call swapscreen
 	push es
-	mov ax, 0040h
-	mov es, ax
+	mov ax, 0040h      ; swapscreen has restored cursor pos in BIOS variable
+	mov es, ax         ; but we also want to see it on the screen.
 	mov dx, es:[50h]
 	mov bh, es:[62h]
 	pop es
-	mov ah, 2
+	mov ah, 2          ; set cursor pos
 	int 10h
 	mov ah, 10h
 	int 16h
 	mov al, 1
-	call swapvideo
+	call swapscreen
 	ret
 v_cmd endp
 
 ;--- AL=0: save debugger screen, restore debuggee screen
 ;--- AL=1: save debuggee screen, restore debugger screen
 
-swapvideo proc
+swapscreen proc
 	mov si, offset xmsmove
 	cmp [si].XMSM.dsthdl,0
 	jz done
@@ -8387,7 +8408,7 @@ if ?PM
 	add sp, sizeof RMCS-32
 	ret
 endif
-swapvideo endp
+swapscreen endp
 endif
 
 ;--- this is low-level, called on entry into the debugger.
@@ -11940,10 +11961,10 @@ initcont:
 	call loadfile
 @@:
 if VXCHG
-	mov ax,4300h
+	mov ax,4300h        ; check if XMM is here
 	int 2Fh
 	cmp al,80h
-	jnz noxmm
+	jnz noxmm           ; no - no screen flip
 	mov ax,4310h
 	int 2Fh
 	mov word ptr [xmsdrv+0],bx
@@ -11955,18 +11976,20 @@ if VXCHG
 	cmp ax,1
 	jnz noxmm
 	mov si, offset xmsmove
-	mov [si].XMSM.dsthdl, dx
-	mov byte ptr [si].XMSM.dstadr+1, 40h
-	push 0
-	pop es
-	mov ax,es:[44Ch]
+	mov [si].XMSM.dsthdl, dx            ; save the handle in block move struct.
+	mov byte ptr [si].XMSM.dstadr+1, 40h; the XMS memory will be used to
+	push 0                              ; save/restore 2 screens, with a max
+	pop es                              ; capacity per screen of 16 kB
+	mov ax,es:[44Ch]                    ; current screen size, might change!
 	mov word ptr [si].XMSM.size_, ax
-	mov ax, es:[44Eh]
-	mov word ptr [si].XMSM.srcadr+0, ax
-	mov word ptr [si].XMSM.srcadr+2, 0B800h
+	mov ax, es:[44Eh]                   ; page start in video memory
+	mov word ptr [si].XMSM.srcadr+0, ax ; neither page start nor page base
+	mov word ptr [si].XMSM.srcadr+2, 0B800h ; are currently tracked!
 	mov ax, es:[450h]
 	mov [csrpos], ax
-	mov ah, 0Bh
+	mov al, es:[484h]
+	mov [vrows], al
+	mov ah, 0Bh                         ; save current screen now
 	call [xmsdrv]
 	.8086
 noxmm:

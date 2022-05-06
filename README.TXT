@@ -169,10 +169,11 @@
      that set/use "unreal" mode themselves, because DebugXU will not
      change the current "unreal" state by its DX command.
 
-   - DebugXV.COM: a version that adds the 'v' command to swap screens
-     to view the debuggee screen. This version is useful to debug
-     fullscreen text mode programs, where one doesn't want the debug
-     output interfere with the program's displays.
+   - DebugXV.COM: a version that takes care that screen output of
+     debuggee and debugger are strictly separated - the new 'v'
+     command is provided to watch the debuggee screen while the
+     debugger is active. This debug version is useful to debug
+     fullscreen text mode programs.
 
   d. The following features of MS Debug are not implemented:
 

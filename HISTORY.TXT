@@ -237,7 +237,7 @@
        - DEBUGX: int 2Fh, ax=1686h to detect mode no longer used - this makes 
          interrupt 2Fh traceable.
        - bugfix 'e' cmd: don't stop input after byte '0d' has been entered.
-    1.29 [__ _____ 2022]
+    1.29 [06 May 2022]
        - DEBUGX bugfix c/d/e/m/s-cmd: an offset beyond 0ffffh was rejected if
          the segment descriptor's 'default-size' flag wasn't set.
        - DEBUGX bugfix e-cmd interactive mode: offset increment and decrement
@@ -259,5 +259,5 @@
          exit protected-mode and debugx's real-mode prompt '-' should appear.
        - DEBUGX: new command variant 'qq' to terminate a DPMI client that has
          intercepted protected-mode int 21h and refuses to quit.
-       - another variant - DEBUGXV - may be created. It allows to swap video
+       - another variant - DEBUGXV - may be created. It allows to flip video
          screen between debugger and debuggee.
