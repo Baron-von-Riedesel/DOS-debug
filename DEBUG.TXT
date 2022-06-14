@@ -211,8 +211,8 @@
 
  ---
 
- The Dump MCBs (DM) displays the current DOS PSP and the DOS Memory 
- Control Block (MCB) chain.
+ The Dump MCBs (DM) command displays the current DOS PSP and the DOS
+ Memory Control Block (MCB) chain.
  Example:
 
  PSP:1A27
@@ -319,7 +319,8 @@
  the file header determines the load address. After DEBUG loads the
  file it sets BX:CX to the file size in bytes. Recent versions of
  DEBUG display "Extended Error 1282" if the specified file cannot be
- found.
+ found. Note that if a debuggee is active when a L command is about
+ to run, it will be terminated.
 
  Syntax: L [address]
 
@@ -520,8 +521,14 @@
   INT has been processed. If TM is 1, the debugger will step "into"
   the INT.
   Furthermore, autorepeat is active for T. That is, if the last
-  command was T, a single ENTER will count as a repeated T command.]
+  command was T, a single ENTER will count as a repeated T command.
 
+  DEBUGX: the Trace command has to write to the debuggee's memory on some
+  occations ( to set a breakpoint ). In protected-mode this may be
+  prohibited, because the page to write to is read-only. Since DEBUGX
+  doesn't use the CPU-provided "hardware" breakpoints, there's no way
+  for the debugger to solve this - a "page fault" will occur.
+ ]
  ---
 
  The Unassemble command (U), when used without any parameter, causes
@@ -549,7 +556,10 @@
  address. The default starting source address is 100h. Note that
  loading a file from the DEBUG command line or with the Load command
  will set BX:CX to the size of the file, a feature clearly intended
- to aid in the patching of executables.
+ to aid in the patching of executables. DEBUG rejects to write .EXE
+ ( or .HEX ) files, since it would write it in invalid format without
+ header, but this security check is based just upon the file extension,
+ which isn't fool-proved at all.
 
  Syntax: W [address]
 

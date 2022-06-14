@@ -1,5 +1,5 @@
 ;   DEBUG.ASM Masm/JWasm assembler source for a clone of DEBUG.COM
-;           Version 1.29, 08.05.2022.
+;           Version 1.30, __.__.2022.
 
 ;   To assemble, use:
 ;       jwasm -D?PM=0 -bin -Fo debug.com debug.asm
@@ -74,6 +74,7 @@ DBGNAME2   equ <"DebugX">
 CATCHEXC06 equ 0	;catch exception 06h in protected-mode
 CATCHEXC07 equ 0	;catch exception 07h in protected-mode
 CATCHEXC0C equ 1	;catch exception 0Ch in protected-mode
+CATCHINT41 equ 1	;hook into protected-mode debug interface
 MMXSUPP    equ 1	;support MMX specific commands
 DXSUPP     equ 1	;support DX command
 DPMIMSW    equ 0	;1=use int 2F,ax=1686h to detect mode, 0=use value of cs
@@ -406,6 +407,7 @@ if ?PM
 InDosSel dw 0		;selector value for pInDOS in protected-mode
 endif
 if VXCHG
+ ifndef VXCHGBIOS
 XMSM struct
 size_  dd ?
 srchdl dw ?
@@ -417,6 +419,7 @@ xmsdrv	dd 0        ; XMM driver address, obtained thru int 2F, ax=4310h
 xmsmove  XMSM <>    ; XMS block move struct, used to save/restore screens
 csrpos dw 0         ; cursor position of currently inactive screen
 vrows  db 0         ; current rows; to see if debuggee changed video mode
+ endif
 endif
 if USESDA
 pSDA	dd 0		;far16 address of DOS swappable data area (real-mode)
@@ -438,6 +441,7 @@ mach_87	db 0		;coprocessor (0=8087,1,2,3=80387,...)
 notatty	db LF		;if standard input is from a file
 stdoutf	db 0		;flags stdout device
 switchar db 0		;switch character
+vpage	db 0		;video page the debugger is to use for BIOS output 
 swch1	db ' '		;switch character if it's a slash
 driveno db 0
 promptlen dw 0		;length of prompt
@@ -674,7 +678,7 @@ if ?PM
 prompt3	db '#'		;protected-mode prompt
 endif
 
-helpmsg db DOSNAME, ' ', DBGNAME2, ' v1.29 help screen',CR,LF
+helpmsg db DOSNAME, ' ', DBGNAME2, ' v1.30 help screen',CR,LF
 	db 'assemble',9,	'A [address]',CR,LF
 	db 'compare',9,9,	'C range address',CR,LF
 	db 'dump',9,9,		'D [range]',CR,LF
@@ -1028,6 +1032,7 @@ endif
 if CATCHINT31
 oldint31  df 0
 endif
+oldint41  df 0
 _DATA ends
 
 	include <fptostr.inc>
@@ -1222,6 +1227,15 @@ if CATCHINT31
 	xor dx,dx
 	mov dx,offset myint31
 	mov cx,cs
+	mov al,05h
+	int 31h
+endif
+if CATCHINT41
+	sizeprf	;xor edx,edx
+	xor dx,dx
+	mov dx,offset myint41
+	mov cx,cs
+	mov bl,41h
 	mov al,05h
 	int 31h
 endif
@@ -1432,6 +1446,19 @@ isdebugger32:
 
 installdpmi endp
 
+if CATCHINT41
+myint41 proc
+	cmp ax,004Fh
+	jnz @F
+	mov ax, 0F386h
+@@:
+	cmp cs:dpmi32,0
+	jz $+3
+	db 66h		;iretd
+	iret
+myint41 endp
+endif
+
 if CATCHINT31
 myint31 proc
 	cmp ax,0203h	;set exception vector?
@@ -1519,6 +1546,11 @@ if ?PM
 endif
 	call InDos
 	jz @F
+ife VXCHG
+	mov ah, 0Fh
+	int 10h
+	mov [vpage], bh ;ensure [vpage] is initialized if InDos is set
+endif
 	dec dx          ;if inside DOS, display a '!' before the real prompt
 	inc cx
 @@:
@@ -6231,7 +6263,7 @@ setcseipbyte proc
 	push es
 	mov bx,[regs.rCS]
 if ?PM
-	call verifysegm
+	call verifysegm	; checks descriptor only, can't detect r/o pages
 	jc scib_1
 endif
 	mov es,bx
@@ -6596,16 +6628,20 @@ if VDD
 endif
 
 if VXCHG
+ ifndef VXCHGBIOS
 	mov dx,[xmsmove.dsthdl]
 	and dx, dx
 	jz @F
 	push dx
+ endif
 	mov al,0             ; restore debuggee screen
 	call swapscreen
+ ifndef VXCHGBIOS
 	pop dx
 	mov ah,0Ah           ; and free XMS handle
 	call [xmsdrv]
 @@:
+ endif
 endif
 
 ;--- Restore interrupt vectors.
@@ -8288,28 +8324,60 @@ endif
 	mov di,offset progexit
 	call hexword
 @@:
+ifdef FORCETEXT
+	call checkgfx		; see if current mode is gfx, set to text if yet
+endif
 if VXCHG
 	mov al, 1           ; restore debugger screen
 	call swapscreen
+ ifndef VXCHGBIOS
 	push es
 	mov ax, 0040h
 	mov es, ax
 	mov al, es:[84h]    ; did the number of screen rows change?
+	mov bh, es:[62h]    ; BH=video page
+	mov [vpage], bh
 	cmp al, [vrows]
 	mov [vrows], al
 	jz @F
-	mov dh,al           ; yes. we cannot fully restore, but at least
-	mov dl,0            ; clear bottom line to ensure the debugger displays
-	mov es:[50h],dx     ; will be seen.
-	mov bx,0007h        ; BH=video page, BL=attribute
-	mov cx,80           ; CX=columns
-	mov ax,0920h        ; AL=char to display
+	mov dh, al          ; yes. we cannot fully restore, but at least clear
+	mov dl, 0           ; bottom line to ensure the debugger displays are seen.
+	mov ah, 2           ; set cursor pos
+	int 10h
+	mov bl, 07h         ; BL=attribute, BH=video page
+	mov cx, 80          ; CX=columns
+	mov ax, 0920h       ; AL=char to display
 	int 10h
 @@:
 	pop es
+ else
+;--- with page flips, there are problems with many BIOSes:
+;--- the debugger displays may get the color of the debuggee!
+;--- if there's any trick to convince the BIOS not to do this,
+;--- implement it here!
+    mov [vpage], 1
+ endif
 endif
 	ret
-
+ifdef FORCETEXT
+checkgfx:
+	mov dx, 3CEh 			; see if in graphics mode
+	in al, dx
+	mov bl, al
+	mov al, 6
+	out dx, al
+	inc dx
+	in al, dx
+	xchg bl, al
+	dec dx
+	out dx, al
+	test bl, 1
+	jz @F
+	mov ax, 0003h
+	int 10h
+@@:
+	retn
+endif
 intrtn endp
 
 if VXCHG
@@ -8319,14 +8387,17 @@ if VXCHG
 v_cmd proc
 	mov al,0
 	call swapscreen
-	push es
-	mov ax, 0040h      ; swapscreen has restored cursor pos in BIOS variable
-	mov es, ax         ; but we also want to see it on the screen.
-	mov dx, es:[50h]
-	mov bh, es:[62h]
-	pop es
-	mov ah, 2          ; set cursor pos
+ ifndef VXCHGBIOS
+;--- swapscreen has restored screen and cursor pos, but we want
+;--- the cursor be shown on the screen - so set it thru BIOS calls.
+
+	mov ah, 0Fh        ; get current mode (and video page in BH)
 	int 10h
+	mov ah, 3          ; get cursor pos of page in BH
+	int 10h
+	mov ah, 2          ; set cursor pos of page in BH
+	int 10h
+ endif
 	mov ah, 10h
 	int 16h
 	mov al, 1
@@ -8338,37 +8409,52 @@ v_cmd endp
 ;--- AL=1: save debuggee screen, restore debugger screen
 
 swapscreen proc
+ ifndef VXCHGBIOS
 	mov si, offset xmsmove
 	cmp [si].XMSM.dsthdl,0
 	jz done
 	.286
 	shl ax, 14      ; 0->0000, 1 -> 4000h
 	mov word ptr [si].XMSM.dstadr, ax
-	push 0040h
+
+;--- use offset & size of current video page as src/dst for
+;--- xms block move. Also toggle cursor pos debuggee/debugger.
+
+	push 0040h  ; 0040h is used because it also works in protected-mode
 	pop es
 	mov ax, es:[4Ch]
 	mov word ptr [si].XMSM.size_, ax
 	mov ax, es:[4Eh]
 	mov word ptr [si].XMSM.srcadr+0, ax
 
-	mov ax, es:[50h]  ;cursor pos
+;--- get/set cursor pos manually for speed reasons.
+	mov bl, es:[62h]
+	mov bh, 0
+	shl bx, 1
+	mov ax, es:[bx+50h]  ; get cursor pos of current page
 	xchg ax, [csrpos]
-    mov es:[50h], ax
+	mov es:[bx+50h], ax
 
 	push ds
 	pop es
-	mov ah,0Bh
+
+	mov ah,0Bh           ; save video screen to xms
 	call runxms
 	call swapsrcdst
+
 	xor byte ptr [si].XMSM.srcadr+1, 40h
-	mov ah,0Bh
+
+	mov ah,0Bh           ; restore video screen from xms
 	call runxms
 	call swapsrcdst
-;	xor byte ptr [si].XMSM.dstadr+1, 40h
-	ret
-swapinpm:
+ else
+    mov ah, 05h          ; just use BIOS to activate video page
+	int 10h
+ endif
 done:
 	ret
+
+ ifndef VXCHGBIOS
 	.8086
 swapsrcdst:
 	mov ax, [si].XMSM.srchdl
@@ -8382,32 +8468,38 @@ swapsrcdst:
 	mov word ptr [si].XMSM.srcadr+2, dx
 	ret
 runxms:
-if ?PM
+  if ?PM
 	call ispm
 	jnz @F
-endif
+  endif
 	call [xmsdrv]
 	ret
-if ?PM
+  if ?PM
 @@:
-	.386
-	pushd 0          ; ss:sp
-	push [xmsdrv]    ; cs:ip
-	pushd 0          ; fs,gs
+	.286
+	xor cx, cx
+	push cx          ; ss:sp
+	push cx
+	push word ptr [xmsdrv+2]    ; cs
+	push word ptr [xmsdrv+0]    ; ip
+	push cx          ; fs,gs
+	push cx
 	push [pspdbg]    ; ds
 	push 0           ; es
 	pushf
-	pushad
-	mov edi, esp
-	xor cx, cx
+	sub sp, 8*4
+	sizeprf        ;mov edi, esp
+	mov di, sp
+	mov es:[di].RMCS.rSI, si
+	mov es:[di].RMCS.rAX, ax
 	mov bh, 0
 	mov ax,301h
 	int 31h
-	popad
+	add sp, sizeof RMCS
 	.8086
-	add sp, sizeof RMCS-32
 	ret
-endif
+  endif
+ endif
 swapscreen endp
 endif
 
@@ -11774,7 +11866,7 @@ stdout proc
 	mov si,dx
 @@:
 	lodsb
-	mov bx,0007
+	mov bh,[vpage]  ;v1.30: use the current video page
 	mov ah,0Eh
 	int 10h
 	loop @B
@@ -11961,6 +12053,7 @@ initcont:
 	call loadfile
 @@:
 if VXCHG
+ ifndef VXCHGBIOS
 	mov ax,4300h        ; check if XMM is here
 	int 2Fh
 	cmp al,80h
@@ -11983,16 +12076,49 @@ if VXCHG
 	mov ax,es:[44Ch]                    ; current screen size, might change!
 	mov word ptr [si].XMSM.size_, ax
 	mov ax, es:[44Eh]                   ; page start in video memory
-	mov word ptr [si].XMSM.srcadr+0, ax ; neither page start nor page base
-	mov word ptr [si].XMSM.srcadr+2, 0B800h ; are currently tracked!
-	mov ax, es:[450h]
-	mov [csrpos], ax
+	mov word ptr [si].XMSM.srcadr+0, ax
+	mov ax, 0B000h
+	cmp byte ptr es:[463h],0B4h
+	jz @F
+	or ah, 8
+@@:
+	mov word ptr [si].XMSM.srcadr+2, ax
 	mov al, es:[484h]
 	mov [vrows], al
+	mov ah, 0Fh                         ; get active video page in BH
+	int 10h
+	mov ah, 03h                         ; get cursor pos in DX of active page
+	int 10h
+	mov [csrpos], dx
 	mov ah, 0Bh                         ; save current screen now
 	call [xmsdrv]
 	.8086
 noxmm:
+ else
+;--- use BIOS to swap page 0/1, a simple approach
+;--- that in theory would fit perfectly, but
+;--- unfortunately in reality may have quirks.
+	xor ax, ax
+	mov es, ax
+	mov si, es:[44Eh]
+	mov cx, es:[44Ch]
+	shr cx, 1
+	mov ax, 0501h       ; debugger page is 1
+	int 10h
+	mov di, es:[44Eh]
+	mov dx, es:[450h+0*1]
+	mov es:[450h+1*2], dx
+	mov ax, 0B000h
+	cmp byte ptr es:[463h],0B4h
+	jz @F
+	or ah, 8
+@@:
+	mov es, ax
+	push ds
+	mov ds, ax
+	rep movsw
+	pop ds
+ endif
 	push ds
 	pop es
 endif
@@ -12002,7 +12128,7 @@ endif
 ;--- Debug initialization code.
 ;---------------------------------------
 
-imsg1	db DBGNAME,' version 1.29.  Debugger.',CR,LF,CR,LF
+imsg1	db DBGNAME,' version 1.30.  Debugger.',CR,LF,CR,LF
 	db 'Usage: ', DBGNAME, ' [[drive:][path]progname [arglist]]',CR,LF,CR,LF
 	db '  progname (executable) file to debug or examine',CR,LF
 	db '  arglist parameters given to program',CR,LF,CR,LF
