@@ -74,13 +74,14 @@ DBGNAME2   equ <"DebugX">
 CATCHEXC06 equ 0	;catch exception 06h in protected-mode
 CATCHEXC07 equ 0	;catch exception 07h in protected-mode
 CATCHEXC0C equ 1	;catch exception 0Ch in protected-mode
+CATCHINT21 equ 1	;hook into protected-mode int 21h
 CATCHINT41 equ 1	;hook into protected-mode debug interface
 MMXSUPP    equ 1	;support MMX specific commands
 DXSUPP     equ 1	;support DX command
 DPMIMSW    equ 0	;1=use int 2F,ax=1686h to detect mode, 0=use value of cs
-ifndef USEUNREAL
+ ifndef USEUNREAL
 USEUNREAL  equ 0	;set to 1 if debug is to use unreal-mode (for DX/EX cmd)
-endif
+ endif
 else
 VDD        equ 0
 NOEXTENDER equ 0
@@ -129,7 +130,6 @@ endif
 ifndef CATCHINT31
 CATCHINT31 equ 0	;hook DPMI int 31h
 endif
-SAVEINT21  equ ?PM	;save DPMI int 21h
 ifndef DRIVER
 DRIVER     equ 0	;support to be loaded as device driver in CONFIG.SYS
 endif
@@ -1026,13 +1026,21 @@ dpmi32    db 0	;00=16-bit client, else 32-bit client
 bNoHook2F db 0	;1=int 2F, ax=1687h cannot be hooked (win3x/9x dos box, DosEmu?)
 bCSAttr   db 0	;current code attribute (D bit).
 bAddr32   db 0	;Address attribute. if 1, hiword(edx) is valid
-if SAVEINT21
-oldint21  df 0
+
+pmvectors label fword	; vectors must be consecutive and in this order!
+if CATCHINT41
+oldint41  label dword
+	dw 0, 0, 0
 endif
 if CATCHINT31
-oldint31  df 0
+oldint31  label dword
+	dw 0, 0, 0
 endif
-oldint41  df 0
+if CATCHINT21
+oldint21  label dword
+	dw 0, 0, 0
+endif
+
 _DATA ends
 
 	include <fptostr.inc>
@@ -1165,7 +1173,7 @@ endif
 
 	sizeprf	;push edi
 	push di
-	xor bp,bp
+	mov bp, 2
 	cmp dpmi32,0
 	jz @F
 	inc bp
@@ -1177,7 +1185,7 @@ endif
 	mov word ptr [dpmi_rmsav+2],bx
 	sizeprf	;mov dword ptr [dpmi_pmsav],edi
 	mov word ptr [dpmi_pmsav],di
-	mov word ptr ds:[bp+dpmi_pmsav+2],si
+	mov word ptr ds:[bp+dpmi_pmsav],si
 	mov word ptr [dpmi_size],ax
 	mov ax,0306h			;get raw-mode switch addresses
 	int 31h
@@ -1185,7 +1193,7 @@ endif
 	mov word ptr [dpmi_rm2pm+2],bx
 	sizeprf	;mov dword ptr [dpmi_pm2rm],edi
 	mov word ptr [dpmi_pm2rm],di
-	mov word ptr ds:[bp+dpmi_pm2rm+2],si
+	mov word ptr ds:[bp+dpmi_pm2rm],si
 	sizeprf	;pop edi
 	pop di
 
@@ -1207,37 +1215,48 @@ endif
 	cmp si,offset endexctab
 	jb @B
 
-if SAVEINT21       ; save int 21h pm to restore it in case we quit while still in pm
-	mov bl,21h
-	mov ax,0204h
-	int 31h
-	sizeprf	;mov dword ptr [oldint21],edx
-	mov word ptr oldint21+0, dx
-	mov word ptr oldint21+4, cx
-endif
+;--- hook protected-mode interrupts
 
-if CATCHINT31
-	mov bl,31h
-	mov ax,0204h
-	int 31h
-	sizeprf	;mov dword ptr [oldint31],edx
-	mov word ptr oldint31,dx
-	mov word ptr ds:[bp+oldint31+2],cx
-	sizeprf	;xor edx,edx
-	xor dx,dx
-	mov dx,offset myint31
-	mov cx,cs
-	mov al,05h
-	int 31h
-endif
+CONST segment
+
+pmints label byte
 if CATCHINT41
-	sizeprf	;xor edx,edx
-	xor dx,dx
-	mov dx,offset myint41
-	mov cx,cs
-	mov bl,41h
-	mov al,05h
+	db 41h
+	dw myint41
+endif
+if CATCHINT31
+	db 31h
+	dw myint31
+endif
+if CATCHINT21
+	db 21h
+	dw myint21
+endif
+LPMINTS equ ($ - offset pmints) / 3
+CONST ends
+
+if LPMINTS
+	mov si, offset pmvectors
+	mov di, offset pmints
+	mov cx, LPMINTS
+nextpmint:
+	mov bl, cs:[di]
+	push cx
+	mov ax, 204h
 	int 31h
+	sizeprf	;mov [si], edx
+	mov [si], dx
+	mov ds:[si+bp], cx
+	sizeprf	;xor edx, edx
+	xor dx, dx
+	mov dx, [di+1]
+	mov cx, cs
+	mov al, 5
+	int 31h
+	add si, sizeof fword
+	add di, 3
+	pop cx
+	loop nextpmint
 endif
 
 	sizeprf	;pop edx
@@ -1448,27 +1467,49 @@ installdpmi endp
 
 if CATCHINT41
 myint41 proc
-	cmp ax,004Fh
-	jnz @F
-	mov ax, 0F386h
+	cmp ax, 004Fh
+	jz is4f
+	cmp cs:[dpmi32], 0
+	jz @F
+	db 66h
 @@:
-	cmp cs:dpmi32,0
-	jz $+3
-	db 66h		;iretd
-	iret
+	jmp cs:[oldint41]
+is4f:
+	mov ax, 0F386h
+	jmp execiret
 myint41 endp
+endif
+
+if CATCHINT21
+myint21 proc
+	cmp ah,04Ch
+	jz is4c
+prevint21:
+	cmp cs:[dpmi32], 0
+	jz @F
+	db 66h
+@@:
+	jmp cs:[oldint21]
+is4c:
+	push ds
+	mov ds, cs:[dssel]
+	call exitdpmi
+	pop ds
+	jmp prevint21
+myint21 endp
 endif
 
 if CATCHINT31
 myint31 proc
 	cmp ax,0203h	;set exception vector?
-	jz @F
+	jz is203
 notinterested:
-	cmp cs:dpmi32,0
-	jz $+3
-	db 66h		;jmp fword ptr []
-	jmp dword ptr cs:[oldint31]
+	cmp cs:[dpmi32], 0
+	jz @F
+	db 66h
 @@:
+	jmp cs:[oldint31]
+is203:
 	cmp bl,1
 	jz @F
 	cmp bl,3
@@ -1476,31 +1517,29 @@ notinterested:
 	cmp bl,0Dh
 	jz @F
 	cmp bl,0Eh
-	jz @F
-	jmp notinterested
+	jnz notinterested
 @@:
-	cmp cs:dpmi32,0
-	jz $+3
-	db 66h		;iretd
-	iret
-
+;	jmp execiret
 myint31 endp
 endif
 
+;--- fall thru!
+
+execiret:
+	cmp cs:[dpmi32], 0
+	jz @F
+	db 66h		; iretd
+@@:
+	iret
 
 i23pm:
-	cmp cs:[dpmi32],0
-	jz @F
-	db 66h
-	retf 4
-@@:
-	retf 2
 i24pm:
 	cmp cs:[dpmi32],0
 	jz @F
-	db 66h
+	db 66h		; retd
+	retf 4
 @@:
-	iret
+	retf 2
 
 	.8086
 
@@ -6583,6 +6622,37 @@ endif
 
 p_cmd endp
 
+if ?PM
+exitdpmi proc
+
+	push ax
+if LPMINTS
+	mov bp, 2
+	cmp dpmi32, 0
+	jz @F
+	add bp, 2
+@@:
+	mov si, offset pmvectors
+	mov di, offset pmints
+	mov cx, LPMINTS
+nextpmint:
+	push cx
+	mov bl, [di]
+	sizeprf	; mov edx, [si]
+	mov dx, [si]
+	mov cx, ds:[si+bp]
+	mov ax, 205h
+	int 31h
+	add di, 3
+	add si, sizeof fword
+	pop cx
+	loop nextpmint
+endif
+	pop ax
+	ret
+exitdpmi endp
+endif
+
 if DRIVER eq 0
 
 ;--- Q command - quit.
@@ -6600,19 +6670,11 @@ if ?PM
 ;--- v1.29: debugx: if debuggee is in pm, 'q' will try to terminate it - else it really quits
 	call ispm
 	jz realquit
- if SAVEINT21
- 	and al,TOUPPER
+	and al,TOUPPER
 	cmp al,'Q'		;"qq" entered?
 	jnz @F
-;--- v1.29: reset pm int 21h vector if 'qq' has been entered
-	sizeprf	; mov edx, dword ptr [oldint21+0]
-	mov dx, word ptr [oldint21+0]
-	mov cx, word ptr [oldint21+4]
-	mov bl, 21h
-	mov ax, 0205h
-	int 31h
+	call exitdpmi
 @@:
- endif
 	call freemem
 	jmp ue_int
 realquit:

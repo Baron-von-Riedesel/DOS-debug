@@ -266,3 +266,5 @@
          something if the InDOS flag is set AND page swapping is active.
        - DEBUGX: hook into protected-mode debug interface Int 41h and make
          debugger visible there.
+       - DEBUGX: restore hooked protected-mode interrupts when client
+         terminates.
