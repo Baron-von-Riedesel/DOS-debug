@@ -99,6 +99,7 @@ MCB        equ 1	;support DM command
 EMSCMD     equ 1	;support Xx commands
 USESDA     equ 1	;use SDA to get/set PSP in real-mode
 STACKSIZ   equ 200h	;debug's stack size
+SYSRQINT   equ 9	;if CATCHSYSREQ==1, defines the method (int 09h or int 15h)
 
 ifndef CATCHINT01
 CATCHINT01 equ 1	;catch INT 01 (single-step)
@@ -126,6 +127,9 @@ CATCHEXC0C equ 0	;catch exception 0Ch in protected-mode
 endif
 ifndef CATCHINT0D
 CATCHINT0D equ 0	;catch exception 0Dh in real-mode
+endif
+ifndef CATCHSYSREQ
+CATCHSYSREQ equ 0	;catch int 15h (sysreq)
 endif
 ifndef CATCHINT31
 CATCHINT31 equ 0	;hook DPMI int 31h
@@ -497,7 +501,7 @@ else
 packet PACKET <0,0,0,0>
 endif
 
-intsave label dword
+intsave label dword	; must match order in inttab
 		dd 0	;saved vector i00
 if CATCHINT01
 		dd 0	;saved vector i01
@@ -517,8 +521,11 @@ endif
 if CATCHINT0D
 oldi0D	dd 0	;saved vector i0D
 endif
+if CATCHSYSREQ
+oldisrq	dd 0	;saved vector i09/i15
+endif
 		dd 0	;saved vector i22
-if ?PM
+if ?PM ;must be last
 oldi2f	dd 0
 endif
 
@@ -579,7 +586,7 @@ INTITEM struct
 	dw ?
 INTITEM ends
 
-inttab label INTITEM
+inttab label INTITEM	; must match order in intsave
 	INTITEM <00h, intr00>
 if CATCHINT01
 	INTITEM <01h, intr01>
@@ -599,13 +606,13 @@ endif
 if CATCHINT0D
 	INTITEM <0Dh, intr0D>
 endif
+if CATCHSYSREQ
+	INTITEM <SYSRQINT, intrsrq>
+endif
 	INTITEM <22h, intr22>
 NUMINTS = ( $ - inttab ) / sizeof INTITEM
 if ?PM
 	db 2Fh
-NUMINTSX = NUMINTS+1
-else
-NUMINTSX = NUMINTS
 endif
 
 ;--- register names for 'r'. One item is 2 bytes.
@@ -801,6 +808,9 @@ exc06msg db 'Invalid opcode fault',CR,LF,'$'
 endif
 if CATCHINT07 or CATCHEXC07
 exc07msg db 'Coprocessor not present',CR,LF,'$'
+endif
+if CATCHSYSREQ
+sysrqmsg db 'SysRq detected',CR,LF,'$'
 endif
 if EXCCSIP
 excloc	db 'CS:IP=',0
@@ -5260,30 +5270,30 @@ getpsp proc
 if ?PM
 	call ispm
 	jz getpsp_rm
-if NOEXTENDER
+ if NOEXTENDER
 	call doscallx
 	mov ax,2
 	int 31h
 	mov bx,ax
 	ret
-else
+ else
 	jmp doscall_rm
-endif
+ endif
 getpsp_rm:
 endif
 
 if USESDA
-if ?PM
+ if ?PM
 	cmp word ptr [pSDA+2],0
 	jz doscall_rm
-endif
+ endif
 	push ds
 	push si
-if ?PM
+ if ?PM
 	call LoadSDA
-else
+ else
 	lds si,[pSDA]
-endif
+ endif
 	mov bx,[si+10h]
 	pop si
 	pop ds
@@ -6710,27 +6720,26 @@ endif
 
 	mov di,offset intsave
 	mov si,offset inttab
-	mov cx,NUMINTSX
+if ?PM
+	mov cx,NUMINTS+1
+else
+	mov cx,NUMINTS
+endif
 nextint:
 	lodsb
-	mov bl,al
-	add si,2	; skip rest of INTITEM
-	xchg si,di
-	lodsw
-	mov dx,ax
-	lodsw
-	xchg si,di
-	cmp bl,22h
-	jz norestore
-	and ax,ax
-	jz norestore
 	push ds
-	mov ds,ax
-	mov al,bl
+	add si,2	; skip rest of INTITEM
+	lds dx, [di]
+	add di,4
+	cmp al,22h
+	jz norestore
+	mov bx, ds
+	and bx, bx
+	jz norestore
 	mov ah,25h
 	int 21h
-	pop ds
 norestore:
+	pop ds
 	loop nextint
 
 ;--- Restore termination address.
@@ -7628,9 +7637,30 @@ io_error:
 	mov dx,offset openerr	;Error ____ opening file
 @@:
 int21ah9::
+if 1 ;v1.30: check InDos, if set use stdout()
+	call InDos
+	jnz use_stdout
+endif
 	mov ah,9
 	call doscall
 	ret
+if 1 ;v1.30: get size of $-string DS:DX, then call stdout; SI, CX not modified
+use_stdout:
+	push si
+	push cx
+	mov si, dx
+@@:
+	lodsb
+	cmp al, '$'
+	jnz @B
+	dec si
+	sub si, dx
+	mov cx, si
+	call stdout
+	pop cx
+	pop si
+	ret
+endif
 
 if EMSCMD
 
@@ -8071,8 +8101,9 @@ endif
 freemem endp
 
 ;--- this is called by "run"
-;--- better don't use INTs inside
-;--- set debuggee's INT 23/24
+;--- set debuggee's INT 23/24.
+;--- don't use INT 21h here, DOS might be "in use".
+;--- registers may be modified - will soon be set to debuggee's
 
 setint2324 proc
 	mov si,offset run2324
@@ -8091,7 +8122,10 @@ endif
 	movsw
 
 if ?PM
+	call InDos
+	jnz @F
 	call hook2f
+@@:
 endif
 
 	pop es
@@ -8282,6 +8316,37 @@ intr0D:
 	jmp intrtn
 endif
 
+if CATCHSYSREQ
+@@:
+	jmp cs:[oldisrq]
+intrsrq:
+	test cs:[bInDbg], 1
+	jnz @B
+ if SYSRQINT eq 15h
+	cmp ax, 8501h	;sysreq released?
+	jnz @B
+ else
+	pushf
+	push cs
+	call @B
+	push ds
+	.286
+	push 40h
+	.8086
+	pop ds
+	test byte ptr ds:[18h], 4
+	pop ds
+	jnz @F
+	iret
+@@:
+ endif
+ if ?PM
+	inc cs:[bNoHook2F]	; disable hooking
+ endif
+	mov cs:[run_int],offset sysrqmsg	;remember interrupt type
+	jmp intrtn
+endif
+
 ;--- Interrupt 3 (breakpoint interrupt) handler.
 
 intr03:
@@ -8351,18 +8416,18 @@ intrtn1::		;<--- entry for int 22
 if ?PM
 ;--- calling int 2Fh here is a problem, since breakpoints aren't reset yet.
 ;--- this makes it impossible to trace this interrupt.
-if DPMIMSW
+ if DPMIMSW
 	mov ax,1686h
 	int 2Fh
 	cmp ax,1
 	sbb ax,ax
-else
+ else
 	mov ax,cs
 	sub ax,[pspdbg]	;Z=rm,NZ=pm
 	cmp ax,1		;C=rm,NC=pm
 	cmc             ;NC=rm,C=pm
 	sbb ax,ax		;0=rm,-1=pm
-endif
+ endif
 	mov [regs.msw],ax	;0000=real-mode, FFFF=protected-mode
 endif
 
@@ -8449,10 +8514,9 @@ if VXCHG
 v_cmd proc
 	mov al,0
 	call swapscreen
- ifndef VXCHGBIOS
+ if 0;ndef VXCHGBIOS   ; v1.30: no longer needed, swapscreen has set cursor
 ;--- swapscreen has restored screen and cursor pos, but we want
 ;--- the cursor be shown on the screen - so set it thru BIOS calls.
-
 	mov ah, 0Fh        ; get current mode (and video page in BH)
 	int 10h
 	mov ah, 3          ; get cursor pos of page in BH
@@ -8493,9 +8557,15 @@ swapscreen proc
 	mov bl, es:[62h]
 	mov bh, 0
 	shl bx, 1
-	mov ax, es:[bx+50h]  ; get cursor pos of current page
-	xchg ax, [csrpos]
-	mov es:[bx+50h], ax
+	mov dx, es:[bx+50h]  ; get cursor pos of current page
+	xchg dx, [csrpos]
+if 0
+	mov es:[bx+50h], dx
+else
+	mov bh, es:[62h]
+	mov ah, 2
+	int 10h
+endif
 
 	push ds
 	pop es

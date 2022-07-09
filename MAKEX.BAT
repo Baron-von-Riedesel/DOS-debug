@@ -16,5 +16,5 @@ jwasm -nologo -D?PM=1 -mz  -Fo build\DEBUGXG.EXE -Fl=build\DEBUGXG.LST -DCATCHIN
 echo creating debugxU - dx cmd uses unreal mode
 jwasm -nologo -D?PM=1 -bin -Fo build\DEBUGXU.COM -Fl=build\DEBUGXU.LST -DUSEUNREAL=1 -DCATCHINT0D=1 src\debug.asm
 
-echo creating debugxV - v cmd flips screens
-jwasm -nologo -D?PM=1 -bin -Fo build\DEBUGXV.COM -Fl=build\DEBUGXV.LST -DVXCHG=1 src\debug.asm
+echo creating debugxV - v cmd flips screens & sysreq trapped
+jwasm -nologo -D?PM=1 -bin -Fo build\DEBUGXV.COM -Fl=build\DEBUGXV.LST -DVXCHG=1 -DCATCHSYSREQ=1 src\debug.asm

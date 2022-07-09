@@ -172,7 +172,8 @@
    - DebugXV.COM: a version that takes care that screen output of
      debuggee and debugger are strictly separated - the new 'v'
      command is provided to watch the debuggee screen while the
-     debugger is active. This debug version is useful to debug
+     debugger is active. Additionally, the SysReq key is detected and
+     will activate the debugger. This debug version is useful to debug
      fullscreen text mode programs.
 
   d. The following features of MS Debug are not implemented:

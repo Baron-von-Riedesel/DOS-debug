@@ -268,3 +268,5 @@
          debugger visible there.
        - DEBUGX: restore hooked protected-mode interrupts when client
          terminates.
+       - DEBUGXV: break if SYSREQ is pressed.
+       - fixed: routine int21ah9 did use DOS, even if InDos flag was set.
