@@ -767,7 +767,7 @@
  those quirks it's usually the best option to install the DPMI host
  before DEBUGX is started.
 
-  During debugging, DEBUGX may get active in both protected-mode and
+  During debugging, DEBUGX may become active in both protected-mode and
  real-mode - it is a bimodal application, in this regard rather unique.
  While the debugger is active in protected-mode, it may display faults
  that happen when one tries to display memory that is inaccessible; 

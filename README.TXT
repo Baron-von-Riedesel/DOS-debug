@@ -142,6 +142,12 @@
 
    - 'rm' displays MMX registers.
 
+   - commandline option /2 may direct DebugX's output to a monochrome video
+     adapter if one is available. Useful for emulators that support such
+     features ( 86Box, for example ). Needs at least a VGA compatible card,
+     and there's no guarantee that it works as expected.
+
+
   c. Optionally, one may create special-purpose versions of DebugX.
      Run file makex.bat to create them; you'll need the JWasm assembler
      for a successful run. The additional versions are:

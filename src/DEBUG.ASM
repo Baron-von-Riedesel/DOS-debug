@@ -93,6 +93,9 @@ endif
 ifndef VXCHG
 VXCHG      equ 0	;1=support video swap so outputs remain separated
 endif
+ifndef ALTVID
+ALTVID     equ 0    ;1=support alternate video adapter
+endif
 
 DOSNAME    equ <"DOS">
 MCB        equ 1	;support DM command
@@ -424,6 +427,14 @@ xmsmove  XMSM <>    ; XMS block move struct, used to save/restore screens
 csrpos dw 0         ; cursor position of currently inactive screen
 vrows  db 0         ; current rows; to see if debuggee changed video mode
  endif
+endif
+if ALTVID           ; exchange some video BIOS data fields for option /2.
+oldcsrpos dw 0      ; cursor position
+oldcrtp   dw 0      ; CRTC port
+oldcols   dw 80     ; columns
+oldmr label word
+oldmode   db 0      ; video mode
+oldrows   db 24     ; rows - 1
 endif
 if USESDA
 pSDA	dd 0		;far16 address of DOS swappable data area (real-mode)
@@ -6715,6 +6726,9 @@ if VXCHG
 @@:
  endif
 endif
+if ALTVID
+	call setscreen
+endif
 
 ;--- Restore interrupt vectors.
 
@@ -8155,6 +8169,9 @@ if VXCHG
 	mov al, 0       ;restore debuggee screen
 	call swapscreen
 endif
+if ALTVID
+	call setscreen
+endif
 
 	call seteq		;set CS:E/IP to '=' address
 	mov bx,[pspdbe]
@@ -8485,6 +8502,9 @@ if VXCHG
     mov [vpage], 1
  endif
 endif
+if ALTVID
+	call setscreen
+endif
 	ret
 ifdef FORCETEXT
 checkgfx:
@@ -8633,6 +8653,39 @@ runxms:
   endif
  endif
 swapscreen endp
+endif
+
+if ALTVID
+
+;--- switch to debugger/debuggee screen with option /2.
+;--- since DOS/BIOS is used for output, there's no guarantee that it will work.
+
+setscreen proc
+	ret	;will be patched to "push ds" if "/2" cmdline switch and second adapter exists
+	mov dx, [oldcrtp]
+	mov bx, [oldcols]
+	mov ax, [oldmr]
+	mov cx, 0040h         ; 0040h is supposed to work in both rm/pm
+	mov ds, cx
+	mov cx, cs:[oldcsrpos]
+	and byte ptr ds:[10h], not 30h
+	cmp dl, 0b4h
+	jnz @F
+	or  byte ptr ds:[10h], 30h
+@@:
+	xchg bx,ds:[4Ah]
+	xchg cx,ds:[50h]
+	xchg dx,ds:[63h]
+	xchg al,ds:[49h]
+	xchg ah,ds:[84h]
+	pop ds
+	mov [oldcrtp], dx
+	mov [oldcsrpos], cx
+	mov [oldcols], bx
+	mov [oldmr], ax
+	ret
+setscreen endp
+
 endif
 
 ;--- this is low-level, called on entry into the debugger.
@@ -12254,14 +12307,27 @@ noxmm:
 	push ds
 	pop es
 endif
+if ALTVID
+;	mov al, ALTSCREENBITS
+	call setscreen
+endif
 	jmp cmdloop
 
 ;---------------------------------------
 ;--- Debug initialization code.
 ;---------------------------------------
 
+if ALTVID
+ALTSWHLP textequ <' [/2]',>
+else
+ALTSWHLP textequ <>
+endif
+
 imsg1	db DBGNAME,' version 1.30.  Debugger.',CR,LF,CR,LF
-	db 'Usage: ', DBGNAME, ' [[drive:][path]progname [arglist]]',CR,LF,CR,LF
+	db 'Usage: ', DBGNAME, ALTSWHLP ' [[drive:][path]progname [arglist]]',CR,LF,CR,LF
+if ALTVID
+	db '  /2: use alternate video adapter for output if available',CR,LF
+endif
 	db '  progname (executable) file to debug or examine',CR,LF
 	db '  arglist parameters given to program',CR,LF,CR,LF
 	db 'For a list of debugging commands, '
@@ -12596,16 +12662,16 @@ nopatch:
 
 ;--- Interpret switches and erase them from the command line.
 
-	mov ax,3700h		;get switch character
+	mov ax,3700h		;get switch character in DL
 	int 21h
 	mov [switchar],dl
 	cmp dl,'/'
 	jne @F
 	mov [swch1],dl
 @@:
-
 if DRIVER eq 0
 	mov si,DTA+1
+contparse:
 @@:
 	lodsb
 	cmp al,' '
@@ -12616,36 +12682,63 @@ if DRIVER eq 0
 ;--- Process the /? switch (or the [switchar]? switch).
 ;--- If switchar != / and /? occurs, make sure nothing follows.
 
-	cmp al,dl
-	je init11		;if switch character
+	cmp al,[switchar]
+	je @F			;if switch character
 	cmp al,'/'
-	jne init12		;if not the help switch
-	mov al,[si]
+	jne doneoptions	;if not the help switch
+@@:
+	lodsb
 	cmp al,'?'
-	jne init12		;if not /?
-	mov al,[si+1]
-	cmp al,' '
-	je init10		;if nothing after /?
-	cmp al,TAB
-	je init10		;ditto
-	cmp al,CR
-	jne init12		;if not end of line
-
-;--- Print a help message
-
-init10:
+	jne @F
+helpexit:			; Print help message and exit
 	mov dx,offset imsg1	;command-line help message
 	call int21ah9	;print string
 	int 20h			;done
-
-;--- Do the (proper) switches.
-
-init11:
-	lodsb
-	cmp al,'?'
-	je init10		;if -?
+@@:
 
 ;--- ||| Other switches may go here.
+
+if ALTVID
+	cmp al,'2'
+	jnz noaltvidsw
+	mov ax, 1A00h
+	int 10h
+	cmp al, 1Ah
+	jnz noaltvid
+	cmp bh, 0
+	jz noaltvid
+	mov byte ptr [setscreen], 1Eh	;"push ds"
+	push ds
+	mov ax, 40h
+	mov ds, ax
+	mov dx, ds:[63h]
+	pop ds
+	xor dl, 60h
+	mov [oldcrtp], dx
+	mov al, 7
+	cmp dl, 0B4h
+	jz @F
+	mov al, 3
+@@:
+	mov [oldmode], al
+	mov al, 0eh
+	out dx, al
+	inc dx
+	in al, dx
+	mov ah, al
+	dec dx
+	mov al, 0fh
+	out dx, al
+	inc dx
+	in al, dx
+	mov bl, 80
+	div bl
+	xchg al, ah
+	mov [oldcsrpos], ax
+noaltvid:
+	jmp contparse
+noaltvidsw:
+endif
 
 	mov [imsg2a],al
 	mov dx,offset imsg2	;Invalid switch
@@ -12655,7 +12748,7 @@ init11:
 
 ;--- Feed the remaining command line to the 'n' command.
 
-init12:
+doneoptions:
 	dec si
 	lodsb
 	call n_cmd		;process the rest of the line
