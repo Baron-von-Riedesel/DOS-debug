@@ -1048,6 +1048,7 @@ bNoHook2F db 0	;1=int 2F, ax=1687h cannot be hooked (win3x/9x dos box, DosEmu?)
 bCSAttr   db 0	;current code attribute (D bit).
 bAddr32   db 0	;Address attribute. if 1, hiword(edx) is valid
 
+;--- pmints and pmvectors must match!
 pmvectors label fword	; vectors must be consecutive and in this order!
 if CATCHINT41
 oldint41  label dword
@@ -1240,7 +1241,7 @@ endif
 
 CONST segment
 
-pmints label byte
+pmints label byte     ;pmints and pmvectors must match!
 if CATCHINT41
 	db 41h
 	dw myint41
@@ -1664,11 +1665,11 @@ waitkey proc
 	jnz nowait
 	test [stdoutf],80h	;stdout a file?
 	jz nowait
-	push es
+	push ds
 	mov ax,40h		;0040h is a bimodal segment/selector
-	mov es,ax
-	cmp byte ptr es:[84h],30  ;rows >= 30?
-	pop es
+	mov ds,ax
+	cmp byte ptr ds:[84h],30  ;rows >= 30?
+	pop ds
 	jnc nowait
 	mov dx,offset presskey
 	mov cx,sizeof presskey
@@ -8659,6 +8660,7 @@ if ALTVID
 
 ;--- switch to debugger/debuggee screen with option /2.
 ;--- since DOS/BIOS is used for output, there's no guarantee that it will work.
+;--- this code assumes that page 0 is set. 
 
 setscreen proc
 	ret	;will be patched to "push ds" if "/2" cmdline switch and second adapter exists
@@ -12308,7 +12310,6 @@ noxmm:
 	pop es
 endif
 if ALTVID
-;	mov al, ALTSCREENBITS
 	call setscreen
 endif
 	jmp cmdloop
@@ -12721,6 +12722,11 @@ if ALTVID
 	mov al, 3
 @@:
 	mov [oldmode], al
+
+;--- to initially get the cursor pos of the alt screen, read the CRT.
+;--- this code assumes that page 0 is active ( offset == 0 );
+;--- could be fixed by reading CRT 0Ch/0Dh.
+
 	mov al, 0eh
 	out dx, al
 	inc dx

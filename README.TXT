@@ -136,16 +136,16 @@
      DEBXXVDD.DLL. This DLL will allow DebugX to successfully execute its
      low-level disk access commands L and W in this OS - if the user has
      administrator rights. DEBXXVDD.DLL is public domain, the source can
-     be downloaded from http://www.japheth.de/debxxf.html. Please
+     be found at http://github.com/Baron-von-Riedesel/debxxf. Please
      be aware that you can do severe damage to your disk data if you use
      those low-level functions without knowing what you are doing.
 
    - 'rm' displays MMX registers.
 
    - commandline option /2 may direct DebugX's output to a monochrome video
-     adapter if one is available. Useful for emulators that support such
-     features ( 86Box, for example ). Needs at least a VGA compatible card,
-     and there's no guarantee that it works as expected.
+     adapter if one is available. Useful for emulators that support this
+     feature ( DosBox-x or 86Box, for example ). Needs at least a VGA
+     compatible card, and there's no guarantee that it works as expected.
 
 
   c. Optionally, one may create special-purpose versions of DebugX.

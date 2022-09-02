@@ -48,13 +48,18 @@
 
    Runs Debug, a program testing and editing tool.
 
-   DEBUG [[drive:][path]filename [testfile-parameters]]
+   DEBUG [option] [[drive:][path]filename [testfile-parameters]]
 
     [drive:][path]filename Specifies the file you want to test.
     testfile-parameters    Specifies command-line information required
                            by the file you want to test.
 
-   After Debug starts, type ? to display a list of debugging commands.
+   options are:
+    /? : display cmdline format help.
+
+[ENH: DEBUGX accepts another option:
+    /2 : use an alternate (monochrome) adapter if available.
+]
 
 
  3. DEBUG commands
@@ -232,11 +237,16 @@
  ---
 
  DEBUGX only: The Dump eXtended memory command (DX) allows to examine
- the full range of memory. It uses Interrupt 15h, AH=87h for extended
+ the full range of memory. It uses interrupt 15h, AH=87h for extended
  memory access. It should be noted that, when running under a Expanded
  Memory Manager (EMM), Interrupt 15h, AH=87h behaves slightly inconsistent:
  addresses below 110000h are regarded as linear, while addresses >= 110000h
  are regarded as physical.
+
+ Inside a Windows "DOS-Box", or other virtual DOS VMs, interrupt 15, AH=87h
+ is emulated only, that is, what is displayed usually hasn't much to do with
+ physical addresses. And there's a good "chance" that when an "invalid"
+ address is entered, the VM is instantly closed "abnormally".
 
  Syntax: DX [address]
  ]
@@ -780,7 +790,11 @@
  the real-mode prompt. Another Q cmd will then quit the debugger.
  Sometimes Q may not work to exit protected-mode, then one can try
  to forcably terminate the debuggee with the command variant QQ.
-  
+
+ If a second video adapter is available, DEBUGX may be told to display
+ its output to that device via the /2 cmdline option. This gives DEBUGX
+ the ability to debug graphics applications.
+
 
  9. DEBUG Scripts
  ----------------
