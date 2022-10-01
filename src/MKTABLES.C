@@ -103,11 +103,11 @@ int n_asm_tab = 0;
 unsigned char asmtab[MAX_ASM_TAB];
 
 struct mnrec {
-	struct mnrec	*next;
-	char		*string;
-	short		len;
-	short		offset;    /* ??? */
-	short		asmoffset; /* offset in asmtab */
+	struct mnrec *next;
+	char  *string;
+	short len;
+	short offset;    /* ??? */
+	short asmoffset; /* offset in asmtab */
 };
 
 int num_mnrecs;
@@ -1029,7 +1029,7 @@ void dumptables(FILE *f2)
 		auxstr = "\n\tdb ";
 	}
 
-	fprintf(f2, "SPARSE_BASE\tequ $ - optypes\n");
+	fprintf(f2, "\nSPARSE_BASE\tequ $ - optypes\n");
 
 	auxstr = "\n;--- The rest of these are squeezed.\n" "\tdb      0,";
 	for (i = SPARSE_BASE, k=1; i < NOPS; ++i)
@@ -1116,9 +1116,9 @@ void dumptables(FILE *f2)
 	k = 0;
 	for (i = SPARSE_BASE; i < NOPS; i += 8) {
 		if ( i == SPARSE_BASE + 256 )
-			fprintf(f2, "\n--- %u sparse groups\n\n", NSGROUPS );
+			fprintf(f2, "\n;--- %u sparse groups\n\n", NSGROUPS );
 		else if ( i == SPARSE_BASE + 256 + 8 * NSGROUPS ) {
-			fprintf(f2, "\n--- %u sparse fpu groups\n\n", NUMBER(sp_fpgrouptab) );
+			fprintf(f2, "\n;--- %u sparse fpu groups\n\n", NUMBER(sp_fpgrouptab) );
 			fprintf(f2, "SFPGROUPS equ SPARSE_BASE + ( $ - sqztab )\n" );
 			fprintf(f2, "SFPGROUP3 equ SFPGROUPS + 8 * 3\n" );
 		}

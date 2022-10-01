@@ -132,7 +132,7 @@ ifndef CATCHINT0D
 CATCHINT0D equ 0	;catch exception 0Dh in real-mode
 endif
 ifndef CATCHSYSREQ
-CATCHSYSREQ equ 0	;catch int 15h (sysreq)
+CATCHSYSREQ equ 0	;catch int 09h/15h (sysreq)
 endif
 ifndef CATCHINT31
 CATCHINT31 equ 0	;hook DPMI int 31h
@@ -7344,7 +7344,7 @@ endif
 ;--- U command - disassemble.
 
 u_cmd proc
-	mov [lastcmd],offset lastuu	
+	mov [lastcmd],offset lastuu
 	cmp al,CR
 	jne uu1		;if an address was given
 lastuu:
@@ -8352,7 +8352,7 @@ intrsrq:
 	push 40h
 	.8086
 	pop ds
-	test byte ptr ds:[18h], 4
+	test byte ptr ds:[18h], 4	;bit should be set while sysreq is pressed
 	pop ds
 	jnz @F
 	iret
@@ -12324,13 +12324,13 @@ else
 ALTSWHLP textequ <>
 endif
 
-imsg1	db DBGNAME,' version 1.30.  Debugger.',CR,LF,CR,LF
-	db 'Usage: ', DBGNAME, ALTSWHLP ' [[drive:][path]progname [arglist]]',CR,LF,CR,LF
+imsg1 db DBGNAME,' version 1.30',CR,LF,LF
+	db 'Usage: ', DBGNAME, ALTSWHLP ' [[drive:][path]progname [arglist]]',CR,LF,LF
 if ALTVID
 	db '  /2: use alternate video adapter for output if available',CR,LF
 endif
-	db '  progname (executable) file to debug or examine',CR,LF
-	db '  arglist parameters given to program',CR,LF,CR,LF
+	db '  progname: (executable) file to debug or examine',CR,LF
+	db '  arglist: parameters given to program',CR,LF,LF
 	db 'For a list of debugging commands, '
 	db 'run ', DBGNAME, ' and type ? at the prompt.',CR,LF,'$'
 
@@ -12691,9 +12691,11 @@ contparse:
 	lodsb
 	cmp al,'?'
 	jne @F
-helpexit:			; Print help message and exit
+;helpexit:			; Print help message and exit
 	mov dx,offset imsg1	;command-line help message
-	call int21ah9	;print string
+;	call int21ah9	;v1.30: int21ah9 cannot be used ( pInDOS not yet set )
+	mov ah,9
+	int 21h
 	int 20h			;done
 @@:
 
@@ -12748,7 +12750,9 @@ endif
 
 	mov [imsg2a],al
 	mov dx,offset imsg2	;Invalid switch
-	call int21ah9	;print string
+;	call int21ah9	;v1.30: int21ah9 cannot be used ( pInDOS not yet set )
+	mov ah,9
+	int 21h
 	mov ax,4c01h	;Quit and return error status
 	int 21h
 
