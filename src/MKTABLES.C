@@ -442,8 +442,14 @@ int entermn(char *str, char *str_end)
 	p = xmalloc(str_end - str + 1, "mnemonic name");
 	mnlist[num_mnrecs].string = p;
 	mnlist[num_mnrecs].len = str_end - str;
+#if 0
 	while (str < str_end) *p++ = toupper(*str++);
 	*p = 0;
+#else
+	memcpy( p, str, str_end - str );
+	*(p+(str_end - str)) = 0;
+    _strupr( p );
+#endif
 	mnlist[num_mnrecs].asmoffset = n_asm_tab;
 	return num_mnrecs++;
 }

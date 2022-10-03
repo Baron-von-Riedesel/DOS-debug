@@ -35,7 +35,8 @@
                   tables into source file debugtbl.inc. It's supposed to
                   be translated with Open Watcom's 16bit compiler WCC.
     make.bat      batch file to (re)create debug.com and debugx.com.
-    makec.bat     batch file to (re)create mktables.exe.
+    makecm.bat    batch file to (re)create mktables.exe with MS C.
+    makecw.bat    batch file to (re)create mktables.exe with OW C.
     makex.bat     batch file to create special versions of Debugx.
 
     Note: files mktables.c and instr.* are to be removed in one of the next
