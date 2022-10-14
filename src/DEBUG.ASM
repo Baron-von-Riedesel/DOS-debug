@@ -147,7 +147,8 @@ else
 EXCCSIP    equ 0
 endif
 
-LINE_IN_LEN equ 257	;length of line_in (including header stuff)
+LINE_IN_LEN      equ 257	;length of line_in (including header stuff)
+LINE_HISTORY_LEN equ 512	;size of line_in history buffer
 
 ;--- PSP offsets
 
@@ -9017,56 +9018,204 @@ gl4:
 gl5:
 endif
 	mov dx,offset line_in
-	call InDos
-	jnz rawinput
-	mov ah,0ah		;buffered keyboard input
-	call doscall
-gl6:
-	mov al,10
-	call stdoutal
-	mov si,offset line_in + 2
-	call skipwhite
-	ret
-
-rawinput:
-	push di
 	push ds
 	pop es
 	inc dx
 	inc dx
 	mov di,dx
+	xor si,si
+	xor cx,cx
 rawnext:
 	mov ah,00h
 	int 16h
-	cmp al,0
-	jz rawnext
+	cmp ah, 48h ;up arrow
+	je recall_up
+	cmp ah, 50h ;down arrow
+	je recall_dn
 	cmp al,0E0h
 	jz rawnext
 	cmp al,08h
 	jz del_key
 	cmp al,7Fh
 	jz del_key
+	cmp al,CR
+	je @F
+	cmp al,20h
+	jb rawnext
+@@:	cmp cx, LINE_IN_LEN - 2
+	jae rawnext
 	stosb
+	inc cx
 	call stdoutal
-	cmp al,0Dh
+	cmp al,CR
 	jnz rawnext
+	push di
 	dec di
 	sub di,dx
 	mov ax,di
 	mov di,dx
 	mov byte ptr [di-1],al
-	dec dx
-	dec dx
 	pop di
-	jmp gl6
+gl6:
+	mov al,10
+	call stdoutal
+	mov si,offset line_in + 2
+	call skipwhite
+	cmp si,di
+	je @F       ;don't save empty line
+	lea cx,[di+1]
+	sub cx,si
+	push si
+	dec si
+	call hist_store
+	pop si
+@@:	ret
+
 del_key:
-	cmp di,dx
-	jz rawnext
+	jcxz rawnext
 	dec di
+	dec cx
 	call fullbsout
 	jmp rawnext
 
+recall_up:
+	xor al,al
+	jmp @F
+recall_dn:
+	mov al,1
+@@:	call hist_recall
+	jmp rawnext
 getline endp
+
+;   CLEARLINE - Clear current input prompt
+;   Entry   DI  Points to current position in input buffer
+;           DX  Begin of input buffer
+;           CX  Line length
+;   Exit    DI  Equal to DX
+;           CX  0
+
+clearline proc
+	jcxz rt
+	push ax
+@@:	call fullbsout
+	loop @B
+	pop ax
+	mov di,dx
+rt:	ret
+clearline endp
+
+;   HIST_RECALL - Reload input line from command history
+;   Entry   SI  Current node (0 = one past the end)
+;           AL  Search direction (0 = backwards)
+;           DX  Begin of input buffer
+;           CX  Current line length
+;   Exit    DI  End of input buffer
+;           CX  New line length
+;           SI  Loaded history node
+;   Uses    AX,BX
+
+hist_recall proc
+	mov bx,si
+	test al,al
+	jnz forward
+	test si,si
+	jnz @f
+	mov si,[line_hist_end]  ;pick last node if past the end
+	jmp checkvalid
+@@:	mov si,[si.llnode.prev]
+checkvalid:
+	test si,si
+	jz rt
+	call clearline
+	mov bx,si
+	add si,sizeof llnode
+@@:	lodsb                   ;reload line from selected node
+	cmp al,CR
+	je rt
+	call stdoutal
+	stosb
+	inc cx
+	jmp @B
+rt:	mov si,bx
+	ret
+
+forward:
+	call clearline
+	test si,si
+	jz rt
+	mov si,[si.llnode.next]
+	mov bx,si               ;might be null, but that's ok to return
+	jmp checkvalid
+hist_recall endp
+
+;   HIST_STORE - Store line in input history
+;   Entry   SI  Input line
+;           CX  Line length
+;   Uses    BX,CX,DX,DI,SI
+
+hist_store proc
+	push ax
+	mov bx,[line_hist_begin]
+	mov di,[line_hist_end]
+	test di,di
+	jz first
+	add di,sizeof llnode
+	push si
+	push cx
+	repe cmpsb                  ;check if last entry is identical
+	pop cx
+	pop si
+	je fail                     ;don't store duplicates
+	push cx
+	mov cx,offset line_history + LINE_HISTORY_LEN
+	sub cx,di
+	mov al,CR
+	repne scasb                 ;find end of last node
+	pop cx
+check_overflow:
+	mov dx,di
+	add dx,cx
+	add dx,sizeof llnode        ;dx = end of new node
+	cmp dx,offset line_history + LINE_HISTORY_LEN
+	jb no_overflow              ;does it fit?
+	cmp di,offset line_history
+	je fail                     ;fail if new node would be larger than buffer
+	mov di,offset line_history  ;restart from beginning
+	jmp check_overflow
+no_overflow:
+	cmp di,bx
+	ja no_overlap               ;can't overlap if buffer isn't full yet
+check_overlap:
+	cmp dx,bx
+	jb no_overlap               ;does it overwrite the first node(s)?
+	mov bx,[bx.llnode.next]
+	test bx,bx
+	jz first                    ;overwrite all nodes
+	jmp check_overlap
+no_overlap:
+	mov [bx.llnode.prev],0      ;[bx] is now the first node
+	mov [line_hist_begin],bx
+	mov bx,[line_hist_end]
+	mov [line_hist_end],di      ;add node at the end
+	mov [bx.llnode.next],di
+	mov [di.llnode.prev],bx
+	mov [di.llnode.next],0
+store:
+	add di,sizeof llnode
+	rep movsb                   ;store string in new node
+fail:
+	pop ax
+	ret
+
+first:
+	mov di,offset line_history  ;create first node
+	mov bx,di
+	mov [line_hist_begin],di
+	mov [line_hist_end],di
+	mov [di.llnode.next],0
+	mov [di.llnode.prev],0
+	jmp store
+hist_store endp
 
 ;   BUFSETUP - Set up buffer reading.  This just means discard an LF
 ;   if the last character read (as stored in 'notatty') is CR.
@@ -12220,9 +12369,17 @@ _DATA segment
 
 ;--- I/O buffers.  (End of permanently resident part.)
 
-line_in		db 255,0,CR				;length = 257
-line_out	equ line_in+LINE_IN_LEN+1;length = 1 + 263
-real_end	equ line_in+LINE_IN_LEN+1+264
+llnode struct
+	prev dw ?
+	next dw ?
+llnode ends
+
+line_hist_begin	dw 0
+line_hist_end	dw 0
+line_in			db 255,0,CR                         ;length = 257
+line_out		equ line_in+LINE_IN_LEN+1           ;length = 1 + 263
+line_history	equ line_out+264
+real_end		equ line_history+LINE_HISTORY_LEN
 
 _DATA ends
 
