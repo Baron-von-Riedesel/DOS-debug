@@ -6,8 +6,8 @@ rem 2) instr.key
 rem 3) instr.ord
 rem 4) mktables.c
 
-rem here jwlink is used instead of \watcom\binw\wlink
+rem here jwlink is used instead of wlink
 
-\watcom\binw\wcc -ox -i\watcom\h -3 -d__MSDOS__ -fo=build\mktables.obj src\mktables.c
-rem \watcom\binw\wlink system dos f build\mktables.obj n build\mktables.exe op q,m=build\mktables.map
+\watcom\binnt\wcc -q -ox -i\watcom\h -3 -fo=build\mktables.obj src\mktables.c
+rem \watcom\binnt\wlink system dos f build\mktables.obj n build\mktables.exe op q,m=build\mktables.map
 jwlink format dos f build\mktables.obj n build\mktables.exe libpath \watcom\lib286\dos libpath \watcom\lib286 op q,m=build\mktables.map
