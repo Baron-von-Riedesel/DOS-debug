@@ -272,3 +272,4 @@
        - fixed: routine int21ah9 did use DOS, even if InDos flag was set.
        - DEBUGX: added cmdline option /2.
        - mktables.c: fixed, didn't generate a valid debugtbl.inc.
+       - fixed: reading stdin from file wasn't fully MS Debug compatible.

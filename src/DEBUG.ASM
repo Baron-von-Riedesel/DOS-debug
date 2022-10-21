@@ -103,7 +103,6 @@ EMSCMD     equ 1	;support Xx commands
 USESDA     equ 1	;use SDA to get/set PSP in real-mode
 STACKSIZ   equ 200h	;debug's stack size
 SYSRQINT   equ 9	;if CATCHSYSREQ==1, defines the method (int 09h or int 15h)
-FREADMODE  equ 1    ;if stdin is file: 0=read until buffer full, 1=read until CR or LF
 
 ifndef CATCHINT01
 CATCHINT01 equ 1	;catch INT 01 (single-step)
@@ -163,8 +162,6 @@ DTA		equ 80h	;Program arguments; also used to store file name (N cmd)
 endif
 
 ;--- attributes returned by int 21h, ax=4400h
-AT_STDIN   equ 01h  ; is stdin
-AT_STDOUT  equ 02h  ; is stdout
 AT_DEVICE  equ 80h  ; is device (not file)
 
 ifdef _DEBUG
@@ -459,15 +456,17 @@ has_mmx	db 0
 endif
 bInDbg	db 1		;1=debugger is running
 mach_87	db 0		;coprocessor (0=8087,1,2,3=80387,...)
-notatty	db LF		;set to 0 on init if standard input is tty
-stdoutf	db 0		;flags stdout device
+ife DRIVER
+fStdin	db AT_DEVICE;flags stdin
+fStdout	db AT_DEVICE;flags stdout
+endif
 switchar db 0		;switch character
 vpage	db 0		;video page the debugger is to use for BIOS output 
 swch1	db ' '		;switch character if it's a slash
 driveno db 0
 promptlen dw 0		;length of prompt
-bufnext	dw line_in+2	;address of next available character
-bufend	dw line_in+2	;address + 1 of last valid character
+bufnext	dw line_in+2	;if stdin=file: address of next available character
+bufend	dw line_in+2	;if stdin=file: address + 1 of last valid character
 
 a_addr	dw 0,0,0	;address for next A command
 d_addr	dw 0,0,0	;address for last D command; must follow a_addr
@@ -1667,10 +1666,12 @@ printhelp:
 	jmp cmdloop		;done
 
 waitkey proc
-	cmp [notatty],0     ;stdin a file?
-	jnz nowait
-	test [stdoutf], AT_DEVICE	;stdout a file?
+ife DRIVER
+	test [fStdin], AT_DEVICE	;stdin a file?
 	jz nowait
+	test [fStdout], AT_DEVICE	;stdout a file?
+	jz nowait
+endif
 	push ds
 	mov ax,40h		;0040h is a bimodal segment/selector
 	mov ds,ax
@@ -4660,34 +4661,24 @@ ee3:				;<--- next byte
 	mov si,offset line_out+16	;address of buffer for characters
 	xor cx,cx		;number of characters so far
 
-ee4:
-	cmp [notatty],0
-	jz ee9			;jmp if it's a tty
+ee4:				;<--- get next char
+ife DRIVER
+	test [fStdin], AT_DEVICE
+	jnz ee9			;jmp if it's a tty
 	push si
-	mov di,offset line_in+2
 	mov si,[bufnext]
-ee5:
 	cmp si,[bufend]
-	jb ee6			;if there's a character already
-	call fillbuf
+	jb @F			;if there's a character already
+	call fillbuf	;fill buffer with a new line; init SI
 	mov al,CR
 	jc ee8			;if eof
-ee6:
-	cmp [notatty],CR
-	jne @F			;if no need to compress CR/LF
-	cmp byte ptr [si],LF
-	jne @F			;if not a line feed
-	inc si			;skip it
-	inc [notatty]	;avoid repeating this
-	jmp ee5			;next character
 @@:
 	lodsb			;get the character
-	mov [notatty],al
 ee8:
 	mov [bufnext],si
 	pop si
 	jmp ee10
-
+endif
 ee9:
 	call InDos      ;v1.27: use BIOS if InDOS
 	jnz @F
@@ -8974,51 +8965,22 @@ getline00:
 
 getline proc
 	mov [promptlen],cx	;save length of prompt
-if DRIVER eq 0
-	call bufsetup		;setup buffer input if stdin is file
-	pushf
-endif
 	call stdout ;write prompt (string DX, size CX)
-if DRIVER eq 0
-	popf
-	jc gl5		;jmp if tty input
+ife DRIVER
+	test [fStdin], AT_DEVICE
+	jnz gl5		;jmp if tty input
 
-;--- input a line if stdin is a file
-;--- bufsetup has set SI so it points to next char
-
-	mov [lastcmd],offset dmycmd
+	mov [lastcmd], offset dmycmd
 
 ;   This part reads the input line from a file (in the case of
 ;   'debug < file').  It is necessary to do this by hand because DOS
 ;   function 0ah does not handle EOF correctly otherwise.  This is
 ;   especially important for debug because it traps Control-C.
 
-gl1:
-	mov cx,[bufend]
-	sub cx,si	;cx = number of valid characters
-	jz gl3		;if none
-@@:
-	lodsb
-	cmp al,CR
-	je gl4		;if end of line
-	cmp al,LF
-	je gl4		;if eol
-	stosb
-	loop @B		;if there are more valid characters
-gl3:
 	call fillbuf
-	jnc gl1		;if we have more characters
-	mov al,LF
-	cmp di,offset line_in+LINE_IN_LEN
-	jb gl4
-	dec si
-	dec di
-gl4:
-	mov [bufnext],si
-	mov [notatty],al
-	mov al,CR
-	stosb
-	mov cx,di
+	jc q_cmd
+	mov [bufnext], si
+	mov cx,[bufend]
 	mov dx,offset line_in + 2
 	sub cx,dx
 	call stdout	;print out the received line
@@ -9080,46 +9042,11 @@ del_key:
 
 getline endp
 
-;   BUFSETUP - Set up buffer reading.  This just means discard an LF
-;   if the last character read (as stored in 'notatty') is CR.
-;   Entry   DI  First available byte in input buffer
-;   Exit    SI  Address of next character.
-;   If the input is from a tty, then bufsetup returns with carry set.
-
-if DRIVER eq 0
-
-bufsetup proc
-	cmp [notatty],1
-	jc exit		;exit if stdin is a tty
-	mov di,offset line_in+2
-	mov si,[bufnext]
-	cmp si,[bufend]
-	jb bs2		;if there's a character already
-	call fillbuf
-	jc bs4		;if eof
-bs2:
-	cmp [notatty],CR
-	jne bs3		;if nothing more to do
-	cmp byte ptr [si],LF
-	jne bs3		;if not a line feed
-	inc si		;skip it
-bs3:
-	clc
-exit:
-	ret
-
-bs4:
-	jmp q_cmd	;quit:  we've hit an eof
-
-bufsetup endp
-
-endif
+ife DRIVER
 
 ;   FILLBUF - Fill input buffer, read from a file.
-;   Mostly this is an internal routine
-;   for getline ( also 'e' cmd in interactive mode ).
-;   Entry   DI  First available byte in input buffer
-;   Exit    SI  Next readable byte (i.e., equal to DI)
+;   called by getline & within 'e' cmd in interactive mode.
+;   Exit    SI  Next readable byte
 ;       Carry flag is set if and only if there is an error (e.g., eof)
 ;   Uses    None.
 
@@ -9128,67 +9055,41 @@ fillbuf proc
 	push bx
 	push cx
 	push dx
-	mov si,di		;we know this already
-	xor bx,bx
+	mov si, offset line_in+2
+	push si
 
-if FREADMODE eq 0
-
-;--- read input until buffer full or EOF reached.
-;--- the problem with this approach is that it's not fully MS-Debug compatible.
-;--- this is revealed if the debuggee is to read from stdin.
-
-	mov dx,di
-	mov cx,offset line_in+LINE_IN_LEN
-	sub cx,dx
-	jz fb1		;if no more room
-	mov ah,3fh	;read from file
-	call doscall
-	jc fb1		;if error
-	or ax,ax
-	jz fb1		;if eof
-	add ax,dx
-	clc
-	jmp fb2
-fb1:
-	xchg ax,dx	;ax = last valid byte address + 1
-	stc
-
-else
-
-;--- read input until LF.
+;--- read input bytewise until LF.
 
 @@:
-	mov dx, di
+	mov dx, si
 	cmp dx, offset line_in+LINE_IN_LEN
 	jz fb1
 	mov cx, 1
-	mov ah,3fh	;read from file
+	xor bx, bx
+	mov ah, 3fh	; read file
 	call doscall
 	jc fb1
 	and ax,ax
 	jz fb1		; if eof
-	mov al,[di]
-	inc di
+	mov al,[si]
+	inc si
 	cmp al,LF
 	jnz @B
-	mov [notatty], CR
-	mov ax, di
-	mov di, si
+	dec si
 	jmp fb2
 fb1:
-	mov ax, di
-	mov di, si
 	stc
-endif
-
 fb2:
-	mov [bufend],ax
+	mov [bufend], si
+	pop si
 	pop dx
 	pop cx
 	pop bx
 	pop ax
 	ret
 fillbuf endp
+
+endif
 
 ;   PARSECM - Parse command line for C and M commands.
 ;   Entry   AL          First nonwhite character of parameters
@@ -12481,21 +12382,20 @@ endif
 
 ;--- Check for console input vs. input from a file or other device.
 
+ife DRIVER
 	mov ax,4400h	;IOCTL--get info
 	xor bx,bx       ;stdin
 	int 21h
-	jc @F			;if not device
-	and dl, AT_DEVICE or AT_STDIN
-	cmp dl, AT_DEVICE or AT_STDIN
-	jne @F			;if not the console input
-	mov [notatty],0	;it _is_ a tty
+	jc @F
+	mov [fStdin],dl
 @@:
 	mov ax,4400h	;IOCTL--get info
 	mov bx,1        ;stdout
 	int 21h
 	jc @F
-	mov [stdoutf],dl
+	mov [fStdout],dl
 @@:
+endif
 
 ;--- Check DOS version
 
