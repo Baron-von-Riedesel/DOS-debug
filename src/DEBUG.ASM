@@ -82,6 +82,7 @@ DPMIMSW    equ 0	;1=use int 2F,ax=1686h to detect mode, 0=use value of cs
  ifndef USEUNREAL
 USEUNREAL  equ 0	;set to 1 if debug is to use unreal-mode (for DX/EX cmd)
  endif
+DISUPP     = 1
 else
 VDD        equ 0
 NOEXTENDER equ 0
@@ -98,9 +99,9 @@ ALTVID     equ 0    ;1=support alternate video adapter
 endif
 
 DOSNAME    equ <"DOS">
-MCB        equ 1	;support DM command
-EMSCMD     equ 1	;support Xx commands
-USESDA     equ 1	;use SDA to get/set PSP in real-mode
+MCB        = 1		;support DM command
+EMSCMD     = 1		;support Xx commands
+USESDA     = 1		;use SDA to get/set PSP in real-mode
 STACKSIZ   equ 200h	;debug's stack size
 SYSRQINT   equ 9	;if CATCHSYSREQ==1, defines the method (int 09h or int 15h)
 
@@ -140,6 +141,26 @@ endif
 ifndef DRIVER
 DRIVER     equ 0	;support to be loaded as device driver in CONFIG.SYS
 endif
+ifndef BOOTDBG
+BOOTDBG    equ 0	;load debugger as a "boot sector"
+endif
+
+if DRIVER or BOOTDBG
+REDIRECT equ 0
+else
+REDIRECT equ 1		;stdin/stdout redirection
+endif
+
+if BOOTDBG
+MCB    = 0
+EMSCMD = 0
+USESDA = 0
+DISUPP = 1
+endif
+
+ifndef DISUPP
+DISUPP = 0
+endif
 
 if ?PM or CATCHINT07
 EXCCSIP    equ 1	;display CS:IP where exception occured
@@ -151,7 +172,8 @@ LINE_IN_LEN equ 257	;length of line_in (including header stuff)
 
 ;--- PSP offsets
 
-if DRIVER eq 0
+if DRIVER or BOOTDBG
+else
 ALASAP	equ 02h	;Address of Last segment allocated to program
 TPIV	equ 0ah	;Terminate Program Interrupt Vector (int 22h)
 CCIV	equ 0eh	;Control C Interrupt Vector (int 23h)
@@ -317,9 +339,21 @@ interrupt:
 	ret
 else
 
+ if BOOTDBG
+start:
+	push ds
+	push es
+	push cs
+	pop ds
+	call initcode
+	pop es
+	pop ds
+	retf
+ else
 	org 100h
 start:
 	jmp initcode
+ endif
 
 endif
 _TEXT ends
@@ -356,16 +390,21 @@ CONST segment
 
 cmdlist	dw a_cmd,cmd_error,c_cmd,d_cmd
 		dw e_cmd,f_cmd,g_cmd,h_cmd
-		dw i_cmd,cmd_error,cmd_error,l_cmd
+		dw i_cmd,cmd_error,cmd_error
+if BOOTDBG
+		dw cmd_error	; no L for boot debug
+else
+		dw l_cmd
+endif
 		dw m_cmd
-if DRIVER
-		dw cmd_error	;no N for the driver variant
+if DRIVER or BOOTDBG
+		dw cmd_error	; no N for the driver variant
 else
 		dw n_cmd
 endif
 		dw o_cmd,p_cmd
-if DRIVER
-		dw cmd_error	;no Q for the driver variant
+if DRIVER or BOOTDBG
+		dw cmd_error	; no Q for the driver variant
 else
 		dw q_cmd
 endif
@@ -376,7 +415,11 @@ if VXCHG
 else
 		dw cmd_error
 endif
+if BOOTDBG
+		dw cmd_error	; no W for boot debug
+else
 		dw w_cmd
+endif
 if EMSCMD
 		dw x_cmd
 else
@@ -456,17 +499,19 @@ has_mmx	db 0
 endif
 bInDbg	db 1		;1=debugger is running
 mach_87	db 0		;coprocessor (0=8087,1,2,3=80387,...)
-ife DRIVER
+if REDIRECT
 fStdin	db AT_DEVICE;flags stdin
 fStdout	db AT_DEVICE;flags stdout
 endif
 switchar db 0		;switch character
 vpage	db 0		;video page the debugger is to use for BIOS output 
 swch1	db ' '		;switch character if it's a slash
-driveno db 0
+driveno db 0		;drive no used by L/W cmds
 promptlen dw 0		;length of prompt
+if REDIRECT
 bufnext	dw line_in+2	;if stdin=file: address of next available character
 bufend	dw line_in+2	;if stdin=file: address + 1 of last valid character
+endif
 
 a_addr	dw 0,0,0	;address for next A command
 d_addr	dw 0,0,0	;address for last D command; must follow a_addr
@@ -547,7 +592,8 @@ endif
 
 ;--- Parameter block for exec call.
 
-if DRIVER eq 0
+if DRIVER or BOOTDBG
+else
 EXECS struc
 environ dw ?	; +0 environment segment
 cmdtail dd ?	; +2 address of command tail to copy
@@ -689,7 +735,9 @@ PPLEN	equ $ - ppinfo
 
 ;--- Strings.
 
+ife BOOTDBG
     db '!'      ;additional prompt if InDos flag is set
+endif
 ifdef PROMPT
 prompt1	db @CatStr(!',%PROMPT,!')
 else
@@ -705,8 +753,10 @@ helpmsg db DOSNAME, ' ', DBGNAME2, ' v1.30 help screen',CR,LF
 	db 'assemble',9,	'A [address]',CR,LF
 	db 'compare',9,9,	'C range address',CR,LF
 	db 'dump',9,9,		'D [range]',CR,LF
-if ?PM
+if DISUPP
 	db 'dump interrupt',9,'DI interrupt [count]',CR,LF
+endif
+if ?PM
 	db 'dump LDT',9,	'DL selector [count]',CR,LF
 endif
 if MCB
@@ -720,19 +770,24 @@ endif
 	db 'go',9,9,		'G [=address] [breakpts]',CR,LF
 	db 'hex add/sub',9,'H value1 value2',CR,LF
 	db 'input',9,9,	'I[W|D] port',CR,LF
-if DRIVER eq 0
+if DRIVER or BOOTDBG
+else
 	db 'load program',9,'L [address]',CR,LF
 endif
+ife BOOTDBG
 	db 'load sectors',9,'L address drive sector count',CR,LF
+endif
 	db 'move',9,9,		'M range address',CR,LF
 	db '80x86 mode',9,	'M [x] (x=0..6)',CR,LF
 	db 'set FPU mode',9,'MC [2|N] (2=287,N=no FPU)',CR,LF
-if DRIVER eq 0
+if DRIVER or BOOTDBG
+else
 	db 'set name',9,	'N [[drive:][path]progname [arglist]]',CR,LF
 endif
 	db 'output',9,9,	'O[W|D] port value',CR,LF
 	db 'proceed',9,9,	'P [=address] [count]',CR,LF
-if DRIVER eq 0
+if DRIVER or BOOTDBG
+else
 	db 'quit',9,9,		'Q',CR,LF
 endif
 if ?PM
@@ -757,10 +812,13 @@ endif
 if VXCHG
 	db 'view screen',9,	'V',CR,LF
 endif
-if DRIVER eq 0
+if DRIVER or BOOTDBG
+else
 	db 'write program',9,'W [address]',CR,LF
 endif
+ife BOOTDBG
 	db 'write sectors',9,'W address drive sector count',CR,LF
+endif
 if EMSCMD
 	db 'expanded mem',9,'XA/XD/XM/XR/XS,X? for help'
 endif
@@ -1596,7 +1654,8 @@ cmdloop proc
 	mov [errret],offset cmdloop
 	push ds
 	pop es
-if DRIVER eq 0
+if DRIVER or BOOTDBG
+else
 	call isdebuggeeloaded
 	jnz @F
 	call createdummytask	;if no task is active, create a dummy one
@@ -1610,6 +1669,7 @@ if ?PM
 	mov dx,offset prompt3
 @@:
 endif
+ife BOOTDBG
 	call InDos
 	jz @F
 ife VXCHG
@@ -1620,6 +1680,7 @@ endif
 	dec dx          ;if inside DOS, display a '!' before the real prompt
 	inc cx
 @@:
+endif
 	call getline	;prompted input
 	cmp al,CR
 	jnz @F
@@ -1666,7 +1727,7 @@ printhelp:
 	jmp cmdloop		;done
 
 waitkey proc
-ife DRIVER
+if REDIRECT
 	test [fStdin], AT_DEVICE	;stdin a file?
 	jz nowait
 	test [fStdout], AT_DEVICE	;stdout a file?
@@ -3920,7 +3981,6 @@ cc2:
 c_cmd endp
 
 if ?PM
-
 CONST segment
 descbase db ' base=???????? limit=???????? attr=????',0
 CONST ends
@@ -4001,6 +4061,10 @@ desc_out:
 	jmp nextdesc
 descout endp
 
+endif
+
+if DISUPP
+
 ;--- DI command
 
 gateout proc
@@ -4026,6 +4090,7 @@ gateout_00: 		;<--- next int/exc
 	call hexbyte
 	mov al,' '
 	stosb
+if ?PM
 	call ispm
 	jz gaterm
 	.286
@@ -4053,6 +4118,9 @@ gate16:
 	mov ax,0202h
 	dec bh
 	jnz gateout_01
+else
+	jmp gaterm
+endif
 gate_exit:
 	call unhack	;set debugger's int 23/24
 	push bx
@@ -4062,6 +4130,14 @@ gate_exit:
 	dec si
 	jnz gateout_00
 	ret
+if ?PM
+gatefailed:
+	mov di,offset line_out
+	mov si,offset gatewrong
+	call copystring
+	mov si,1
+	jmp gate_exit
+endif
 gaterm:
 	mov cl,2
 	push bx
@@ -4076,13 +4152,8 @@ gaterm:
 	call hexword
 	mov al,':'
 	stosb
-	mov bh,1
-	jmp gate16
-gatefailed:
-	mov di,offset line_out
-	mov si,offset gatewrong
-	call copystring
-	mov si,1
+	mov ax,dx
+	call hexword
 	jmp gate_exit
 gateout endp
 endif
@@ -4375,16 +4446,18 @@ lastddd:
 	jmp dd2
 
 dd1:
-if ?PM
+if ?PM or DISUPP
 	mov ah,[si-2]		;test for 2-letter cmds (DI, DL, DM, DX)
 	and ah,TOUPPER
 	cmp ah,'D'
 	jnz dd1_1
 	or al,TOLOWER
+ if ?PM
 	cmp al,'l'
 	jnz @F
 	jmp  descout
 @@:
+ endif
 	cmp al,'i'
 	jnz @F
 	jmp  gateout
@@ -4623,6 +4696,9 @@ ee0a::
 ;--- Prompt mode.
 
 ee1:
+if REDIRECT
+	mov [bufnext], si  ; update buffer ptr in case stdin is file
+endif
 
 ;--- Begin loop over lines.
 
@@ -4662,7 +4738,7 @@ ee3:				;<--- next byte
 	xor cx,cx		;number of characters so far
 
 ee4:				;<--- get next char
-ife DRIVER
+if REDIRECT
 	test [fStdin], AT_DEVICE
 	jnz ee9			;jmp if it's a tty
 	push si
@@ -5046,7 +5122,11 @@ if ?PM
 	push [regs.msw]	;save old MSW
 endif
 	call run		;run the program
+if DRIVER or BOOTDBG
+	@dprintf "g_cmd: run returned, ds=%X, spadjust=%X", ds, spadjust
+else
 	@dprintf "g_cmd: run returned, ds=%X, spadjust=%X, spsav=%lX", ds, spadjust, dword ptr ds:[SPSAV]
+endif
 if ?PM
 	call getcsattr
 	mov [bCSAttr],al
@@ -5216,7 +5296,7 @@ ispm endp
 endif
 
 setpspdbg:		;<--- activate debugger's PSP
-if DRIVER
+if DRIVER or BOOTDBG
 	ret
 else
 	mov bx,cs	;if format is changed to MZ, this must be changed as well!
@@ -5425,7 +5505,8 @@ nodosextinst:
 	jmp int21ah9
 endif
 
-if DRIVER eq 0
+if DRIVER or BOOTDBG
+else
 isdebuggeeloaded:
 	mov ax,[pspdbe]
 	cmp ax,[pspdbg]
@@ -5436,7 +5517,8 @@ endif
 ;--- set SI:DI to CS:IP, preserve AX, BX, DX
 
 ensuredebuggeeloaded proc
-if DRIVER eq 0
+if DRIVER or BOOTDBG
+else
 	push ax
 	call isdebuggeeloaded
 	jnz @F
@@ -5452,6 +5534,8 @@ if DRIVER eq 0
 endif
 	ret
 ensuredebuggeeloaded endp
+
+ife BOOTDBG
 
 ;--- L command - read a program, or disk sectors, from disk.
 
@@ -5495,7 +5579,8 @@ ll0_2:
 ;--- For .com or .exe files, we can only load at cs:100.  Check that first.
 
 ll1:
-if DRIVER eq 0
+if DRIVER or BOOTDBG
+else
 	test [fileext], EXT_COM or EXT_EXE
 	jz loadfile		;if not .com or .exe file
 	cmp bx,[regs.rCS]
@@ -5508,7 +5593,8 @@ endif
 
 l_cmd endp
 
-if DRIVER eq 0
+if DRIVER or BOOTDBG
+else
 
 ;--- load (any) file (if not .EXE or .COM, load at BX:DX)
 ;--- open file and get length
@@ -5644,6 +5730,8 @@ ll12:
 
 loadfile endp
 
+endif
+
 setespefl proc
 	sizeprf		;pushfd
 	pushf
@@ -5653,6 +5741,8 @@ setespefl proc
 	mov [regs.rSP],sp	;low 16bit of ESP will be overwritten
 	ret
 setespefl endp
+
+ife DRIVER
 
 loadpgm proc
 
@@ -5782,6 +5872,7 @@ setup_adu::
 
 loadpgm endp
 
+endif
 endif
 
 ;--- M command - move/copy memory.
@@ -5961,7 +6052,8 @@ exts label byte
 	db ".COM",EXT_COM
 CONST ends
 
-if DRIVER eq 0
+if DRIVER or BOOTDBG
+else
 
 n_cmd proc
 	mov di,DTA		;destination address
@@ -6671,7 +6763,8 @@ endif
 exitdpmi endp
 endif
 
-if DRIVER eq 0
+if DRIVER or BOOTDBG
+else
 
 ;--- Q command - quit.
 
@@ -7405,6 +7498,7 @@ uu3:
 	ret
 u_cmd endp
 
+ife BOOTDBG
 
 lockdrive:          ;lock logical volume
 	push ax
@@ -7515,12 +7609,14 @@ ww3:
 
 w_cmd endp
 
+endif
+
 ;--- Write to file.  First check the file extension.
 ;--- size of file is in client's BX:CX, 
 ;--- default start address is DS:100h
 
 write_file proc
-if DRIVER
+if DRIVER or BOOTDBG
 	jmp cmd_error
 else
 	mov al,[fileext]	;get flags of file extension
@@ -8171,12 +8267,16 @@ if ALTVID
 endif
 
 	call seteq		;set CS:E/IP to '=' address
+if DRIVER or BOOTDBG
+else
 	mov bx,[pspdbe]
 	call setpsp		;set debuggee's PSP
+endif
 	call setint2324	;set debuggee's int 23/24
 
 	mov [run_sp],sp	;save stack position
-if DRIVER eq 0
+if DRIVER or BOOTDBG
+else
  if 1
 	; 16.2.2021: check if saved SS is debugger's SS. If no, don't adjust saved SP.
 	; SS may be != saved SS if debugger is stopped in protected-mode - then the
@@ -8714,7 +8814,8 @@ endif
 	pop di
 	push es
 	pop ds
-if DRIVER eq 0  ;the driver version has no PSP at 0-100h
+if DRIVER or BOOTDBG  ;the driver version has no PSP at 0-100h
+else
 	xor si,si
 	mov es,si
 	mov si,CCIV	;move from debugger's PSP to IVT
@@ -8966,7 +9067,7 @@ getline00:
 getline proc
 	mov [promptlen],cx	;save length of prompt
 	call stdout ;write prompt (string DX, size CX)
-ife DRIVER
+if REDIRECT
 	test [fStdin], AT_DEVICE
 	jnz gl5		;jmp if tty input
 
@@ -9042,7 +9143,7 @@ del_key:
 
 getline endp
 
-ife DRIVER
+if REDIRECT
 
 ;   FILLBUF - Fill input buffer, read from a file.
 ;   called by getline & within 'e' cmd in interactive mode.
@@ -9059,10 +9160,12 @@ fillbuf proc
 	push si
 
 ;--- read input bytewise until LF.
+;--- note that debug expects CR/LF pairs -
+;--- lines with just LF as EOL marker won't do.
 
 @@:
 	mov dx, si
-	cmp dx, offset line_in+LINE_IN_LEN
+	cmp dx, offset line_in+LINE_IN_LEN ; "line too long" is treated as EOF
 	jz fb1
 	mov cx, 1
 	xor bx, bx
@@ -9075,7 +9178,7 @@ fillbuf proc
 	inc si
 	cmp al,LF
 	jnz @B
-	dec si
+	dec si      ; the LF itself should NOT be handled by the cmds.
 	jmp fb2
 fb1:
 	stc
@@ -12015,7 +12118,8 @@ ifdef _DEBUG
 	popcontext cpu
 endif
 
-if DRIVER eq 0
+if DRIVER or BOOTDBG
+else
 createdummytask proc
 
 	mov di, offset regs
@@ -12173,7 +12277,8 @@ _DATA ends
 
 _ITEXT segment
 
-if DRIVER eq 0
+if DRIVER or BOOTDBG
+else
 
 initcont:
 	mov sp,ax
@@ -12320,13 +12425,13 @@ driver_entry proc far
 	push cx
 	push cs
 	pop ds
-	call initcode
+	call initcode			; returns with BX=debugger SP
 	mov [Intrp],offset interrupt
 	mov dx,offset drv_installed
 	mov ah,9
 	int 21h
 	sub bx,2
-	mov [bx],offset ue_int
+	mov [bx],offset ue_int	;"unexpected interrupt"
 	mov [run_sp],bx
 	pop cx
 	pop dx
@@ -12364,7 +12469,8 @@ endif
 
 initcode proc
 	cld
-if DRIVER
+if DRIVER or BOOTDBG
+
  if 0
 	mov ah,51h	; don't fiddle with PSPs in the driver version!
 	int 21h
@@ -12382,7 +12488,7 @@ endif
 
 ;--- Check for console input vs. input from a file or other device.
 
-ife DRIVER
+if REDIRECT
 	mov ax,4400h	;IOCTL--get info
 	xor bx,bx       ;stdin
 	int 21h
@@ -12399,6 +12505,7 @@ endif
 
 ;--- Check DOS version
 
+ife BOOTDBG
 	mov ax,3000h	;check DOS version
 	int 21h
 	xchg al,ah
@@ -12425,6 +12532,7 @@ endif
 	jb init2
 isntordos71:
 	inc [usepacket]	;enable FAT32 access method for L/W
+endif
 
 ;   Determine the processor type.  This is adapted from code in the
 ;   Pentium<tm> Family User's Manual, Volume 3:  Architecture and
@@ -12488,7 +12596,7 @@ init2:
 ;   which indicates the presence of a processor with the ability
 ;   to use the CPUID instruction.
 
-	inc [machine]	;it's a 486
+;	inc [machine]	;it's a 486
 	mov eax,ecx		;get original EFLAGS
 	xor eax,200000h	;flip (XOR) ID bit in EFLAGS
 	push eax		;save new EFLAGS value on stack
@@ -12607,6 +12715,7 @@ nopatch:
 
 ;--- Interpret switches and erase them from the command line.
 
+ife BOOTDBG
 	mov ax,3700h		;get switch character in DL
 	int 21h
 	mov [switchar],dl
@@ -12614,11 +12723,26 @@ nopatch:
 	jne @F
 	mov [swch1],dl
 @@:
-if DRIVER eq 0
+ife DRIVER
 	mov si,DTA+1
+else
+	les si, cs:[request_ptr]	; load address of request header
+	les si, es:[si].init_req.cmdline
+@@:
+	lodsb es:[si]		; skip program name
+	cmp al,13
+	jz @F
+	cmp al,' '
+	jnz @B
+@@:
+endif
 contparse:
 @@:
+if DRIVER
+	lodsb es:[si]
+else
 	lodsb
+endif
 	cmp al,' '
 	je @B
 	cmp al,TAB
@@ -12632,6 +12756,9 @@ contparse:
 	cmp al,'/'
 	jne doneoptions	;if not the help switch
 @@:
+if DRIVER
+	lodsb es:[si]
+else
 	lodsb
 	cmp al,'?'
 	jne @F
@@ -12642,6 +12769,7 @@ contparse:
 	int 21h
 	int 20h			;done
 @@:
+endif
 
 ;--- ||| Other switches may go here.
 
@@ -12692,6 +12820,7 @@ noaltvid:
 noaltvidsw:
 endif
 
+ife DRIVER	; the driver version ignores invalid cmdline args
 	mov [imsg2a],al
 	mov dx,offset imsg2	;Invalid switch
 ;	call int21ah9	;v1.30: int21ah9 cannot be used ( pInDOS not yet set )
@@ -12699,14 +12828,38 @@ endif
 	int 21h
 	mov ax,4c01h	;Quit and return error status
 	int 21h
+endif
 
 ;--- Feed the remaining command line to the 'n' command.
 
 doneoptions:
+ife DRIVER
 	dec si
 	lodsb
 	call n_cmd		;process the rest of the line
+endif
 
+endif ; BOOTDBG
+
+if BOOTDBG
+
+;--- get final address of debugger behind conv. memory
+
+	push ds
+	xor cx, cx
+	mov ds, cx
+	mov ax, offset real_end + STACKSIZ + (1024-1)
+	mov cl, 10
+	shr ax, cl
+	sub ds:[413h], ax
+	mov ax, ds:[413h]
+	pop ds
+	mov cl, 6
+	shl ax, cl
+	mov [pspdbg], ax
+
+	xor cx, cx
+	mov es, cx
 endif
 
 ;--- Set up interrupt vectors.
@@ -12716,16 +12869,33 @@ endif
 	mov di,offset intsave
 @@:
 	lodsb
+if BOOTDBG
+	mov bl, al
+	mov bh, 0
+	shl bx, 1
+	shl bx, 1
+	mov ax, es:[bx+0]
+	mov dx, es:[bx+2]
+	mov [di+0],ax
+	mov [di+2],dx
+else
 	mov ah,35h
 	int 21h
 	mov [di+0],bx
 	mov [di+2],es
+endif
 	add di,4
 	xchg ax,dx		;save int # in dl
 	lodsw			;get address
 	xchg ax,dx		;restore int # in al, set int offset in dx
+if BOOTDBG
+	mov ax, [pspdbg]
+	mov es:[bx+0], dx
+	mov es:[bx+2], ax
+else
 	mov ah,25h		;set interrupt vector
 	int 21h
+endif
 	loop @B
 
 if MCB
@@ -12734,11 +12904,16 @@ if MCB
 	mov ax,es:[bx-2]	;start of MCBs
 	mov [wMCB],ax
 endif
+ife BOOTDBG
 	mov ah,34h
 	int 21h
 	mov word ptr [pInDOS+0],bx
 	mov word ptr [pInDOS+2],es
-
+else
+	mov word ptr [pInDOS+0],0
+	mov ax, [pspdbg]
+	mov word ptr [pInDOS+2],ax
+endif
 ;--- get address of DOS swappable DATA area
 ;--- to be used to get/set PSP and thus avoid DOS calls
 ;--- will not work for DOS < 3
@@ -12785,7 +12960,8 @@ endif
 	push ds
 	pop es
 
-if DRIVER eq 0
+if DRIVER or BOOTDBG
+else
 
 ;--- Save and modify termination address and the parent PSP field.
 
@@ -12808,10 +12984,22 @@ endif
 	mov ax,offset real_end + STACKSIZ + 15
 	and al,not 15		;new stack pointer
 	mov bx,ax
+if BOOTDBG
+	mov cx, ax
+endif
 	dec ax
 	dec ax
 	mov [top_sp],ax	;save new SP minus two (for the word we'll push)
-if DRIVER
+if DRIVER or BOOTDBG
+ if BOOTDBG
+	sub bx,2
+	mov [bx],offset ue_int	;"unexpected interrupt"
+	mov [run_sp],bx
+	mov es, [pspdbg]
+	xor di, di
+	xor si, si
+	rep movsb
+ endif
 	ret
 else
 	inc ax

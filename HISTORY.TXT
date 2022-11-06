@@ -273,3 +273,6 @@
        - DEBUGX: added cmdline option /2.
        - mktables.c: fixed, didn't generate a valid debugtbl.inc.
        - fixed: reading stdin from file wasn't fully MS Debug compatible.
+       - DI cmd may be activated for standard DEBUG.COM.
+       - added a "boot" version of the debugger - it's supposed to be loaded
+         before DOS by boot sector code.

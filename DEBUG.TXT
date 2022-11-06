@@ -1,15 +1,16 @@
 
  Contents
 
- 1. About
- 2. DEBUG command line
- 3. DEBUG commands
- 4. Format of Displays by Trace, Proceed, Register Commands
- 5. Unassemble Format
- 6. Instruction Operands
- 7. DEBUG Statements in Assembly Mode
- 8. Debugging with DEBUGX
- 9. DEBUG Scripts
+  1. About
+  2. DEBUG command line
+  3. DEBUG commands
+  4. Format of Displays by Trace, Proceed, Register Commands
+  5. Unassemble Format
+  6. Instruction Operands
+  7. DEBUG Statements in Assembly Mode
+  8. Debugging with DEBUGX
+  9. Installing and Initializing DebugB
+ 10. DEBUG Scripts
 
 
  1. About
@@ -796,7 +797,31 @@
  the ability to debug graphics applications.
 
 
- 9. DEBUG Scripts
+ 9. Installing and Initializing DebugB
+ -------------------------------------
+
+  DebugB is a version of DEBUG that can be used to debug boot code and DOS
+ during its initialization ( actually, because it doesn't depend on any DOS
+ interrupts, this debugger is not restricted to DOS ) . Since it has to be
+ loaded before the OS, when no file system is available yet, it must be
+ installed at a location that the boot sector can handle easily. For FAT file
+ systems, this could be the "reserved" region, just behind the boot sector(s).
+ The boot sector code must be adjusted, to load and also initialize the
+ debugger. Initialization of the debugger is simple: it's a far call of the
+ address the debugger has been loaded, with an offset of 0000 ( so it's a 
+ "call 0800h:0000" if the debugger has been loaded at linear address 08000h ).
+ The address to load the debugger may vary - low addresses are preferable since
+ the debugger will relocate itself just above conventional memory ( adjusting
+ BIOS variable at 0040h:0013h ).
+  Currently there are problems when the boot loader GRUB has to swap disk
+ numbers - to achieve this it intrudes into conventional memory, but that's
+ done in such a way that other programs can't reliably modify BIOS variable
+ 0040h:0013h anymore.
+  Some commands aren't available in DebugB: Q(uit), L(oad), W(rite), N(ame),
+ DM and the EMS branch.
+
+
+ 10. DEBUG Scripts
  ----------------
 
  Because DEBUG uses the standard input and output devices, and because

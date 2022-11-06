@@ -183,6 +183,11 @@
      will activate the debugger. This debug version is useful to debug
      fullscreen text mode programs.
 
+   - DebugB.BIN: a version that is supposed to be loaded during the
+     boot process, before DOS is loaded. Has to be installed in the
+     "reserved" sectors of a FAT disk and must be initialized by
+     modified boot sector code. Not suitable for beginners.
+
   d. The following features of MS Debug are not implemented:
 
    - Loading of .HEX files.
