@@ -804,21 +804,34 @@
  during its initialization ( actually, because it doesn't depend on any DOS
  interrupts, this debugger is not restricted to DOS ) . Since it has to be
  loaded before the OS, when no file system is available yet, it must be
- installed at a location that the boot sector can handle easily. For FAT file
- systems, this could be the "reserved" region, just behind the boot sector(s).
- The boot sector code must be adjusted, to load and also initialize the
- debugger. Initialization of the debugger is simple: it's a far call of the
+ installed at a location that the boot sector ( either the MBR or the 
+ partition's boot sector ) can handle easily - for FAT file systems, this
+ could be the "reserved" region, just behind the FAT boot sector(s).
+
+  The size of the DebugB binary may vary depending on what features are
+ activated, usually it's between 19 an 24 kB ( 38 - 48 sectors ( 512B ).
+
+  Initialization of the debugger is simple: it's a far call of the
  address the debugger has been loaded, with an offset of 0000 ( so it's a 
  "call 0800h:0000" if the debugger has been loaded at linear address 08000h ).
  The address to load the debugger may vary - low addresses are preferable since
  the debugger will relocate itself just above conventional memory ( adjusting
  BIOS variable at 0040h:0013h ).
+
+  As it has been mentioned, the boot sector code must be adjusted, to load
+ and initialize the debugger. However, DebugB has the ability to load and run
+ another boot sector from inside the debugger, using the L command ( which
+ works, unlike the other versions of the debugger, for physical disks ). The
+ DP command may be used to list the available partitions of a disk ( currently
+ MBR-partitioned disks only ).
+
   Currently there are problems when the boot loader GRUB has to swap disk
  numbers - to achieve this it intrudes into conventional memory, but that's
  done in such a way that other programs can't reliably modify BIOS variable
  0040h:0013h anymore.
-  Some commands aren't available in DebugB: Q(uit), L(oad), W(rite), N(ame),
- DM and the EMS branch.
+
+  Some commands aren't available in DebugB: Q(uit), N(ame), W(rite), DM and
+ the EMS branch.
 
 
  10. DEBUG Scripts

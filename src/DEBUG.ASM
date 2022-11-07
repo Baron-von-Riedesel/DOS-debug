@@ -391,11 +391,7 @@ CONST segment
 cmdlist	dw a_cmd,cmd_error,c_cmd,d_cmd
 		dw e_cmd,f_cmd,g_cmd,h_cmd
 		dw i_cmd,cmd_error,cmd_error
-if BOOTDBG
-		dw cmd_error	; no L for boot debug
-else
 		dw l_cmd
-endif
 		dw m_cmd
 if DRIVER or BOOTDBG
 		dw cmd_error	; no N for the driver variant
@@ -506,7 +502,7 @@ endif
 switchar db 0		;switch character
 vpage	db 0		;video page the debugger is to use for BIOS output 
 swch1	db ' '		;switch character if it's a slash
-driveno db 0		;drive no used by L/W cmds
+driveno db 0		;drive no for L/W cmds ( used for error msgs only )
 promptlen dw 0		;length of prompt
 if REDIRECT
 bufnext	dw line_in+2	;if stdin=file: address of next available character
@@ -774,7 +770,9 @@ if DRIVER or BOOTDBG
 else
 	db 'load program',9,'L [address]',CR,LF
 endif
-ife BOOTDBG
+if BOOTDBG
+	db 'load sectors',9,'L address disk sector count',CR,LF
+else
 	db 'load sectors',9,'L address drive sector count',CR,LF
 endif
 	db 'move',9,9,		'M range address',CR,LF
@@ -834,6 +832,7 @@ presskey db '[more]'
 
 errcarat db '^ Error'
 
+ife BOOTDBG
 dskerr0	db 'Write protect error',0
 dskerr1	db 'Unknown unit error',0
 dskerr2	db 'Drive not ready',0
@@ -854,6 +853,10 @@ dskerrs db dskerr0-dskerr0,dskerr1-dskerr0
 		db dskerr8-dskerr0,dskerr9-dskerr0
 		db dskerra-dskerr0,dskerrb-dskerr0
 		db dskerrc-dskerr0
+else
+dskerr1	db "Unknown disk",CR,LF,'$'
+dskerrb	db "Read fault",CR,LF,'$'
+endif
 
 reading	db ' read',0
 writing	db ' writ',0
@@ -5535,7 +5538,57 @@ endif
 	ret
 ensuredebuggeeloaded endp
 
-ife BOOTDBG
+if BOOTDBG
+
+;--- L command - absolute disk read.
+
+l_cmd proc
+	call parselw	;returns AL=drive, BX=packet
+	jz cmd_error	;must be a full command
+	@dprintf "l: disk=%X", ax
+	mov dl, al
+	push ax
+	mov ah, 8
+	int 13h
+	pop ax
+	jc disk_inval
+	mov ah, al
+	and ah, 7Fh
+	cmp dl, ah
+	jbe disk_inval
+	mov dl, al
+
+;--- todo: check if LBA access is possible, if no,
+;--- switch to CHS.
+
+	xor cx, cx
+	mov bp, sp
+	push cx
+	push cx
+	push word ptr [bx].PACKET.secno+2
+	push word ptr [bx].PACKET.secno+0
+	push [bx].PACKET.dstseg
+	push [bx].PACKET.dstofs
+	push [bx].PACKET.numsecs
+	mov cl, 16
+	push cx
+	mov si, sp
+	mov ah, 42h
+	int 13h
+	mov sp, bp
+	jc disk_err
+done:
+	ret
+disk_err:
+	mov dx, offset dskerrb
+	jmp int21ah9
+disk_inval:
+	mov dx, offset dskerr1
+	jmp int21ah9
+
+l_cmd endp
+
+else
 
 ;--- L command - read a program, or disk sectors, from disk.
 
@@ -5574,7 +5627,7 @@ ll0_1:
 	int 25h
 ll0_2:
 	mov dx,offset reading
-	jmp ww1
+	jmp disp_diskresult
 
 ;--- For .com or .exe files, we can only load at cs:100.  Check that first.
 
@@ -7578,7 +7631,14 @@ ww0_1:
 	int 26h
 ww0_2:
 	mov dx,offset writing
-ww1::				;<--- entry from ll
+;	jmp disp_diskresult	; fall thru to disp_diskresult
+
+w_cmd endp
+
+;--- display disk access result ( C if error )
+;--- DX="reading"/"writing"
+
+disp_diskresult proc
 	mov bx,ss		;restore segment registers
 	mov ds,bx
 	mov sp,[top_sp]
@@ -7600,14 +7660,14 @@ ww1::				;<--- entry from ll
 	call copystring	;si->di
 	mov si,offset drive
 	call copystring	;si->di
-	mov al,driveno
+	mov al, [driveno]
 	add al,'A'
 	stosb
 	call putsline
 ww3:
 	jmp cmdloop		;can't ret because stack is wrong
 
-w_cmd endp
+disp_diskresult endp
 
 endif
 
@@ -12505,7 +12565,9 @@ endif
 
 ;--- Check DOS version
 
-ife BOOTDBG
+if BOOTDBG
+	mov [usepacket], 1
+else
 	mov ax,3000h	;check DOS version
 	int 21h
 	xchg al,ah
