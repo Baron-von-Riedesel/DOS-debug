@@ -831,7 +831,7 @@
  0040h:0013h anymore.
 
   Some commands aren't available in DebugB: Q(uit), N(ame), W(rite), DM and
- the EMS branch.
+ the EMS branch. OTOH, unlike DEBUG, it understands the DI & DX commands.
 
 
  10. DEBUG Scripts

@@ -149,7 +149,7 @@
      compatible card, and there's no guarantee that it works as expected.
 
 
-  c. Optionally, one may create special-purpose versions of DebugX.
+  c. Optionally, one may create special-purpose versions of Debug(X).
      Run file makex.bat to create them; you'll need the JWasm assembler
      for a successful run. The additional versions are:
   

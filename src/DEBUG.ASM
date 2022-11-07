@@ -77,20 +77,24 @@ CATCHEXC0C equ 1	;catch exception 0Ch in protected-mode
 CATCHINT21 equ 1	;hook into protected-mode int 21h
 CATCHINT41 equ 1	;hook into protected-mode debug interface
 MMXSUPP    equ 1	;support MMX specific commands
-DXSUPP     equ 1	;support DX command
+DXSUPP     = 1		;support DX command
 DPMIMSW    equ 0	;1=use int 2F,ax=1686h to detect mode, 0=use value of cs
- ifndef USEUNREAL
-USEUNREAL  equ 0	;set to 1 if debug is to use unreal-mode (for DX/EX cmd)
- endif
 DISUPP     = 1
+DPSUPP     = 0
 else
 VDD        equ 0
 NOEXTENDER equ 0
 DBGNAME    equ <"DEBUG">
 DBGNAME2   equ <"Debug">
 MMXSUPP    equ 0	;support MMX specific commands
-DXSUPP     equ 0
+DXSUPP     = 0
+DPSUPP     = 0
 endif
+
+ifndef USEUNREAL
+USEUNREAL  equ 0	;set to 1 if debug is to use unreal-mode (for DX cmd)
+endif
+
 ifndef VXCHG
 VXCHG      equ 0	;1=support video swap so outputs remain separated
 endif
@@ -156,6 +160,8 @@ MCB    = 0
 EMSCMD = 0
 USESDA = 0
 DISUPP = 1
+DXSUPP = 1
+DPSUPP = 1
 endif
 
 ifndef DISUPP
@@ -434,10 +440,12 @@ _DATA segment
 top_sp	dw 0		;debugger's SP top ( also end of debug's MCB )
 errret	dw 0		;return here if error
 run_sp	dw 0		;debugger's SP when run() is executed
+ife BOOTDBG
 spadjust dw 40h 	;adjust sp by this amount for save
 pspdbe	dw 0		;debuggee's program segment prefix
-pspdbg	dw 0		;debugger's program segment prefix (always a segment)
 run2324	dw 0,0,0,0	;debuggee's interrupt vectors 23 and 24 (both modes)
+endif
+pspdbg	dw 0		;debugger's program segment prefix (always a segment)
 if ?PM
 		dw 0,0
 endif
@@ -445,9 +453,11 @@ if VDD
 hVdd	dw -1		;handle of NT helper VDD
 endif
 
+ife BOOTDBG
 sav2324	dw 0,0,0,0	;debugger's interrupt vectors 23 and 24 (real-mode only)
 psp22	dw 0,0		;original terminate address in debugger's PSP
 parent	dw 0		;original parent PSP in debugger's PSP (must be next)
+endif
 if MCB
 wMCB	dw 0		;start of MCB chain (always segment)
 endif
@@ -484,7 +494,7 @@ pSDA	dd 0		;far16 address of DOS swappable data area (real-mode)
 SDASel	dw 0		;selector value for pSDA in protected-mode
  endif
 endif
-hakstat	db 0		;whether we have hacked the vectors or not
+hakstat	db 0		;whether we have hacked vectors 23/24 or not
 machine	db 0		;cpu (0=8086,1,2,3=80386,...)
 rmode	db 0		;flags for R command
 RM_386REGS	equ 1	;bit 0: 1=386 register display
@@ -544,7 +554,7 @@ dstseg	dw ?	;seg transfer address
 PACKET ends
 
 if ?PM
-PACKET32 struc
+PACKET32 struc	; this is for DPMI32 only
 secno	dd ?
 numsecs	dw ?
 dstofs	dd ?
@@ -552,10 +562,9 @@ dstseg	dw ?
 PACKET32 ends
 endif
 
-if ?PM
-packet PACKET32 <0,0,0,0>
-else
 packet PACKET <0,0,0,0>
+if ?PM
+	dw 2	; reserve space for the additional 2 bytes of PACKET32
 endif
 
 intsave label dword	; must match order in inttab
@@ -581,7 +590,9 @@ endif
 if CATCHSYSREQ
 oldisrq	dd 0	;saved vector i09/i15
 endif
+ife BOOTDBG
 		dd 0	;saved vector i22
+endif
 if ?PM ;must be last
 oldi2f	dd 0
 endif
@@ -667,7 +678,9 @@ endif
 if CATCHSYSREQ
 	INTITEM <SYSRQINT, intrsrq>
 endif
+ife BOOTDBG
 	INTITEM <22h, intr22>
+endif
 NUMINTS = ( $ - inttab ) / sizeof INTITEM
 if ?PM
 	db 2Fh
@@ -737,88 +750,91 @@ endif
 ifdef PROMPT
 prompt1	db @CatStr(!',%PROMPT,!')
 else
-prompt1	db '-'		;main prompt
+prompt1	db '-'	;main prompt
 endif
-prompt2	db ':'		;prompt for register value
+prompt2	db ':'	;prompt for register value
 if ?PM
 	db '!'
-prompt3	db '#'		;protected-mode prompt
+prompt3	db '#'	;protected-mode prompt
 endif
 
 helpmsg db DOSNAME, ' ', DBGNAME2, ' v1.30 help screen',CR,LF
-	db 'assemble',9,	'A [address]',CR,LF
-	db 'compare',9,9,	'C range address',CR,LF
-	db 'dump',9,9,		'D [range]',CR,LF
+	db 'assemble', TAB, 'A [address]',CR,LF
+	db 'compare', TAB, TAB, 'C range address',CR,LF
+	db 'dump', TAB, TAB, 'D [range]',CR,LF
 if DISUPP
-	db 'dump interrupt',9,'DI interrupt [count]',CR,LF
+	db 'dump interrupt', TAB, 'DI interrupt [count]',CR,LF
 endif
 if ?PM
-	db 'dump LDT',9,	'DL selector [count]',CR,LF
+	db 'dump LDT', TAB, 'DL selector [count]',CR,LF
 endif
 if MCB
-	db 'dump MCB chain',9,'DM',CR,LF
+	db 'dump MCB chain', TAB, 'DM',CR,LF
+endif
+if DPSUPP
+	db 'dump partitions', TAB, 'DP [physical_disk]',CR,LF
 endif
 if DXSUPP
-	db 'dump ext memory',9,'DX [physical_address]',CR,LF
+	db 'dump ext memory', TAB, 'DX [physical_address]',CR,LF
 endif
-	db 'enter',9,9,	'E address [list]',CR,LF
-	db 'fill',9,9,		'F range list',CR,LF
-	db 'go',9,9,		'G [=address] [breakpts]',CR,LF
-	db 'hex add/sub',9,'H value1 value2',CR,LF
-	db 'input',9,9,	'I[W|D] port',CR,LF
+	db 'enter', TAB, TAB, 'E address [list]',CR,LF
+	db 'fill', TAB, TAB, 'F range list',CR,LF
+	db 'go', TAB, TAB, 'G [=address] [breakpts]',CR,LF
+	db 'hex add/sub', TAB, 'H value1 value2',CR,LF
+	db 'input', TAB, TAB, 'I[W|D] port',CR,LF
 if DRIVER or BOOTDBG
 else
-	db 'load program',9,'L [address]',CR,LF
+	db 'load program', TAB, 'L [address]',CR,LF
 endif
 if BOOTDBG
-	db 'load sectors',9,'L address disk sector count',CR,LF
+	db 'load sectors', TAB, 'L address disk sector count',CR,LF
 else
-	db 'load sectors',9,'L address drive sector count',CR,LF
+	db 'load sectors', TAB, 'L address drive sector count',CR,LF
 endif
-	db 'move',9,9,		'M range address',CR,LF
-	db '80x86 mode',9,	'M [x] (x=0..6)',CR,LF
-	db 'set FPU mode',9,'MC [2|N] (2=287,N=no FPU)',CR,LF
+	db 'move', TAB, TAB, 'M range address',CR,LF
+	db '80x86 mode', TAB, 'M [x] (x=0..6)',CR,LF
+	db 'set FPU mode', TAB, 'MC [2|N] (2=287,N=no FPU)',CR,LF
 if DRIVER or BOOTDBG
 else
-	db 'set name',9,	'N [[drive:][path]progname [arglist]]',CR,LF
+	db 'set name', TAB, 'N [[drive:][path]progname [arglist]]',CR,LF
 endif
-	db 'output',9,9,	'O[W|D] port value',CR,LF
-	db 'proceed',9,9,	'P [=address] [count]',CR,LF
+	db 'output', TAB, TAB, 'O[W|D] port value',CR,LF
+	db 'proceed', TAB, TAB, 'P [=address] [count]',CR,LF
 if DRIVER or BOOTDBG
 else
-	db 'quit',9,9,		'Q',CR,LF
+	db 'quit', TAB, TAB, 'Q',CR,LF
 endif
 if ?PM
-	db 'forced pm quit',9, 'QQ',CR,LF
+	db 'forced pm quit', TAB, 'QQ',CR,LF
 endif
-	db 'register',9,	'R [register [value]]',CR,LF
+	db 'register', TAB, 'R [register [value]]',CR,LF
 if ?PM
 helpmsg2 label byte
 endif
 if MMXSUPP
-	db 'MMX register',9,'RM',CR,LF
+	db 'MMX register', TAB, 'RM',CR,LF
 endif
-	db 'FPU register',9,'RN',CR,LF
-	db 'toggle 386 regs',9,'RX',CR,LF
-	db 'search',9,9,	'S range list',CR,LF
+	db 'FPU register', TAB, 'RN',CR,LF
+	db 'toggle 386 regs', TAB, 'RX',CR,LF
+	db 'search', TAB, TAB, 'S range list',CR,LF
 if ?PM eq 0
 helpmsg2 label byte
 endif
-	db 'trace',9,9,	'T [=address] [count]',CR,LF
-	db 'trace mode',9,	'TM [0|1]',CR,LF
-	db 'unassemble',9,	'U [range]',CR,LF
+	db 'trace', TAB, TAB, 'T [=address] [count]',CR,LF
+	db 'trace mode', TAB, 'TM [0|1]',CR,LF
+	db 'unassemble', TAB, 'U [range]',CR,LF
 if VXCHG
-	db 'view screen',9,	'V',CR,LF
+	db 'view screen', TAB, 'V',CR,LF
 endif
 if DRIVER or BOOTDBG
 else
-	db 'write program',9,'W [address]',CR,LF
+	db 'write program', TAB, 'W [address]',CR,LF
 endif
 ife BOOTDBG
-	db 'write sectors',9,'W address drive sector count',CR,LF
+	db 'write sectors', TAB, 'W address drive sector count',CR,LF
 endif
 if EMSCMD
-	db 'expanded mem',9,'XA/XD/XM/XR/XS,X? for help'
+	db 'expanded mem', TAB, 'XA/XD/XM/XR/XS,X? for help'
 endif
 if ?PM
 	db CR,LF,LF
@@ -946,11 +962,11 @@ emserrs	dw emserr1,emserr1,0,emserr3,0,emserr5,0,emserr7,emserr8,emserr9
 		dw emserra,emserrb
 
 xhelpmsg db 'Expanded memory (EMS) commands:',CR,LF
-	db '  Allocate	XA count',CR,LF
-	db '  Deallocate	XD handle',CR,LF
-	db '  Map memory	XM logical-page physical-page handle',CR,LF
-	db '  Reallocate	XR handle count',CR,LF
-	db '  Show status	XS',CR,LF
+	db '  Allocate', TAB, 'XA count',CR,LF
+	db '  Deallocate', TAB, 'XD handle',CR,LF
+	db '  Map memory', TAB, 'XM logical-page physical-page handle',CR,LF
+	db '  Reallocate', TAB, 'XR handle count',CR,LF
+	db '  Show status', TAB, 'XS',CR,LF
 size_xhelpmsg equ $ - xhelpmsg
 
 ;--- strings used by XA, XD, XR and XM commands
@@ -1642,11 +1658,13 @@ endif	;PM
 ;   when we quit.  Therefore control ends up here when Control-Break or
 ;   an Abort in Abort/Retry/Fail is selected.
 
+ife BOOTDBG
 intr22:
 	cld			;reestablish things
 	mov ax,cs
 	mov ds,ax
 	mov ss,ax
+endif
 
 ;--- fall through to cmdloop
 
@@ -3983,6 +4001,57 @@ cc2:
 	ret
 c_cmd endp
 
+if DPSUPP
+
+;--- display partition table
+
+dp_cmd proc
+	mov bp, sp
+	sub sp, 512
+	mov word ptr packet.secno+0, 0
+	mov word ptr packet.secno+2, 0
+	mov packet.numsecs, 1
+	mov packet.dstofs, sp
+	mov packet.dstseg, ds
+	mov al, 80h
+	call readsect
+	jc error
+	add sp, 1BEh
+	mov si, sp
+	mov cx, 4
+nextp:
+	push cx
+	mov di, offset line_out
+	mov ax, ' 4'
+	sub al, cl
+	stosw
+	mov al, [si+4]	; partition type
+	call hexbyte
+	mov al, ' '
+	stosb
+	mov ax, [si+10]	; hiword start LBA
+	call hexword
+	mov ax, [si+8]	; loword start LBA
+	call hexword
+	mov al, ' '
+	stosb
+	mov ax, [si+14]	; hiword size LBA
+	call hexword
+	mov ax, [si+12]	; loword size LBA
+	call hexword
+	call putsline
+	pop cx
+	add si, 16
+	loop nextp
+	mov sp, bp
+	ret
+error:
+	mov sp, bp
+	call int21ah9
+	ret
+dp_cmd endp
+endif
+
 if ?PM
 CONST segment
 descbase db ' base=???????? limit=???????? attr=????',0
@@ -4380,14 +4449,18 @@ else
 	stosw
 	mov al,bl
 	stosb       ;base[24-31] of dest
+ if ?PM
 	call ispm
+ endif
 	mov si,offset line_out ;ds:si -> GDT
 	mov cx,0040h	;number of word to copy
 	mov ah,87h
+ if ?PM
 	jz @F
 	invoke intcall, 15h, cs:[pspdbg]
 	jmp i15ok
 @@:
+ endif
 	int 15h
 i15ok:
 	jc dx_exit
@@ -4472,6 +4545,12 @@ if DXSUPP
 	cmp [machine],3
 	jb @F
 	jmp dx_cmd
+@@:
+endif
+if DPSUPP
+	cmp al,'p'
+	jnz @F
+	jmp dp_cmd
 @@:
 endif
 if MCB
@@ -4652,7 +4731,7 @@ e_cmd proc
 	cmp al,CR
 	je ee1			;if prompt mode
 	push dx			;save destination offset
-	call getstr		;get data bytes SI -> lineout
+	call getstr		;get data bytes SI -> line_out
 	mov cx,di
 	mov dx,offset line_out
 	sub cx,dx		;length of byte string
@@ -4691,9 +4770,11 @@ ee0a::
 	pop ds
 	push ss			;restore es
 	pop es
+ife BOOTDBG
 	mov di,offset run2324	;debuggee's int 23/24 values
 	call prehak1	;copy things back
 	call unhack		;set debugger's int 23/24
+endif
 	ret
 
 ;--- Prompt mode.
@@ -4824,10 +4905,11 @@ ee13:
 	call dohack		;set debuggee's int 23/24
 	call writemem	;write AL at BX:(E)DX
 	pop ax
+ife BOOTDBG
 	mov di,offset run2324	;debuggee's int 23/24
 	call prehak1	;copy things back
 	call unhack		;set debugger's int 23/24
-
+endif
 ;--- End the loop over bytes.
 
 ee14:
@@ -5126,7 +5208,7 @@ if ?PM
 endif
 	call run		;run the program
 if DRIVER or BOOTDBG
-	@dprintf "g_cmd: run returned, ds=%X, spadjust=%X", ds, spadjust
+	@dprintf "g_cmd: run returned, ds=%X", ds
 else
 	@dprintf "g_cmd: run returned, ds=%X, spadjust=%X, spsav=%lX", ds, spadjust, dword ptr ds:[SPSAV]
 endif
@@ -5303,13 +5385,12 @@ if DRIVER or BOOTDBG
 	ret
 else
 	mov bx,cs	;if format is changed to MZ, this must be changed as well!
-endif
 setpsp proc
 	mov ah,50h
-if ?PM
+ if ?PM
 	call ispm
 	jz setpsp_rm
-if NOEXTENDER
+  if NOEXTENDER
 	.286
 	push cx
 	push dx
@@ -5328,33 +5409,35 @@ if NOEXTENDER
 	pop cx
 	ret
 	.8086
-else
+  else
 	jmp doscall_rm
-endif
+  endif
 setpsp_rm:
-endif
+ endif
 
-if USESDA
-if ?PM
+ if USESDA
+  if ?PM
 	cmp word ptr [pSDA+2],0
 	jz doscall_rm
-endif
+  endif
 	push ds
 	push si
-if ?PM
+  if ?PM
 	call LoadSDA
-else
+  else
 	lds si,[pSDA]
-endif
+  endif
 	mov [si+10h],bx
 	pop si
 	pop ds
 	ret
-else
+ else
 	jmp doscall_rm
-endif
+ endif
 
 setpsp endp
+
+endif
 
 getpsp proc
 	mov ah,51h
@@ -5538,31 +5621,31 @@ endif
 	ret
 ensuredebuggeeloaded endp
 
-if BOOTDBG
+if BOOTDBG or DPSUPP
 
-;--- L command - absolute disk read.
+;--- abs disk read, arguments in [packet]
+;--- al = disk
+;--- out: C=error
+;--- modifies all std regs except sp, bp
 
-l_cmd proc
-	call parselw	;returns AL=drive, BX=packet
-	jz cmd_error	;must be a full command
-	@dprintf "l: disk=%X", ax
+readsect proc
+	@dprintf "readsect: disk=%X", ax
 	mov dl, al
-	push ax
-	mov ah, 8
+	and al, al
+	jns nolba
+	mov bx, 055AAh
+	mov ah, 41h
 	int 13h
-	pop ax
-	jc disk_inval
-	mov ah, al
-	and ah, 7Fh
-	cmp dl, ah
-	jbe disk_inval
-	mov dl, al
-
-;--- todo: check if LBA access is possible, if no,
-;--- switch to CHS.
-
+	jc nolba
+	cmp bx, 0AA55h
+	jnz nolba
+	test cl, 1
+	jz nolba
 	xor cx, cx
+	push bp
 	mov bp, sp
+	mov bx, offset packet
+	@dprintf "readsect: lba access, dx=%X, secno=%lX", dx, [bx].PACKET.secno
 	push cx
 	push cx
 	push word ptr [bx].PACKET.secno+2
@@ -5576,16 +5659,72 @@ l_cmd proc
 	mov ah, 42h
 	int 13h
 	mov sp, bp
+	pop bp
 	jc disk_err
 done:
 	ret
+nolba:
+	push dx
+	mov ah, 8
+	int 13h
+	pop ax
+	jc disk_inval
+	mov bx, offset packet
+	push ax
+	call lba2chs
+	pop ax
+	mov dl, al
+	@dprintf "l: chs access, dx=X, cx=%X", dx, cx
+	mov ah, 2
+	mov al, byte ptr [bx].PACKET.numsecs
+	push es
+	les bx, dword ptr [bx].PACKET.dstofs
+	int 13h
+	pop es
+	jc disk_err
+	ret
 disk_err:
 	mov dx, offset dskerrb
-	jmp int21ah9
+	jmp @F
 disk_inval:
 	mov dx, offset dskerr1
-	jmp int21ah9
+@@:
+	stc
+	ret
+lba2chs:
+	mov si, cx
+	and si, 3Fh
+	mov al, dh
+	inc al
+	mov ah, 0
+	mov di, ax
+	mov cx, word ptr [bx].PACKET.secno+0
+	mov ax, word ptr [bx].PACKET.secno+2
+	xor dx, dx
+	div si
+	xchg ax, cx
+	div si
+	inc dx
+	xchg cx, dx
+	div di
+	mov dh, dl
+	mov ch, al
+	ror ah, 1
+	ror ah, 1
+	or cl, ah
+	retn
+readsect endp
 
+;--- L command - absolute disk read.
+
+l_cmd proc
+	call parselw	;returns AL=drive, BX=packet
+	jz cmd_error	;must be a full command
+	call readsect
+	jnc @F
+	call int21ah9
+@@:
+	ret
 l_cmd endp
 
 else
@@ -5632,8 +5771,7 @@ ll0_2:
 ;--- For .com or .exe files, we can only load at cs:100.  Check that first.
 
 ll1:
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
 	test [fileext], EXT_COM or EXT_EXE
 	jz loadfile		;if not .com or .exe file
 	cmp bx,[regs.rCS]
@@ -5646,8 +5784,7 @@ endif
 
 l_cmd endp
 
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
 
 ;--- load (any) file (if not .EXE or .COM, load at BX:DX)
 ;--- open file and get length
@@ -8267,6 +8404,9 @@ endif
 	int 21h
 freemem endp
 
+
+ife (DRIVER or BOOTDBG)
+
 ;--- this is called by "run"
 ;--- set debuggee's INT 23/24.
 ;--- don't use INT 21h here, DOS might be "in use".
@@ -8314,6 +8454,8 @@ si2324pm:
 endif
 setint2324 endp
 
+endif
+
 ;--- This is the routine that starts up the running program.
 
 run proc
@@ -8331,8 +8473,8 @@ if DRIVER or BOOTDBG
 else
 	mov bx,[pspdbe]
 	call setpsp		;set debuggee's PSP
-endif
 	call setint2324	;set debuggee's int 23/24
+endif
 
 	mov [run_sp],sp	;save stack position
 if DRIVER or BOOTDBG
@@ -8605,13 +8747,15 @@ if ?PM
 	mov [regs.msw],ax	;0000=real-mode, FFFF=protected-mode
 endif
 
+ife (DRIVER or BOOTDBG)
 	call getpsp
 	mov  [pspdbe],bx
 	call getint2324		;save debuggee's int 23/24, set debugger's int 23/24
-
+endif
 	push ds
 	pop es
 	call setpspdbg		;set debugger's PSP
+
 	and byte ptr [regs.rFL+1],not 1	;clear single-step interrupt
 
 	mov [bInDbg],1
@@ -8846,6 +8990,7 @@ setscreen endp
 
 endif
 
+ife ( DRIVER or BOOTDBG )
 ;--- this is low-level, called on entry into the debugger.
 ;--- the debuggee's registers have already been saved here.
 ;--- 1. get debuggee's interrupt vectors 23/24
@@ -8926,6 +9071,8 @@ endif
 
 getint2324 endp
 
+endif
+
 ;   The next three subroutines concern the handling of INT 23 and 24.
 ;   These interrupt vectors are saved and restored when running the
 ;   child process, but are not active when DEBUG itself is running.
@@ -8942,6 +9089,7 @@ getint2324 endp
 ;   Entry   es = cs
 
 prephack proc
+ife BOOTDBG
 	cmp [hakstat],0
 	jnz @F					;if hack status error
 	push di
@@ -8956,6 +9104,7 @@ prephack proc
 	call int21ah9	;print string
 	pop dx
 	pop ax
+endif
 	ret
 prephack endp
 
@@ -8963,10 +9112,11 @@ prephack endp
 ;--- DI is either sav2324 (debugger's) or run2324 (debuggee's)
 
 prehak1:
-if ?PM
+ife (DRIVER or BOOTDBG)
+ if ?PM
 	call ispm
 	jnz prehak_pm	;nothing to do
-endif
+ endif
 	push ds
 	push si
 	xor si,si
@@ -8979,6 +9129,7 @@ endif
 	pop si
 	pop ds
 prehak_pm:
+endif
 	ret
 
 CONST segment
@@ -8993,29 +9144,36 @@ CONST ends
 ;   Exit    es = debugger's segment
 
 dohack proc
+if DRIVER or BOOTDBG
+	ret
+else
 	push si
 	mov [hakstat],1
 	mov si,offset run2324	;debuggee's interrupt vectors
-if ?PM
+ if ?PM
 	call ispm
 	jnz dohack_pm
-endif
+ endif
 	jmp hak1
 
-if ?PM
+ if ?PM
 restdbgi2324:			;set debugger's int 23/24 in PM
 	call setdbgI2324
 	push ss
 	pop es
 	ret
+ endif
 endif
 
 unhack::				;set debugger's int 23/24, set ES to debugger segment
+if DRIVER or BOOTDBG
+	ret
+else
 	mov [hakstat],0
-if ?PM
+ if ?PM
 	call ispm
 	jnz restdbgi2324
-endif
+ endif
 	push si
 	mov si,offset sav2324	;debugger's interrupt vectors
 hak1:
@@ -9032,7 +9190,7 @@ hak1:
 	push cs
 	pop es
 	ret
-if ?PM
+ if ?PM
 
 ;--- set debuggee's int 23/24 pmode
 
@@ -9058,6 +9216,7 @@ dohack_pm:
 	pop si
 	ret
 	.8086
+ endif
 endif
 dohack endp
 
@@ -9331,13 +9490,13 @@ errorj7:
 ;       If there are more arguments (absolute disk read/write), then the
 ;       zero flag is clear, and registers are set as follows:
 ;
-;       DOS versions prior to 3.31:
+;       [usepacket] == 0:
 ;       AL  Drive number
 ;       CX  Number of sectors to read
 ;       DX  Beginning logical sector number
 ;       DS:BX   Transfer address
 ;
-;       Later DOS versions:
+;       [usepacket] != 0:
 ;       AL  Drive number
 ;       BX  Offset of packet
 ;       CX  0FFFFh
@@ -12064,7 +12223,7 @@ copystring proc
 	ret
 copystring endp
 
-;   HEXDWORD - Print hex word (in EAX).
+;   HEXDWORD - Print hex dword (in EAX).
 ;   clears HiWord(EAX)
 
 ;   HEXWORD - Print hex word (in AX).
@@ -12159,16 +12318,41 @@ stdout proc
 	jcxz nooutput
 	push si
 	mov si,dx
-@@:
+nextchar:
 	lodsb
-	mov bh,[vpage]  ;v1.30: use the current video page
+	mov bh,[vpage]	;v1.30: use the current video page
+	cmp al, TAB		;v1.30: handle tabs
+	jz istab
 	mov ah,0Eh
 	int 10h
-	loop @B
+donetab:
+	loop nextchar
 	pop si
 nooutput:
 	pop bx
 	ret
+
+;--- interpret TAB in BIOS output
+
+istab:
+	push cx
+	push dx
+	mov ah, 3
+	int 10h
+	mov al, dl
+	and al, 7	; 0  1  2  3  4  5  6  7
+	sub al, 8	;-8 -7 -6 -5 -4 -3 -2 -1
+	neg al		; 8  7  6  5  4  3  2  1
+	mov cl,al
+@@:
+	mov ax,0E20h
+	int 10h
+	dec cl
+	jnz @B
+	pop dx
+	pop cx
+	jmp donetab
+
 stdout endp
 
 ifdef _DEBUG

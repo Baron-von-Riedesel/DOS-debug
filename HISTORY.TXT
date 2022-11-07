@@ -275,4 +275,5 @@
        - fixed: reading stdin from file wasn't fully MS Debug compatible.
        - DI cmd may be activated for standard DEBUG.COM.
        - added a "boot" version of the debugger - it's supposed to be loaded
-         before DOS by boot sector code.
+         before DOS by boot loader code.
+       - fixed: correctly handle tabs if output is via BIOS.
