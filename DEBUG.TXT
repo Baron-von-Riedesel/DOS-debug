@@ -800,30 +800,33 @@
  9. Installing and Initializing DebugB
  -------------------------------------
 
-  DebugB is a version of DEBUG that can be used to debug boot code and DOS
+  DebugB is a variant of DEBUG that can be used to debug boot code and DOS
  during its initialization ( actually, because it doesn't depend on any DOS
- interrupts, this debugger is not restricted to DOS ) . Since it has to be
- loaded before the OS, when no file system is available yet, it must be
- installed at a location that the boot sector ( either the MBR or the 
- partition's boot sector ) can handle easily - for FAT file systems, this
+ interrupts, this variant is not restricted to DOS ) . Since it has to be
+ loaded before the OS, when no file system is available yet, it should be
+ installed at a location that the bootstrap code ( of either the MBR or the 
+ partition's boot sector ) can handle comfortably - for FAT file systems, this
  could be the "reserved" region, just behind the FAT boot sector(s).
 
   The size of the DebugB binary may vary depending on what features are
- activated, usually it's between 19 an 24 kB ( 38 - 48 sectors ( 512B ).
+ activated, usually it's about 20 kB or 40 sectors of 512 bytes.
 
-  Initialization of the debugger is simple: it's a far call of the
+  Initialization of the debugger is simple: it's a far call to the
  address the debugger has been loaded, with an offset of 0000 ( so it's a 
  "call 0800h:0000" if the debugger has been loaded at linear address 08000h ).
- The address to load the debugger may vary - low addresses are preferable since
- the debugger will relocate itself just above conventional memory ( adjusting
- BIOS variable at 0040h:0013h ).
+ The call will preserve contents of all segment registers and registers
+ SP & BP. The address to load the debugger may vary - low addresses are
+ preferable since the debugger will relocate itself just above conventional
+ memory ( adjusting BIOS variable at 0040h:0013h ).
 
   As it has been mentioned, the boot sector code must be adjusted, to load
- and initialize the debugger. However, DebugB has the ability to load and run
- another boot sector from inside the debugger, using the L command ( which
- works, unlike the other versions of the debugger, for physical disks ). The
- DP command may be used to list the available partitions of a disk ( currently
- MBR-partitioned disks only ).
+ and initialize the debugger. Once the debugger is initialized, running an
+ INT 1 or INT 3 will activate it. DebugB has 2 functions that are particularly
+ usefull in this context: the L command allows to read sectors ( unlike the
+ "normal" variants of DEBUG, DebugB's L command works with physical disks ),
+ the DP command may be used to list the partitions of a disk ( currently
+ MBR-partitioned disks only ). So it's possible to load the boot sector of
+ any partition on the HDs and execute it.
 
   Currently there are problems when the boot loader GRUB has to swap disk
  numbers - to achieve this it intrudes into conventional memory, but that's

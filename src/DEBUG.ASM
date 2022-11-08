@@ -149,7 +149,7 @@ ifndef BOOTDBG
 BOOTDBG    equ 0	;load debugger as a "boot sector"
 endif
 
-if DRIVER or BOOTDBG
+if (DRIVER or BOOTDBG)
 REDIRECT equ 0
 else
 REDIRECT equ 1		;stdin/stdout redirection
@@ -178,8 +178,7 @@ LINE_IN_LEN equ 257	;length of line_in (including header stuff)
 
 ;--- PSP offsets
 
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
 ALASAP	equ 02h	;Address of Last segment allocated to program
 TPIV	equ 0ah	;Terminate Program Interrupt Vector (int 22h)
 CCIV	equ 0eh	;Control C Interrupt Vector (int 23h)
@@ -443,11 +442,13 @@ run_sp	dw 0		;debugger's SP when run() is executed
 ife BOOTDBG
 spadjust dw 40h 	;adjust sp by this amount for save
 pspdbe	dw 0		;debuggee's program segment prefix
-run2324	dw 0,0,0,0	;debuggee's interrupt vectors 23 and 24 (both modes)
 endif
 pspdbg	dw 0		;debugger's program segment prefix (always a segment)
-if ?PM
-		dw 0,0
+ife BOOTDBG
+run2324	dw 0,0,0,0	;debuggee's interrupt vectors 23 and 24 (both modes)
+ if ?PM
+		dw 0,0		;in DPMI32, vectors are FWORDs
+ endif
 endif
 if VDD
 hVdd	dw -1		;handle of NT helper VDD
@@ -599,8 +600,7 @@ endif
 
 ;--- Parameter block for exec call.
 
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
 EXECS struc
 environ dw ?	; +0 environment segment
 cmdtail dd ?	; +2 address of command tail to copy
@@ -772,7 +772,7 @@ if MCB
 	db 'dump MCB chain', TAB, 'DM',CR,LF
 endif
 if DPSUPP
-	db 'dump partitions', TAB, 'DP [physical_disk]',CR,LF
+	db 'dump partitions', TAB, 'DP physical_disk',CR,LF
 endif
 if DXSUPP
 	db 'dump ext memory', TAB, 'DX [physical_address]',CR,LF
@@ -782,8 +782,7 @@ endif
 	db 'go', TAB, TAB, 'G [=address] [breakpts]',CR,LF
 	db 'hex add/sub', TAB, 'H value1 value2',CR,LF
 	db 'input', TAB, TAB, 'I[W|D] port',CR,LF
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
 	db 'load program', TAB, 'L [address]',CR,LF
 endif
 if BOOTDBG
@@ -794,14 +793,12 @@ endif
 	db 'move', TAB, TAB, 'M range address',CR,LF
 	db '80x86 mode', TAB, 'M [x] (x=0..6)',CR,LF
 	db 'set FPU mode', TAB, 'MC [2|N] (2=287,N=no FPU)',CR,LF
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
 	db 'set name', TAB, 'N [[drive:][path]progname [arglist]]',CR,LF
 endif
 	db 'output', TAB, TAB, 'O[W|D] port value',CR,LF
 	db 'proceed', TAB, TAB, 'P [=address] [count]',CR,LF
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
 	db 'quit', TAB, TAB, 'Q',CR,LF
 endif
 if ?PM
@@ -826,8 +823,7 @@ endif
 if VXCHG
 	db 'view screen', TAB, 'V',CR,LF
 endif
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
 	db 'write program', TAB, 'W [address]',CR,LF
 endif
 ife BOOTDBG
@@ -870,8 +866,9 @@ dskerrs db dskerr0-dskerr0,dskerr1-dskerr0
 		db dskerra-dskerr0,dskerrb-dskerr0
 		db dskerrc-dskerr0
 else
-dskerr1	db "Unknown disk",CR,LF,'$'
+dskerr1	db "Invalid disk",CR,LF,'$'
 dskerrb	db "Read fault",CR,LF,'$'
+szNoHD	db "Not a HD",CR,LF,'$'
 endif
 
 reading	db ' read',0
@@ -1550,6 +1547,7 @@ endif
 	pop ax
 	jmp isdebugger32
 isdebuggee32:
+	@dprintf "excxx: client exception"
 	mov [ebp].EXFR32.rEIP, offset intrtn2
 	and byte ptr  [ebp].EXFR32.rEFL+1, not 3;reset IF + TF
 	mov [ebp].EXFR32.rESP, offset regs.rSS
@@ -1675,8 +1673,7 @@ cmdloop proc
 	mov [errret],offset cmdloop
 	push ds
 	pop es
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
 	call isdebuggeeloaded
 	jnz @F
 	call createdummytask	;if no task is active, create a dummy one
@@ -4003,20 +4000,26 @@ c_cmd endp
 
 if DPSUPP
 
-;--- display partition table
+;--- DP disk - display partition table of a fixed disk
 
 dp_cmd proc
+	call skipwhite
+	call getbyte		;get byte into DL
+	call chkeol			;expect end of line here
 	mov bp, sp
+	mov al, dl
+	mov dx, offset szNoHD
+	and al, al
+	jns error
 	sub sp, 512
 	mov word ptr packet.secno+0, 0
 	mov word ptr packet.secno+2, 0
 	mov packet.numsecs, 1
 	mov packet.dstofs, sp
 	mov packet.dstseg, ds
-	mov al, 80h
 	call readsect
 	jc error
-	add sp, 1BEh
+	add sp, 1BEh	; offset PT
 	mov si, sp
 	mov cx, 4
 nextp:
@@ -5210,7 +5213,7 @@ endif
 if DRIVER or BOOTDBG
 	@dprintf "g_cmd: run returned, ds=%X", ds
 else
-	@dprintf "g_cmd: run returned, ds=%X, spadjust=%X, spsav=%lX", ds, spadjust, dword ptr ds:[SPSAV]
+	@dprintf "g_cmd: run returned, ds=%X, [spadjust]=%X, [spsav]=%lX", ds, [spadjust], dword ptr ds:[SPSAV]
 endif
 if ?PM
 	call getcsattr
@@ -5252,6 +5255,7 @@ endif
 
 	sizeprfX		;mov [regs.rIP],ebx
 	mov [regs.rIP],bx
+	@dprintf "g_cmd: call dumpregs"
 	call dumpregs
 	ret
 gg_exit:
@@ -5591,8 +5595,7 @@ nodosextinst:
 	jmp int21ah9
 endif
 
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
 isdebuggeeloaded:
 	mov ax,[pspdbe]
 	cmp ax,[pspdbg]
@@ -5603,8 +5606,7 @@ endif
 ;--- set SI:DI to CS:IP, preserve AX, BX, DX
 
 ensuredebuggeeloaded proc
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
 	push ax
 	call isdebuggeeloaded
 	jnz @F
@@ -5642,8 +5644,6 @@ readsect proc
 	test cl, 1
 	jz nolba
 	xor cx, cx
-	push bp
-	mov bp, sp
 	mov bx, offset packet
 	@dprintf "readsect: lba access, dx=%X, secno=%lX", dx, [bx].PACKET.secno
 	push cx
@@ -5658,8 +5658,7 @@ readsect proc
 	mov si, sp
 	mov ah, 42h
 	int 13h
-	mov sp, bp
-	pop bp
+	lea sp, [si+8*2]
 	jc disk_err
 done:
 	ret
@@ -5715,6 +5714,10 @@ lba2chs:
 	retn
 readsect endp
 
+endif
+
+if BOOTDBG
+
 ;--- L command - absolute disk read.
 
 l_cmd proc
@@ -5734,34 +5737,34 @@ else
 l_cmd proc
 	call parselw	;parse it, addr in bx:(e)dx
 	jz ll1			;if request to read program
-if NOEXTENDER
+ if NOEXTENDER
 	call ispm
 	jz @F
 	call isextenderavailable
 	jc nodosextinst
 @@:
-endif
+ endif
 	cmp cs:[usepacket],2
 	jb ll0_1
 	mov dl,al		;A=0,B=1,C=2,...
 	xor si,si		;read drive
-if VDD
+ if VDD
 	mov ax,[hVdd]
 	cmp ax,-1
 	jnz callvddread
-endif
+ endif
 	inc dl			;A=1,B=2,C=3,...
 	mov ax,7305h	;DS:(E)BX -> packet
 	stc
 	int 21h			;use int 21h here, not doscall!
 	jmp ll0_2
-if VDD
+ if VDD
 callvddread:
 	mov cx,5
 	add cl,[dpmi32]
 	DispatchCall
 	jmp ll0_2
-endif
+ endif
 ll0_1:
 	int 25h
 ll0_2:
@@ -5771,7 +5774,7 @@ ll0_2:
 ;--- For .com or .exe files, we can only load at cs:100.  Check that first.
 
 ll1:
-ife (DRIVER or BOOTDBG)
+ ife DRIVER
 	test [fileext], EXT_COM or EXT_EXE
 	jz loadfile		;if not .com or .exe file
 	cmp bx,[regs.rCS]
@@ -5779,12 +5782,12 @@ ife (DRIVER or BOOTDBG)
 	cmp dx,100h
 	je loadfile		;if address is OK (or not given)
 ll2:
-endif
+ endif
 	jmp cmd_error	;can only load .com or .exe at cs:100
 
 l_cmd endp
 
-ife (DRIVER or BOOTDBG)
+ ife DRIVER
 
 ;--- load (any) file (if not .EXE or .COM, load at BX:DX)
 ;--- open file and get length
@@ -5813,7 +5816,7 @@ loadfile proc
 	test [fileext],EXT_COM or EXT_EXE
 	jnz loadpgm		;if .com or .exe file
 
-if ?PM
+  if ?PM
 ;--- dont load a file in protected mode,
 ;--- the read loop makes some segment register arithmetic
 	call ispm
@@ -5822,7 +5825,7 @@ if ?PM
 	call int21ah9
 	jmp ll12
 @@:
-endif
+  endif
 
 ;--- Load it ourselves.
 ;--- For non-.com/.exe files, we just do a read, and set BX:CX to the
@@ -5873,13 +5876,13 @@ ll10:
 ;--- seems a bit unwise to modify registers if a debuggee is running 
 ;--- but MS DEBUG does it as well
 
-if 0
+  if 0
 	mov cx,[regs.rCS]
 	cmp cx,[pspdbe]
 	jnz noregmodify
 	cmp [regs.rIP],100h
 	jnz noregmodify
-endif
+  endif
 	mov [regs.rBX],dx
 	mov [regs.rCX],ax
 noregmodify:    
@@ -5920,7 +5923,7 @@ ll12:
 
 loadfile endp
 
-endif
+ endif  ; ife DRIVER
 
 setespefl proc
 	sizeprf		;pushfd
@@ -5932,7 +5935,7 @@ setespefl proc
 	ret
 setespefl endp
 
-ife DRIVER
+ ife DRIVER
 
 loadpgm proc
 
@@ -5944,7 +5947,7 @@ loadpgm proc
 	int 21h
 	pop bx			;dx:bx is the file length
 
-if 1
+  if 1
 
 ;--- adjust .exe size by 200h (who knows why)
 
@@ -5953,7 +5956,7 @@ if 1
 	sub bx,200h
 	sbb dx,0
 @@:
-endif
+  endif
 
 	push bx
 	push dx
@@ -6062,8 +6065,8 @@ setup_adu::
 
 loadpgm endp
 
-endif
-endif
+ endif	;ife DRIVER
+endif	;else BOOTDBG
 
 ;--- M command - move/copy memory.
 
@@ -6242,8 +6245,7 @@ exts label byte
 	db ".COM",EXT_COM
 CONST ends
 
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
 
 n_cmd proc
 	mov di,DTA		;destination address
@@ -6953,8 +6955,7 @@ endif
 exitdpmi endp
 endif
 
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
 
 ;--- Q command - quit.
 
@@ -7729,7 +7730,11 @@ unlockdrive:
 
 w_cmd proc
 	call parselw	;parse L and W argument format (out: bx:(e)dx=address)
+if DRIVER
+	jz cmd_error	;no support to write program
+else
 	jz write_file	;if request to write program
+endif
 if NOEXTENDER
 	call ispm
 	jz @F
@@ -7808,14 +7813,13 @@ disp_diskresult endp
 
 endif
 
+ife (DRIVER or BOOTDBG)
+
 ;--- Write to file.  First check the file extension.
 ;--- size of file is in client's BX:CX, 
 ;--- default start address is DS:100h
 
 write_file proc
-if DRIVER or BOOTDBG
-	jmp cmd_error
-else
 	mov al,[fileext]	;get flags of file extension
 	test al,EXT_EXE + EXT_HEX
 	jz @F				;if not EXE or HEX
@@ -7918,8 +7922,9 @@ ww14:
 	mov ah,3eh		;close file
 	int 21h
 	ret
-endif
 write_file endp
+
+endif
 
 ;--- Error opening file.  This is also called by the load command.
 
@@ -8377,6 +8382,8 @@ cmd_error proc
 	jmp [errret]
 cmd_error endp
 
+ife (DRIVER or BOOTDBG)
+
 ;--- FREEMEM - cancel child process
 
 freemem proc
@@ -8403,9 +8410,6 @@ else
 endif
 	int 21h
 freemem endp
-
-
-ife (DRIVER or BOOTDBG)
 
 ;--- this is called by "run"
 ;--- set debuggee's INT 23/24.
@@ -8469,16 +8473,14 @@ if ALTVID
 endif
 
 	call seteq		;set CS:E/IP to '=' address
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
 	mov bx,[pspdbe]
 	call setpsp		;set debuggee's PSP
 	call setint2324	;set debuggee's int 23/24
 endif
 
 	mov [run_sp],sp	;save stack position
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
  if 1
 	; 16.2.2021: check if saved SS is debugger's SS. If no, don't adjust saved SP.
 	; SS may be != saved SS if debugger is stopped in protected-mode - then the
@@ -8540,6 +8542,7 @@ patch_iret label byte
 	iret			;jump to program
 run endp
 
+ife BOOTDBG
 ;--- debugger's int 22h (program termination) handler.
 ;--- there's no need to preserve registers.
 
@@ -8547,15 +8550,16 @@ int22:
 	cli
 	mov cs:[run_int],offset progtrm	;remember interrupt type
 	mov cs:[lastcmd],offset dmycmd
-if 0
+ if 0
 	mov ax,cs
 	mov ss,ax
 	mov ds,ax
 	jmp intrtn1		;jump to register saving routine (sort of)
-else
+ else
 	jmp intrtn_progtrm
-endif
+ endif
 
+endif
 ;--- Interrupt 0 (divide error) handler.
 
 intr00:
@@ -8759,16 +8763,18 @@ endif
 	and byte ptr [regs.rFL+1],not 1	;clear single-step interrupt
 
 	mov [bInDbg],1
+ife BOOTDBG
 	cmp [run_int],offset progtrm
 	jnz @F
-if ?PM
+ if ?PM
 	mov [cssel],0		;reset flag 'initial switch has occured'
-endif
+ endif
 	mov ah,4Dh
 	int 21h
 	mov di,offset progexit
 	call hexword
 @@:
+endif
 ifdef FORCETEXT
 	call checkgfx		; see if current mode is gfx, set to text if yet
 endif
@@ -9019,8 +9025,7 @@ endif
 	pop di
 	push es
 	pop ds
-if DRIVER or BOOTDBG  ;the driver version has no PSP at 0-100h
-else
+ife (DRIVER or BOOTDBG)  ;driver/bootdbg have no PSP at 0-100h
 	xor si,si
 	mov es,si
 	mov si,CCIV	;move from debugger's PSP to IVT
@@ -12362,8 +12367,7 @@ ifdef _DEBUG
 	popcontext cpu
 endif
 
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
 createdummytask proc
 
 	mov di, offset regs
@@ -12521,8 +12525,7 @@ _DATA ends
 
 _ITEXT segment
 
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
 
 initcont:
 	mov sp,ax
@@ -13206,8 +13209,7 @@ endif
 	push ds
 	pop es
 
-if DRIVER or BOOTDBG
-else
+ife (DRIVER or BOOTDBG)
 
 ;--- Save and modify termination address and the parent PSP field.
 
