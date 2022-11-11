@@ -65,8 +65,9 @@ ok:
 	mov bx, 8000h       ; offset of address to load DebugB
 	call read_access
 	jc error1
-	db 9ah
+	db 9ah              ; call 0800h:0000
 	dw 0, 800h
+	mov dx,[bp+6]
 	int 3
 	int 19h
 
@@ -93,9 +94,6 @@ lba2chs:
 read_access:
 	cmp word ptr [bp+4],0
 	jnz uselba
-
-
-
 	push cx
 	call lba2chs   ; translate LBA to CHS (DH:CX)
 	pop ax         ; sectors to read in AL

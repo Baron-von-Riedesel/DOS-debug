@@ -838,7 +838,7 @@
 
 
  10. DEBUG Scripts
- ----------------
+ -----------------
 
  Because DEBUG uses the standard input and output devices, and because
  these devices can be redirected, DEBUG can be made to input from
