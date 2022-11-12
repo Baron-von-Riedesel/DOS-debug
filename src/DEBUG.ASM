@@ -4024,17 +4024,25 @@ if ?PM
 endif
 	repe cmpsb
 	lahf
+
+;--- v1.30: "mov dl,[si-1]" and "mov dl,[esi-1]" cannot be switched just be an
+;--- address prefix byte!
+;	db 67h	;mov dl,[esi-1]     NO
+;	db 67h	;mov dh,es:[edi-1]  NO
+
 if ?PM
 	cmp cs:[bAddr32],0
-	jz $+3
-	db 67h	;mov dl,[esi-1]
+	jz @F
+	.386
+	mov dl,[esi-1]
+	mov dh,es:[edi-1]
+	.8086
+	jmp c_cont
+@@:
 endif
 	mov dl,[si-1]	;save the possibly errant characters
-if ?PM
-	jz $+3
-	db 67h	;mov dh,es:[edi-1]
-endif
 	mov dh,es:[di-1]
+c_cont:
 	push ds
 	push es
 	push ss
@@ -6288,7 +6296,7 @@ m_cmd proc
 	lodsb
 	call parsecm		;parse arguments (DS:(E)SI, ES:(E)DI, (E)CX)
 	push cx
-if ?DPMI
+if ?PM
 	call ispm
 	jz @F
 ;--- TODO: do overlapping check in protected-mode
@@ -7529,7 +7537,8 @@ if ?PM
 	push edi
 	movzx ecx, dx
 	movzx esi, si
-	repe cmpsb es:[edi], [esi]
+	@dprintf "s cmpsb: es:edi=%X:%lX, ecx=%lX, ds:esi=%X:%lX", es, edi, ecx, ds, esi
+	repe cmpsb ds:[esi], es:[edi]
 	pop edi
 	jne @F			;if not equal
 	call displaypos
@@ -9983,6 +9992,7 @@ endif
 parsecm proc
 	call prephack
 	mov bx,[regs.rDS]	;get source range
+	sizeprfX		;xor ecx, ecx
 	xor cx,cx
 	call getrange	;get address range into bx:(e)dx bx:(e)cx
 	push bx			;save segment first address
