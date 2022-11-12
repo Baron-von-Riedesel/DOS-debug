@@ -261,7 +261,7 @@
          intercepted protected-mode int 21h and refuses to quit.
        - another variant - DEBUGXV - may be created. It allows to flip video
          screen between debugger and debuggee.
-    1.30 [08 November 2022]
+    1.30 [11 November 2022]
        - ensure the correct video page is used when debugger has to display
          something if the InDOS flag is set AND page swapping is active.
        - DEBUGX: hook into protected-mode debug interface Int 41h and make
@@ -274,6 +274,9 @@
        - mktables.c: fixed, didn't generate a valid debugtbl.inc.
        - fixed: reading stdin from file wasn't fully MS Debug compatible.
        - DI cmd may be activated for standard DEBUG.COM.
-       - added a "boot" version of the debugger - it's supposed to be loaded
+       - added a "boot" variant of the debugger - it's supposed to be loaded
          before DOS by boot loader code.
        - fixed: correctly handle tabs if output is via BIOS.
+       - added a ring0 variant of the debugger - it's supposed to be loaded
+         into the Jemm386/JemmEx address context.
+       - DEBUGX fix: s cmd finally works with 32-bit offsets.

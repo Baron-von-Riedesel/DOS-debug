@@ -65,42 +65,50 @@ MNEMONOFS  equ 28	;offset in output line where mnemonics start (disassember)
 STACKSIZ   equ 200h	;debug's stack size
 
 ifndef DRIVER
-DRIVER     equ 0	;create debugger as device driver (for CONFIG.SYS)
+DRIVER     equ 0	;1=create a device driver (for CONFIG.SYS) variant
 endif
 ifndef BOOTDBG
-BOOTDBG    equ 0	;create debugger as a bootstrap binary
+BOOTDBG    equ 0	;1=create a bootstrap binary
 endif
-ifndef ?DPMI
-?DPMI      equ 0	;1=create DPMI-aware variant (DebugX)
+ifndef RING0
+RING0      equ 0	;1=create a ring0 debugger variant
 endif
 
-if ?DPMI
-VDD        equ 1	;try to load DEBXXVDD.DLL
-NOEXTENDER equ 1	;don't assume DPMI host includes a DOS extender
-WIN9XSUPP  equ 1	;avoid to hook DPMI entry when running in Win9x
-DOSEMU     equ 1	;avoid to hook DPMI entry when running in DosEmu
-DISPHOOK   equ 1	;display "DPMI entry hooked..."
+ifndef ?DPMI
+?DPMI      equ 0	;1=create a DPMI-aware variant (DebugX)
+endif
+
+if RING0
+DBGNAME    equ <"JEMMDBG">
+DBGNAME2   equ <"JemmDbg">
+?PM        equ 1
+VDD        equ 0
+NOEXTENDER equ 0
+DICMD      = 1
+elseif ?DPMI
 DBGNAME    equ <"DEBUGX">
 DBGNAME2   equ <"DebugX">
-CATCHEXC06 equ 0	;catch exception 06h in protected-mode
-CATCHEXC07 equ 0	;catch exception 07h in protected-mode
-CATCHEXC0C equ 1	;catch exception 0Ch in protected-mode
-CATCHINT21 equ 1	;hook into protected-mode int 21h
-CATCHINT41 equ 1	;hook into protected-mode debug interface
-MMXSUPP    equ 1	;support MMX specific commands
-DPMIMSW    equ 0	;1=use int 2F,ax=1686h to detect mode, 0=use value of cs
 ?PM        equ 1
+VDD        equ 1	;1=try to load DEBXXVDD.DLL
+NOEXTENDER equ 1	;1=don't assume DPMI host includes a DOS extender
+WIN9XSUPP  equ 1	;1=avoid to hook DPMI entry when running in Win9x
+DOSEMU     equ 1	;1=avoid to hook DPMI entry when running in DosEmu
+DISPHOOK   equ 1	;1=display "DPMI entry hooked..."
+CATCHEXC06 equ 0	;1=catch exception 06h in protected-mode
+CATCHEXC07 equ 0	;1=catch exception 07h in protected-mode
+CATCHEXC0C equ 1	;1=catch exception 0Ch in protected-mode
+CATCHINT21 equ 1	;1=hook into protected-mode int 21h
+CATCHINT41 equ 1	;1=hook into protected-mode debug interface
+MMXSUPP    equ 1	;1=support MMX specific commands
+DPMIMSW    equ 0	;1=use int 2F,ax=1686h to detect mode, 0=use value of cs
 DICMD      = 1
 DXCMD      = 1
 else
-VDD        equ 0
-NOEXTENDER equ 0
 DBGNAME    equ <"DEBUG">
 DBGNAME2   equ <"Debug">
-MMXSUPP    equ 0	;support MMX specific commands
 ?PM        equ 0
-DICMD      = 0
-DXCMD      = 0
+VDD        equ 0
+NOEXTENDER equ 0
 endif
 
 DOSNAME    equ <"DOS">
@@ -121,6 +129,21 @@ LCMDFILE   = 0
 WCMDFILE   = 0
 INT22      = 0
 INT2324    = 0
+elseif RING0
+CATCHINT0C = 0
+CATCHINT0D = 1
+DICMD      = 1
+DMCMD      = 0
+DPCMD      = 0
+DXCMD      = 0
+QCMD       = 0
+WCMD       = 0
+XCMDS      = 0
+LCMDFILE   = 0
+WCMDFILE   = 0
+USESDA     = 0
+INT22      = 0
+INT2324    = 0
 elseif BOOTDBG
 DICMD      = 1
 DMCMD      = 0
@@ -139,14 +162,23 @@ endif
 ifndef USEUNREAL
 USEUNREAL  equ 0	;1=use "unreal" mode for DX cmd ( won't work in v86 )
 endif
+ifndef MMXSUPP
+MMXSUPP    equ 0
+endif
 ifndef VXCHG
 VXCHG      equ 0	;1=support video swap so outputs remain separated
 endif
 ifndef ALTVID
 ALTVID     equ 0    ;1=support alternate video adapter
 endif
+ifndef DICMD
+DICMD      = 0
+endif
+ifndef DXCMD
+DXCMD      = 0
+endif
 
-if (DRIVER or BOOTDBG)
+if (DRIVER or BOOTDBG or RING0)
 REDIRECT equ 0
 else
 REDIRECT equ 1		;stdin/stdout redirection
@@ -188,7 +220,7 @@ ifndef CATCHINT31
 CATCHINT31 equ 0	;hook DPMI int 31h
 endif
 
-if ?DPMI or CATCHINT07
+if ?PM or CATCHINT07
 EXCCSIP    equ 1	;display CS:IP where exception occured
 else
 EXCCSIP    equ 0
@@ -210,7 +242,7 @@ if INT2324
 CCIV	equ 0eh	;Control C Interrupt Vector (int 23h)
 CEIV	equ 12h	;Critical Error Interrupt Vector (int 24h)
 endif
-ife (DRIVER or BOOTDBG)
+ife (DRIVER or BOOTDBG or RING0)
 SPSAV	equ 2eh	;Saved SS:SP in last DOS call
 endif
 
@@ -250,11 +282,11 @@ ASMDATA ends
 MN_&val2 equ $ - mnlist
 tmpstr catstr <!">,@SubStr(val2,1,@SizeStr(val2)-1),<!",!'>,@SubStr(val2,@SizeStr(val2)),<!'>,<+80h>
 	db tmpstr
-	endm
+endm
 
 AGRP macro num,rfld
 	exitm <240h + num*8 + rfld>
-	endm
+endm
 
 variant macro opcode:req, key:req, lockb, machine
 ASMDATA segment
@@ -267,20 +299,20 @@ ASMDATA segment
 ainfo = (opcode) * ASMMOD + key
 	db HIGH ainfo, LOW ainfo
 ASMDATA ends
-	endm
+endm
 
 fpvariant macro opcode, key, addb, lockb, machine
 	variant opcode, key, lockb, machine
 ASMDATA segment
 	db addb
 ASMDATA ends
-	endm
+endm
 
 endvariant macro
 ASMDATA segment
 	db -1
 ASMDATA ends
-	endm
+endm
 
 ;--- opl macro, used to define operand types
 
@@ -299,41 +331,43 @@ _line
 	db 0
 	opidx = opidx + 1
 	.radix 10t
-	endm
+endm
 
 OT macro num
 	exitm <OPLIST_&num+OPTYPES_BASE>
-	endm
+endm
 
 ;--- sizeprf is to make DEBUG's support for 32bit code as small as possible.
 ;--- for this to achieve a patch table is created in _IDATA which is filled
 ;--- by memory offsets where prefix bytes 66h or 67h are found.
 
 sizeprf macro
+ife RING0
 curreip = $
 _IDATA segment
 	dw curreip
 _IDATA ends
+endif
 	db 66h
-	endm
+endm
 
 sizeprfX macro
 if ?PM
 	sizeprf
 endif
-	endm
+endm
 
 if VDD
 ;--- standard BOPs for communication with DEBXXVDD on NT platforms
 RegisterModule macro
 	db 0C4h, 0C4h, 58h, 0
-	endm
+endm
 UnRegisterModule macro
 	db 0C4h, 0C4h, 58h, 1
-	endm
+endm
 DispatchCall macro
 	db 0C4h, 0C4h, 58h, 2
-	endm
+endm
 endif
 
 	.8086
@@ -361,11 +395,13 @@ _IDATA ends
 DGROUP group _TEXT, CONST, ASMDATA, _DATA, _ITEXT, _IDATA
 
 if DRIVER
-STACK segment word stack 'STACK'
+STACK segment para stack 'STACK'
 	db STACKSIZ dup (?)
 STACK ends
 DGROUP group STACK
 endif
+
+	assume ds:DGROUP
 
 _TEXT segment
 
@@ -398,6 +434,26 @@ interrupt:
 	pop di
 	pop ds
 	ret
+elseif RING0
+start:
+	push ds
+	push es
+	mov ds, ax
+	mov es, ax
+	.386
+	mov ax, [esp+4+4]
+	mov dword ptr [int10vec+0], ebx
+	mov word ptr [int10vec+4], ax
+	mov dword ptr [int16vec+0], edx
+	mov word ptr [int16vec+4], ax
+	call initcode
+	pop es
+	pop ds
+	pushfd
+	and byte ptr [esp+1], 0BFh   ; reset NT flag
+	popfd
+	retd
+	.8086
 elseif BOOTDBG
 start:
 	push ds
@@ -420,40 +476,45 @@ CONST segment
 
 ;--- cmds b,j,k,v,y and z don't exist yet
 
-cmdlist	dw a_cmd,cmd_error,c_cmd,d_cmd
-		dw e_cmd,f_cmd,g_cmd,h_cmd
-		dw i_cmd,cmd_error,cmd_error
-		dw l_cmd
-		dw m_cmd
+cmdlist label word
+	dw a_cmd, cmd_error, c_cmd, d_cmd
+	dw e_cmd, f_cmd, g_cmd, h_cmd
+	dw i_cmd, cmd_error, cmd_error
+ife RING0
+	dw l_cmd
+else
+	dw cmd_error
+endif
+	dw m_cmd
 if LCMDFILE or WCMDFILE
-		dw n_cmd
+	dw n_cmd
 else
-		dw cmd_error
+	dw cmd_error
 endif
-		dw o_cmd,p_cmd
+	dw o_cmd, p_cmd
 if QCMD
-		dw q_cmd
+	dw q_cmd
 else
-		dw cmd_error
+	dw cmd_error
 endif
-		dw r_cmd,s_cmd,t_cmd
-		dw u_cmd
+	dw r_cmd, s_cmd, t_cmd
+	dw u_cmd
 if VXCHG
-		dw v_cmd
+	dw v_cmd
 else
-		dw cmd_error
+	dw cmd_error
 endif
 if WCMD
-		dw w_cmd
+	dw w_cmd
 else
-		dw cmd_error
+	dw cmd_error
 endif
 if XCMDS
-		dw x_cmd
+	dw x_cmd
 else
-		dw cmd_error
+	dw cmd_error
 endif
-ENDCMD	equ <'x'>
+ENDCMD equ <'x'>
 
 if ?DPMI
 dbg2324 dw i23pm, i24pm
@@ -466,7 +527,7 @@ _DATA segment
 top_sp	dw 0		;debugger's SP top ( also end of debug's MCB )
 errret	dw 0		;return here if error
 run_sp	dw 0		;debugger's SP when run() is executed
-ife BOOTDBG
+ife (BOOTDBG or RING0)
 spadjust dw 40h 	;adjust sp by this amount for save
 pspdbe	dw 0		;debuggee's program segment prefix
 endif
@@ -476,6 +537,9 @@ run2324	dw 0,0,0,0	;debuggee's interrupt vectors 23 and 24 (both modes)
  if ?DPMI
 		dw 0,0		;in DPMI32, vectors are FWORDs
  endif
+endif
+if RING0
+wFlat	dw 0
 endif
 if VDD
 hVdd	dw -1		;handle of NT helper VDD
@@ -605,34 +669,48 @@ if ?PM
 	dw 0	; reserve space for the additional 2 bytes of PACKET32
 endif
 
+if RING0
+INTSDEF textequ <df>
+else
+INTSDEF textequ <dd>
+endif
+
 intsave label dword	; must match order in inttab
-		dd 0	;saved vector i00
+oldi00	INTSDEF 0	;saved vector i00
 if CATCHINT01
-oldi01	dd 0	;saved vector i01
+oldi01	INTSDEF 0	;saved vector i01
 endif
 if CATCHINT03
-oldi03	dd 0	;saved vector i03
+oldi03	INTSDEF 0	;saved vector i03
 endif
 if CATCHINT06
-		dd 0	;saved vector i06
+oldi06	INTSDEF 0	;saved vector i06
 endif
 if CATCHINT07
-		dd 0	;saved vector i07
+oldi07	INTSDEF 0	;saved vector i07
 endif
 if CATCHINT0C
-oldi0C	dd 0	;saved vector i0C
+oldi0C	INTSDEF 0	;saved vector i0C
 endif
 if CATCHINT0D
-oldi0D	dd 0	;saved vector i0D
+oldi0D	INTSDEF 0	;saved vector i0D
+endif
+if RING0
+oldi0E	INTSDEF 0	;saved vector i0E
 endif
 if CATCHSYSREQ
-oldisrq	dd 0	;saved vector i09/i15
+oldisrq	INTSDEF 0	;saved vector i09/i15
 endif
 if INT22
-		dd 0	;saved vector i22
+		INTSDEF 0	;saved vector i22
 endif
 if ?DPMI ;must be last
-oldi2f	dd 0
+oldi2f	INTSDEF 0
+endif
+
+if RING0
+int10vec df 0
+int16vec df 0
 endif
 
 ;--- Parameter block for exec call.
@@ -712,6 +790,9 @@ endif
 if CATCHINT0D
 	INTITEM <0Dh, intr0D>
 endif
+if RING0
+	INTITEM <0Eh, intr0E>
+endif
 if CATCHSYSREQ
 	INTITEM <SYSRQINT, intrsrq>
 endif
@@ -781,7 +862,7 @@ PPLEN	equ $ - ppinfo
 
 ;--- Strings.
 
-ife BOOTDBG
+ife (BOOTDBG or RING0)
     db '!'      ;additional prompt if InDos flag is set
 endif
 ifdef PROMPT
@@ -824,7 +905,7 @@ if LCMDFILE
 endif
 if BOOTDBG
 	db 'load sectors', TAB, 'L address disk sector count',CR,LF
-else
+elseife RING0
 	db 'load sectors', TAB, 'L address drive sector count',CR,LF
 endif
 	db 'move', TAB, TAB, 'M range address',CR,LF
@@ -881,7 +962,7 @@ presskey db '[more]'
 
 errcarat db '^ Error'
 
-ife BOOTDBG
+ife (BOOTDBG or RING0)
 dskerr0	db 'Write protect error',0
 dskerr1	db 'Unknown unit error',0
 dskerr2	db 'Drive not ready',0
@@ -902,7 +983,7 @@ dskerrs db dskerr0-dskerr0,dskerr1-dskerr0
 		db dskerr8-dskerr0,dskerr9-dskerr0
 		db dskerra-dskerr0,dskerrb-dskerr0
 		db dskerrc-dskerr0
-else
+elseif BOOTDBG
 dskerr1	db "Invalid disk",CR,LF,'$'
 dskerrb	db "Read fault",CR,LF,'$'
 szNoHD	db "Not a HD",CR,LF,'$'
@@ -1139,8 +1220,6 @@ opidx = opidx + 1
 CONST ends
 
 _TEXT segment
-
-	assume ds:DGROUP
 
 if EXCCSIP
 _DATA segment
@@ -1493,8 +1572,8 @@ exc16_xx:
 	cmp [bInDbg],0				;did the exception occur inside DEBUG?
 	jz isdebuggee16
 if EXCCSIP
-	mov intexcip, ax
-	mov intexccs, bx
+	mov [intexcip], ax
+	mov [intexccs], bx
 endif
 	mov [bp].EXFR16.rIP,offset ue_intx
 	mov ax,[top_sp]
@@ -1579,8 +1658,8 @@ exc_xx:
 	cmp [bInDbg],0	;did the exception occur inside DEBUG?
 	jz isdebuggee32
 if EXCCSIP
-	mov intexcip, ax
-	mov intexccs, bx
+	mov [intexcip], ax
+	mov [intexccs], bx
 endif
 	mov [ebp].EXFR32.rEIP,offset ue_intx
 	movzx eax,[top_sp]
@@ -1729,14 +1808,14 @@ if ?DPMI
 	mov dx,offset prompt3
 @@:
 endif
-ife BOOTDBG
+ife (BOOTDBG or RING0)
 	call InDos
 	jz @F
-ife VXCHG
+ ife VXCHG
 	mov ah, 0Fh
 	int 10h
 	mov [vpage], bh ;ensure [vpage] is initialized if InDos is set
-endif
+ endif
 	dec dx          ;if inside DOS, display a '!' before the real prompt
 	inc cx
 @@:
@@ -1805,7 +1884,13 @@ endif
 ;	mov ah,8		;use DOS
 ;	int 21h
 	mov ah,0		;v1.27: use BIOS
+if RING0
+	.386
+	call cs:[int16vec]
+	.8086
+else
 	int 16h
+endif
 	mov al,CR
 	call stdoutal
 nowait:
@@ -4207,9 +4292,10 @@ gateout_00: 		;<--- next int/exc
 	call hexbyte
 	mov al,' '
 	stosb
-if ?DPMI
+if ?PM
 	call ispm
 	jz gaterm
+ if ?DPMI
 	.286
 	mov ax,204h
 	cmp bl,20h
@@ -4235,6 +4321,27 @@ gate16:
 	mov ax,0202h
 	dec bh
 	jnz gateout_01
+ else
+	sub sp, 6
+	mov bp, sp
+	.386
+	sidt [bp]
+	mov edx, [bp+2]
+	add sp, 6
+	push ds
+	mov ds, [wFlat]
+	movzx ebx, bl
+	mov ax, [edx+ebx*8+2]
+	call hexword
+	mov al, ':'
+	stosb
+	mov ax, [edx+ebx*8+6]
+	call hexword
+	mov ax, [edx+ebx*8+0]
+	.8086
+	call hexword
+	pop ds
+ endif
 else
 	jmp gaterm
 endif
@@ -4581,7 +4688,7 @@ lastddd:
 	jmp dd2
 
 dd1:
-if ?DPMI or DICMD or DMCMD or DPCMD or DXCMD
+if ?DPMI or DICMD or DMCMD or DPCMD or DXCMD 
 	mov ah,[si-2]		;test for 2-letter cmds (DI, DL, DM, DP, DX)
 	and ah,TOUPPER
 	cmp ah,'D'
@@ -4909,7 +5016,13 @@ ee9:
 	jmp ee10
 @@:
 	mov ah,0h
+if RING0
+	.386
+	call cs:[int16vec]
+	.8086
+else
 	int 16h
+endif
 
 ee10:
 	cmp al,' '
@@ -5004,6 +5117,7 @@ e_cmd endp
 ;--- F command - fill memory
 
 f_cmd proc
+	sizeprfX		;xor ecx, ecx
 	xor cx,cx		;get address range (no default length)
 	mov bx,[regs.rDS]
 	call getrange	;get address range into bx:(e)dx/(e)cx
@@ -5011,7 +5125,7 @@ if ?PM
 	cmp [bAddr32],0
 	jz @F
 	.386
-	sub ecx,edx
+	sub ecx, edx
 	inc ecx
 	push ecx
 	push edx
@@ -5026,73 +5140,76 @@ endif
 ff_01:
 	call skipcomm0
 	call getstr		;get string of bytes
-	mov cx,di
-	sub cx,offset line_out
+	mov cx, di
+	sub cx, offset line_out
+	mov es,bx
 if ?PM
 	cmp [bAddr32],0
-	jz ff_1
+	jz fill_16
 	.386
+	movzx ecx, cx
 	pop edi
-	mov es,bx
-	cmp ecx,1
-	je ff3_32
-	pop eax
+	cmp ecx, 1
+	je onebyte32
+	pop eax			; eax=size ( of mem block )
+	@dprintf "eax=%lX, ecx=%lX, es:edi=%X:%lX", eax, ecx, es, edi
 	cdq
-	div ecx
-	or eax,eax
-	jz ff2_32
-ff1_32:
-	mov esi,offset line_out
+	div ecx			; ecx=size of hex-string entered
+	mov esi, offset line_out
+	or eax, eax
+	jz partial32
+nextcopy32:
 	push ecx
+	push esi
 	rep movsb es:[edi], ds:[esi]
+	pop esi
 	pop ecx
 	dec eax
-	jnz ff1_32
-ff2_32:
-	mov ecx,edx
-	jecxz ff_exit		;if no partial copies
-	mov si,offset line_out
+	jnz nextcopy32
+partial32:
+	mov ecx, edx
+;	jecxz exit		;rep with ecx=0 is a nop
 	rep movsb es:[edi], ds:[esi]
-	jmp ff_exit		;done (almost)
-ff3_32:
+	jmp exit
+onebyte32:
 	pop ecx
 	mov al,byte ptr [line_out]
 	rep stosb es:[edi]
-	jmp ff_exit
+	jmp exit
+fill_16:
 	.8086
-ff_1:
 endif
 	pop di
-	mov es,bx
 	cmp cx,1
-	je ff3		;a common optimization
+	je onebyte16;a common optimization
 	pop ax		;get size
 	xor dx,dx	;now size in DX:AX
 	cmp ax,1
 	adc dx,0	;convert 0000:0000 to 0001:0000
 	div cx		;compute number of whole repetitions
-	or ax,ax
-	jz ff2		;if less than one whole rep
-ff1:
 	mov si,offset line_out
+	or ax,ax
+	jz partial16;if less than one whole rep
+nextcopy16:
 	push cx
+	push si
 	rep movsb
+	pop si
 	pop cx
 	dec ax
-	jnz ff1		;if more to go
-ff2:
+	jnz nextcopy16	;if more to go
+partial16:
 	mov cx,dx
-	jcxz ff_exit;if no partial copies
-	mov si,offset line_out
+;	jcxz exit	;rep with cx=0 is a nop
 	rep movsb
-	jmp ff_exit	;done (almost)
-ff3:
+	jmp exit
+onebyte16:
 	pop cx
 	mov al,byte ptr [line_out]
 	stosb		;cx=0 -> 64 kB
 	dec cx
 	rep stosb
-ff_exit:
+exit:
 	push ss		;restore es
 	pop es
 	ret
@@ -5270,7 +5387,7 @@ if ?DPMI
 	push [regs.msw]	;save old MSW
 endif
 	call run		;run the program
-if DRIVER or BOOTDBG
+if (DRIVER or BOOTDBG or RING0)
 	@dprintf "g_cmd: run returned, ds=%X", ds
 else
 	@dprintf "g_cmd: run returned, ds=%X, [spadjust]=%X, [spsav]=%lX", ds, [spadjust], dword ptr ds:[SPSAV]
@@ -5506,7 +5623,7 @@ setpsp endp
 
 endif
 
-ife BOOTDBG
+ife (BOOTDBG or RING0)
 
 getpsp proc
 	mov ah,51h
@@ -5797,7 +5914,7 @@ l_cmd proc
 	ret
 l_cmd endp
 
-else
+elseife RING0
 
 ;--- L command - read a program, or disk sectors, from disk.
 
@@ -6934,8 +7051,12 @@ endif
 if ?PM
 	call getcsattr	;set variable bCSAttr
 	mov [bCSAttr],al
+ if ?DPMI
 	pop dx
 	call resetbpsEx
+ else
+	call resetbps
+ endif
 else
 	call resetbps
 endif
@@ -7360,56 +7481,124 @@ s_cmd proc
 	call skipcomm0
 	push cx
 	push dx
-	call getstr		;get string of bytes
+	call getstr		;get string of bytes, size: di - (lineout+1)
 	pop dx
 	pop cx
-	sub cx,dx		;cx = number of bytes in search range minus one
+
 	sub di,offset line_out	;di = number of bytes to look for
 	dec di			;     minus one
+if ?PM
+	cmp [bAddr32],0
+	jz @F
+	.386
+	@dprintf "s: bx:edx=%X:%lX, ecx=%lX, di=%X", bx, edx, ecx, di
+	sub ecx, edx
+	movzx edi, di
+	sub ecx, edi
+	jb errorj9		;if none
+	.8086
+	jmp s_cont
+@@:
+	@dprintf "s: bx:dx=%X:%X, cx=%X, di=%X", bx, dx, cx, di
+endif
+	sub cx,dx		;cx = number of bytes in search range minus one
 	sub cx,di		;number of possible positions of string minus 1
 	jb errorj9		;if none
+s_cont:
 	call prephack	;set up for the interrupt vector hack
 ;	inc cx			;cx = number of possible positions of string
-	xchg dx,di		;set DI to offset
+	sizeprfX		;xchg edx, edi
+	xchg dx,di		;set (E)DI to offset
 	call dohack		;set debuggee's int 23/24
+
 sss1:				;<---- search next occurance
 	mov es,bx		;set the segment
 	mov si,offset line_out	;si = address of search string
 	lodsb			;first character in al
+if ?PM
+	cmp [bAddr32],0
+	jz sss1_16
+	@dprintf "s scasb: es:edi=%X:%lX, ecx=%lX ax=%X", es, edi, ecx, ax
+	.386
+	repne scasb es:[edi]
+	je @F
+	scasb es:[edi]
+	jnz sss3
+@@:
+	push ecx
+	push edi
+	movzx ecx, dx
+	movzx esi, si
+	repe cmpsb es:[edi], [esi]
+	pop edi
+	jne @F			;if not equal
+	call displaypos
+@@:
+	pop ecx
+	inc ecx
+	loop sss1
+	jmp unhack
+	.8086
+sss1_16:
+endif
 	repne scasb		;look for first byte
-	je sss1_1
+	je @F
 	scasb			;count in CX was cnt-1
 	jne sss3		;if we're done
-sss1_1:
+@@:
 	push cx
 	push di
 	mov cx,dx
 	repe cmpsb
 	pop di
-	jne sss2		;if not equal
-	call unhack		;set debugger's int 23/24
-	push dx
-	xchg si,di		;write address right after search string
-	mov ax,bx
-	call hexword	;4 (segment)
-	mov al,':'
-	stosb			;+1=5
-	lea ax,[si-1]
-	call hexword	;+4=9 (offset)
-	mov ax,LF * 256 + CR
-	stosw			;+2=11
-	mov cx,11
-	lea dx,[di-11]
-	call stdout		;write to stdout
-	pop dx
-	mov di,si
-	call dohack		;set debuggee's int 23/24
-sss2:
+	jne @F			;if not equal
+	call displaypos
+@@:
 	pop cx
 	inc cx
 	loop sss1		;go back for more
 sss3:
 	jmp unhack		;set debugger's int 23/24
+
+;--- display position
+;--- the search string is in line_out.
+;--- so we have to write to [SI] ( which here points just behind search string )
+
+displaypos:
+	call unhack		;set debugger's int 23/24
+	push dx
+	sizeprfX		;xchg esi, edi
+	xchg si,di		;render position right after search string
+	mov cx, di		;save pos in CX
+	mov ax,bx
+	call hexword
+	mov al,':'
+	stosb
+if ?PM
+	cmp [bAddr32],0
+	jz @F
+	.386
+	lea eax,[esi-1]
+	@dprintf "s displaypos: eax=%lX", eax
+	.8086
+	call hexdword
+	jmp s_cont3
+@@:
+endif
+	lea ax,[si-1]
+	call hexword
+s_cont3:
+	mov ax,( LF shl 8 ) or CR
+	stosw
+	mov dx, cx
+	mov cx, di
+	sub cx, dx
+	call stdout
+	pop dx
+	sizeprfX		;mov edi, esi
+	mov di,si
+	jmp dohack		;set debuggee's int 23/24
+
 s_cmd endp
 
 ttmode proc
@@ -7569,13 +7758,17 @@ endif
 	mov ds,ax
 	shl bx,1		;stay 8086 compatible in real-mode!
 	shl bx,1
+ife RING0
 	cli
+endif
 	lds si,[bx+0]
 	mov al,[si]
 	xor byte ptr [si],0FFh
 	cmp al,[si]
 	mov [si],al
+ife RING0
 	sti
+endif
 	jz isrom
 	mov bx,ds
 	pop ds
@@ -7678,7 +7871,7 @@ endif
 @@:
 	jmp cmdloop		;back to the start
 
-if ?DPMI or CATCHINT07
+if ?PM or CATCHINT07
 
 ;--- unexpected exception occured inside debugger
 
@@ -7690,14 +7883,16 @@ ue_intx proc
 	mov dx,[run_int]
 	call int21ah9	;print string
 if EXCCSIP
+	push ss
+	pop es
 	mov di,offset line_out
-	mov si,offset excloc
+	mov si,offset excloc	; "CS:IP="
 	call copystring
-	mov ax,intexccs
+	mov ax, [intexccs]
 	call hexword
 	mov al,':'
 	stosb
-	mov ax,intexcip
+	mov ax, [intexcip]
 	call hexword
 	call putsline
 endif
@@ -7747,7 +7942,9 @@ endif
 	jmp uu2
 
 uu1:
-	mov cx,20h		;default length
+	sizeprfX		;xor ecx, ecx
+	xor cx,cx
+	mov cl,20h		;default length
 	mov bx,[regs.rCS]
 	call getrangeX	;get address range into bx:(e)dx
 	call chkeol		;expect end of line here
@@ -8577,7 +8774,7 @@ if LCMDFILE
 endif
 
 	mov [run_sp],sp	;save stack position
-ife (DRIVER or BOOTDBG)
+ife (DRIVER or BOOTDBG or RING0)
  if 1
 	; 16.2.2021: check if saved SS is debugger's SS. If no, don't adjust saved SP.
 	; SS may be != saved SS if debugger is stopped in protected-mode - then the
@@ -8590,7 +8787,9 @@ ife (DRIVER or BOOTDBG)
 	mov ds:[SPSAV],sp
 @@:
 endif
+ife RING0
 	cli
+endif
 	mov sp,offset regs
 	cmp [machine],3
 	jb no386
@@ -8632,7 +8831,9 @@ patch_movsp label byte		;patch with 3Eh (=DS:) if cpu < 386
 	test byte ptr [regs.rFL+1],2	;IF set?
 	mov ds,[regs.rDS]
 	jz @F
+ife RING0
 	sti				;required for ring3 protected mode if IOPL==0
+endif
 @@:
 patch_iret label byte
 	db 66h			;patch with CFh (=IRET) if cpu < 386
@@ -8657,49 +8858,154 @@ int22:
  endif
 
 endif
+
 ;--- Interrupt 0 (divide error) handler.
 
+if RING0
+NotOurInt00:
+	.386
+	jmp cs:[oldi00]
+endif
+
 intr00:
+
+if RING0
+
+IRET32 struct
+_eip    dd ?
+_cs     dd ?
+_efl    dd ?
+IRET32 ends
+
+	test [esp].IRET32._efl+2, 2
+	jnz NotOurInt00
+	cmp cs:[bInDbg],0    ; usually an exc 0 shouldn't happen inside debug
+	jz @F
+  if EXCCSIP
+	pop eax
+	pop edx
+  endif
+	mov ss, cs:[pspdbg]
+	mov sp, cs:[top_sp]
+  if EXCCSIP
+	mov ss:[intexcip], ax 
+	mov ss:[intexccs], dx 
+  endif
+	mov ss:[run_int], offset int0msg
+	jmp ue_intx
+@@:
+	push offset int0msg
+else
 	mov cs:[run_int],offset int0msg	;remember interrupt type
+endif
 	jmp intrtn		;jump to register saving routine
+
 
 ;--- Interrupt 1 (single-step interrupt) handler.
 
+if RING0
+NotOurInt01:
+	jmp cs:[oldi01]
+endif
+
 intr01:
+
+if RING0
+
+	test [esp].IRET32._efl+2, 2
+	jnz NotOurInt01
+	push offset int1msg
+else
 	mov cs:[run_int],offset int1msg	;remember interrupt type
+endif
 	jmp intrtn		;jump to register saving routine
 
 if CATCHINT06
+
+ if RING0
+NotOurInt06:
+	jmp cs:[oldi06]
+ endif
+
 intr06:
+
+ if RING0
+	test [esp].IRET32._efl+2, 2
+	jnz NotOurInt06
+	push offset exc06msg
+ else
 	mov cs:[run_int],offset exc06msg
+ endif
 	jmp intrtn
+
 endif
+
 if CATCHINT07
+
+ if RING0
+NotOurInt07:
+	jmp cs:[oldi07]
+ endif
+
 intr07:
-	mov cs:[run_int],offset exc07msg
+
+ if RING0
+	test [esp].IRET32._efl+2, 2
+	jnz NotOurInt07
+ endif
 	cmp cs:[bInDbg],0
 	jz @F
+
+ if RING0
+  if EXCCSIP
+	pop eax
+	pop edx
+  endif
+	mov ss, cs:[pspdbg]
+	mov sp, cs:[top_sp]
+  if EXCCSIP
+	mov ss:[intexcip], ax 
+	mov ss:[intexccs], dx 
+  endif
+	mov ss:[run_int], offset exc07msg
+ else
+	mov cs:[run_int], offset exc07msg
+  if EXCCSIP
 	push ax
 	push bp
 	mov bp,sp
 	mov ax,[bp+4]
-	mov cs:intexcip, ax
+	mov cs:[intexcip], ax
 	mov ax,[bp+6]
-	mov cs:intexccs, ax
+	mov cs:[intexccs], ax
 	pop bp
 	pop ax
+  endif
 	push cs
 	pop ss
 	mov sp,cs:[top_sp]
+ endif
 	jmp ue_intx
 @@:
+ if RING0
+	push offset exc07msg
+ else
+	mov cs:[run_int],offset exc07msg
+ endif
 	jmp intrtn
 endif
 
 if CATCHINT0C
+
 NotOurInt0C:
 	jmp cs:[oldi0C]
+
 intr0C:
+
+ if RING0
+	test [esp].FAULT32._efl+2, 2	;VM bit set?
+	jnz NotOurInt0C
+ endif
 	push ax
 	mov al, 0Bh		; get ISR mask from PIC
 	out 20h, al
@@ -8707,14 +9013,57 @@ intr0C:
 	test al, 10h	; IRQ4 (int 0Ch) occured?
 	pop ax
 	jnz NotOurInt0C
-	mov cs:[run_int],offset exc0Cmsg
+	cmp cs:[bInDbg],0
+	jz @F
+ if RING0
+	add esp, 4		; skip error code
+  if EXCCSIP
+	pop eax
+	pop edx
+  endif
+	mov ss, cs:[pspdbg]
+	mov sp, cs:[top_sp]
+  if EXCCSIP
+	mov ss:[intexcip], ax 
+	mov ss:[intexccs], dx 
+  endif
+	mov ss:[run_int], offset exc0Cmsg
+ else
+	mov cs:[run_int], offset exc0Cmsg
+	push cs
+	pop ss
+	mov sp,cs:[top_sp]
+ endif
+	jmp ue_intx
+@@:
+ if RING0
+	add esp, 4		; skip error code
+	push offset exc0Cmsg
+ else
+	mov cs:[run_int], offset exc0Cmsg
+ endif
 	jmp intrtn
 endif
 
 if CATCHINT0D
+
+FAULT32 struct
+errcode dd ?
+_eip    dd ?
+_cs     dd ?
+_efl    dd ?
+FAULT32 ends
+
+
 NotOurInt0D:
 	jmp cs:[oldi0D]
+
 intr0D:
+
+ if RING0
+	test [esp].FAULT32._efl+2, 2	;VM bit set?
+	jnz NotOurInt0D
+ endif
 	push ax
 	mov al, 0Bh		; get ISR mask from PIC
 	out 20h, al
@@ -8724,13 +9073,69 @@ intr0D:
 	jnz NotOurInt0D
 	cmp cs:[bInDbg],0
 	jz @F
+ if RING0
+	add esp, 4		; skip error code
+  if EXCCSIP
+	pop eax
+	pop edx
+  endif
+	mov ss, cs:[pspdbg]
+	mov sp, cs:[top_sp]
+  if EXCCSIP
+	mov ss:[intexcip], ax 
+	mov ss:[intexccs], dx 
+  endif
+	mov ss:[run_int], offset exc0Dmsg
+ else
+	mov cs:[run_int], offset exc0Dmsg
 	push cs
 	pop ss
 	mov sp,cs:[top_sp]
+ endif
 	jmp ue_intx
 @@:
-	mov cs:[run_int],offset exc0Dmsg
+ if RING0
+	add esp, 4		; skip error code
+	push offset exc0Dmsg
+ else
+	mov cs:[run_int], offset exc0Dmsg
+ endif
 	jmp intrtn
+endif
+
+if RING0
+
+NotOurInt0E:
+	jmp cs:[oldi0E]
+
+intr0E:
+
+	push ax
+	mov al, 0Bh		; get ISR mask from PIC
+	out 20h, al
+	in al, 20h
+	test al, 40h	; IRQ6 (int 0Eh) occured?
+	pop ax
+	jnz NotOurInt0E
+	add esp, 4		; skip error code
+	cmp cs:[bInDbg],0
+	jz @F
+  if EXCCSIP
+	pop eax
+	pop edx
+  endif
+	mov ss, cs:[pspdbg]
+	mov sp, cs:[top_sp]
+  if EXCCSIP
+	mov ss:[intexcip], ax 
+	mov ss:[intexccs], dx 
+  endif
+	mov ss:[run_int], offset exc0Emsg
+	jmp ue_intx
+@@:
+	push offset exc0Emsg
+	jmp intrtn
+
 endif
 
 if CATCHSYSREQ
@@ -8766,14 +9171,40 @@ endif
 
 ;--- Interrupt 3 (breakpoint interrupt) handler.
 
+if RING0
+NotOurInt03:
+	jmp cs:[oldi03]
+endif
 intr03:
+if RING0
+	test [esp].IRET32._efl+2, 2
+	jnz NotOurInt03
+	push offset int3msg
+else
 	mov cs:[run_int],offset int3msg	;remember interrupt type
+endif
 
 ;--- Common interrupt routine.
 
 ;--- Housekeeping.
 
 intrtn proc
+if RING0
+	push ds
+	mov ds, cs:[pspdbg]
+	mov [regs.rSS], ss
+	pop [regs.rDS]
+	pop [run_int]
+	pop dword ptr [regs.rIP]
+	pop [regs.rCS]
+	add esp,2
+	pop dword ptr [regs.rFL]
+	mov dword ptr [regs.rSP], esp
+	mov ss, [pspdbg]
+	mov esp, offset regs.rSS
+	.8086
+	mov ds, [regs.rDS]
+else
 	cli					;just in case
 	pop cs:[regs.rIP]	;recover things from stack
 	pop cs:[regs.rCS]
@@ -8785,6 +9216,7 @@ intrtn_progtrm::		;<--- int 22h
 	mov sp,cs			;mov ss,cs
 	mov ss,sp
 	mov sp,offset regs.rSS
+endif
 intrtn2::				;<--- entry protected-mode
 	push es
 	push ds
@@ -8798,10 +9230,11 @@ intrtn2::				;<--- entry protected-mode
 
 ;--- regs.rDI+4 is dword aligned, so DWORD pushs are safe here
 
+ife RING0
 	pushfd
 	popf		;skip LoWord(EFL)
 	pop word ptr [regs.rFL+2]
-	
+endif
 	push 0
 	pushf
 	popfd		;clear HiWord(EFL) inside debugger (resets AC flag)
@@ -8828,27 +9261,34 @@ intrtn1::		;<--- entry for int 22
 
 	mov sp,[run_sp]		;restore running stack
 	cld					;clear direction flag
-	sti					;interrupts back on
 
-if ?DPMI
+ife RING0
+	sti					;interrupts back on
+endif
+
+if ?PM
+ if ?DPMI
 ;--- calling int 2Fh here is a problem, since breakpoints aren't reset yet.
 ;--- this makes it impossible to trace this interrupt.
- if DPMIMSW
+  if DPMIMSW
 	mov ax,1686h
 	int 2Fh
 	cmp ax,1
 	sbb ax,ax
- else
+  else
 	mov ax,cs
 	sub ax,[pspdbg]	;Z=rm,NZ=pm
 	cmp ax,1		;C=rm,NC=pm
 	cmc             ;NC=rm,C=pm
 	sbb ax,ax		;0=rm,-1=pm
+  endif
+ else
+	mov ax, -1
  endif
 	mov [regs.msw],ax	;0000=real-mode, FFFF=protected-mode
 endif
 
-ife BOOTDBG
+ife (BOOTDBG or RING0)
 	call getpsp
 	mov  [pspdbe],bx
 endif
@@ -8857,6 +9297,7 @@ if INT2324
 endif
 	push ds
 	pop es
+
 if LCMDFILE
 	call setpspdbg		;set debugger's PSP
 endif
@@ -8913,6 +9354,7 @@ if ALTVID
 	call setscreen
 endif
 	ret
+
 ifdef FORCETEXT
 checkgfx:
 	mov dx, 3CEh 			; see if in graphics mode
@@ -8952,7 +9394,11 @@ v_cmd proc
 	int 10h
  endif
 	mov ah, 10h
+if RING0
+	call cs:[int16vec]
+else
 	int 16h
+endif
 	mov al, 1
 	call swapscreen
 	ret
@@ -9273,6 +9719,8 @@ endif
 
 unhack::				;set debugger's int 23/24, set ES to debugger segment
 ife INT2324
+	push ss
+	pop es
 	ret
 else
 	mov [hakstat],0
@@ -9437,7 +9885,13 @@ rawinput:
 	mov di,dx
 rawnext:
 	mov ah,00h
+if RING0
+	.386
+	call cs:[int16vec]
+	.8086
+else
 	int 16h
+endif
 	cmp al,0
 	jz rawnext
 	cmp al,0E0h
@@ -9671,8 +10125,10 @@ plw3:
 if ?PM
 	call ispm
 	jz @F
+ if ?DPMI
 	cmp [dpmi32],0
 	jz @F
+ endif
 	.386
 	mov [bx].PACKET32.dstseg,dx
 	movzx ebx,bx
@@ -9787,7 +10243,7 @@ errorj10:
 ;--- return with NC if value ok.
 
 getlenforbx proc
-if ?DPMI
+if ?PM
 	call getseglimit
 	jz glfbx_1
 	push dx
@@ -9834,7 +10290,7 @@ getlenforbx endp
 
 getrangeX:
 	push cx
-	call getaddrX
+	call getaddrX	;like getaddr, but don't modify segment attributes
 	jmp getrange_1
 
 getrange proc
@@ -9873,7 +10329,7 @@ gr2:
 	cmp al,'l'
 	je gr3			;if a range is given
 ;	call skipwh0	;get next nonblank
-if ?DPMI
+if ?PM
 	cmp [machine],3
 	jb gr2_1
 	.386
@@ -9942,8 +10398,8 @@ if ?DPMI
 	mov dx,ax
 	pop ax
 	jmp ga1_2
-endif
 ga1_1:
+endif
 	call getofsforbx
 ga1_2:
 	push si
@@ -12430,7 +12886,13 @@ nextchar:
 	cmp al, TAB		;v1.30: handle tabs
 	jz istab
 	mov ah,0Eh
+if RING0
+	.386
+	call [int10vec]
+	.8086
+else
 	int 10h
+endif
 donetab:
 	loop nextchar
 	pop si
@@ -12444,7 +12906,13 @@ istab:
 	push cx
 	push dx
 	mov ah, 3
+if RING0
+	.386
+	call cs:[int10vec]
+	.8086
+else
 	int 10h
+endif
 	mov al, dl
 	and al, 7	; 0  1  2  3  4  5  6  7
 	sub al, 8	;-8 -7 -6 -5 -4 -3 -2 -1
@@ -12452,7 +12920,13 @@ istab:
 	mov cl,al
 @@:
 	mov ax,0E20h
+if RING0
+	.386
+	call cs:[int10vec]
+	.8086
+else
 	int 10h
+endif
 	dec cl
 	jnz @B
 	pop dx
@@ -12627,7 +13101,7 @@ _DATA ends
 
 _ITEXT segment
 
-ife (DRIVER or BOOTDBG)
+ife (DRIVER or BOOTDBG or RING0)
 
 initcont:
 	mov sp,ax
@@ -12745,22 +13219,18 @@ endif
 
 initcode proc
 	cld
-if DRIVER or BOOTDBG
-
- if 0
-	mov ah,51h	; don't fiddle with PSPs in the driver version!
-	int 21h
-	mov ax,bx
- else
-    mov ax,cs
- endif
+if RING0
+	mov [wFlat], ss
+	mov ax, ds
+elseif DRIVER or BOOTDBG
+    mov ax, cs
 else
-	mov ax,cs
+	mov ax, cs
 	mov word ptr [execblk.cmdtail+2],ax
 	mov word ptr [execblk.fcb1+2],ax
 	mov word ptr [execblk.fcb2+2],ax
 endif
-	mov [pspdbg],ax
+	mov [pspdbg], ax
 
 ;--- Check for console input vs. input from a file or other device.
 
@@ -12781,7 +13251,7 @@ endif
 
 ;--- Check DOS version
 
-if BOOTDBG
+if (BOOTDBG or RING0)
 	mov [usepacket], 1
 else
 	mov ax,3000h	;check DOS version
@@ -12790,7 +13260,7 @@ else
 	cmp ax,31fh
 	jb init2		;if version < 3.3, then don't use new INT 25h method
 	inc [usepacket]
-if VDD
+ if VDD
 	cmp ah,5
 	jnz @F
 	mov ax,3306h
@@ -12805,7 +13275,7 @@ if VDD
 	mov [hVdd], ax
 	jmp isntordos71
 @@:
-endif
+ endif
 	cmp ax,070Ah
 	jb init2
 isntordos71:
@@ -12978,6 +13448,7 @@ init7:
 
 ;--- remove size and addr prefixes if cpu is < 80386
 
+ife RING0
 	cmp [machine],3
 	jnb nopatch
 	mov si,offset patches
@@ -12990,10 +13461,11 @@ init7:
 	mov [patch_movsp],3Eh	;set ("unnecessary") DS segment prefix
 	mov [patch_iret],0CFh	;code for IRET
 nopatch:
+endif
 
 ;--- Interpret switches and erase them from the command line.
 
-ife BOOTDBG
+ife (BOOTDBG or RING0)
 	mov ax,3700h		;get switch character in DL
 	int 21h
 	mov [switchar],dl
@@ -13001,9 +13473,9 @@ ife BOOTDBG
 	jne @F
 	mov [swch1],dl
 @@:
-ife DRIVER
+ ife DRIVER
 	mov si,DTA+1
-else
+ else
 	les si, cs:[request_ptr]	; load address of request header
 	les si, es:[si].init_req.cmdline
 @@:
@@ -13013,14 +13485,14 @@ else
 	cmp al,' '
 	jnz @B
 @@:
-endif
+ endif
 contparse:
 @@:
-if DRIVER
+ if DRIVER
 	lodsb es:[si]
-else
+ else
 	lodsb
-endif
+ endif
 	cmp al,' '
 	je @B
 	cmp al,TAB
@@ -13034,9 +13506,9 @@ endif
 	cmp al,'/'
 	jne doneoptions	;if not the help switch
 @@:
-if DRIVER
+ if DRIVER
 	lodsb es:[si]
-else
+ else
 	lodsb
 	cmp al,'?'
 	jne @F
@@ -13047,11 +13519,11 @@ else
 	int 21h
 	int 20h			;done
 @@:
-endif
+ endif
 
 ;--- ||| Other switches may go here.
 
-if ALTVID
+ if ALTVID
 	cmp al,'2'
 	jnz noaltvidsw
 	mov ax, 1A00h
@@ -13096,9 +13568,9 @@ if ALTVID
 noaltvid:
 	jmp contparse
 noaltvidsw:
-endif
+ endif
 
-ife DRIVER	; the driver version ignores invalid cmdline args
+ ife DRIVER	; the driver version ignores invalid cmdline args
 	mov [imsg2a],al
 	mov dx,offset imsg2	;Invalid switch
 ;	call int21ah9	;v1.30: int21ah9 cannot be used ( pInDOS not yet set )
@@ -13106,18 +13578,18 @@ ife DRIVER	; the driver version ignores invalid cmdline args
 	int 21h
 	mov ax,4c01h	;Quit and return error status
 	int 21h
-endif
+ endif
 
 ;--- Feed the remaining command line to the 'n' command.
 
 doneoptions:
-ife DRIVER
+ ife DRIVER
 	dec si
 	lodsb
 	call n_cmd		;process the rest of the line
-endif
+ endif
 
-endif ; BOOTDBG
+endif ; ife (BOOTDBG or RING0)
 
 if BOOTDBG
 
@@ -13135,6 +13607,7 @@ if BOOTDBG
 	mov cl, 6
 	shl ax, cl
 	mov [pspdbg], ax
+
 endif
 
 if DMCMD
@@ -13143,7 +13616,8 @@ if DMCMD
 	mov ax,es:[bx-2]	;start of MCBs
 	mov [wMCB],ax
 endif
-ife BOOTDBG
+
+ife (BOOTDBG or RING0)
 	mov ah,34h
 	int 21h
 	mov word ptr [pInDOS+0],bx
@@ -13220,6 +13694,7 @@ endif
 if VXCHG
  ifndef VXCHGBIOS
 	.errnz BOOTDBG, <for BOOTDBG, VXCHG works with VXCHGBIOS only>
+	.errnz RING0, <for RING0, VXCHG works with VXCHGBIOS only>
 	mov ax,4300h        ; check if XMM is here
 	int 2Fh
 	cmp al,80h
@@ -13298,13 +13773,26 @@ endif
 	mov cx, NUMINTS
 	mov si, offset inttab
 	mov di, offset intsave
-if BOOTDBG
-	xor ax, ax
-	mov es, ax
+if RING0
+	.erre ?PM, <RING0 requires ?PM to be 1>
+	.386
+	sub esp, 8
+	sidt [esp]
+	mov ebx, [esp+2]
+	add esp, 8
 endif
 @@:
 	lodsb
-if BOOTDBG
+if RING0
+	movzx edx, al
+	mov ax, ss:[ebx+edx*8+0]
+	mov [di+0], ax
+	mov ax, ss:[ebx+edx*8+6]
+	mov [di+2], ax
+	mov ax, ss:[ebx+edx*8+2]
+	mov [di+4], ax
+	add di, 2
+elseif BOOTDBG
 	mov bl, al
 	mov bh, 0
 	shl bx, 1
@@ -13320,13 +13808,18 @@ else
 	mov [di+2], es
 	xchg ax, dx		;save int # in dl
 endif
-	lodsw			;get address offset
-if BOOTDBG
-	mov es:[bx+0], ax
+	lodsw			;get address
+if RING0
+	mov ss:[ebx+edx*8+0], ax
+	mov ss:[ebx+edx*8+2], cs
+	xor ax, ax
+	mov ss:[ebx+edx*8+6], ax
+elseif BOOTDBG
 	mov ax, [pspdbg]
+	mov es:[bx+0], dx
 	mov es:[bx+2], ax
 else
-	xchg ax, dx		;DX=offset, AL=int#
+	xchg ax, dx		;AL=int#, DX=offset
 	mov ah, 25h		;set interrupt vector
 	int 21h
 endif
@@ -13344,8 +13837,16 @@ endif
 	dec ax
 	dec ax
 	mov [top_sp],ax	;save new SP minus two (for the word we'll push)
-if DRIVER or BOOTDBG
- if BOOTDBG
+if DRIVER
+	ret
+elseif RING0
+	mov word ptr [d_addr+4], ss
+	mov word ptr [a_addr+4], ss
+	sub bx,2
+	mov [bx],offset ue_int	;"unexpected interrupt"
+	mov [run_sp],bx
+	ret
+elseif BOOTDBG
 	sub bx,2
 	mov [bx],offset ue_int	;"unexpected interrupt"
 	mov [run_sp],bx
@@ -13353,7 +13854,6 @@ if DRIVER or BOOTDBG
 	xor di, di
 	xor si, si
 	rep movsb
- endif
 	ret
 else
 	push ds

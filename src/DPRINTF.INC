@@ -12,7 +12,11 @@ handle_char proc
 	push bx
 	xor bx,bx
 	mov ah,0Eh
+if RING0
+	call cs:[int10vec]
+else
 	int 10h
+endif
 	pop bx
 	ret
 
@@ -72,6 +76,7 @@ local longarg:byte
 local fill:byte
 local szTmp[12]:byte
 
+	pushf
 	lea di,[fmt+2]
 @@L335:
 	mov si,[fmt]
@@ -84,6 +89,7 @@ nextchar:
 	call handle_char
 	jmp nextchar
 done:
+	popf
 	ret
 
 formatitem:
