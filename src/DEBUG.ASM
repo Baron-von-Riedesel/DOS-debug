@@ -558,12 +558,14 @@ endif
 if DMCMD
 wMCB	dw 0		;start of MCB chain (always segment)
 endif
+ife ( BOOTDBG or RING0 )
 pInDOS	dd 0		;far16 address of InDOS flag (real mode)
+endif
 if ?DPMI
 InDosSel dw 0		;selector value for pInDOS in protected-mode
 endif
 if VXCHG
- ifndef VXCHGBIOS
+ ifndef VXCHGFLIP
 XMSM struct
 size_  dd ?
 srchdl dw ?
@@ -4220,6 +4222,9 @@ descout proc
 	call skipwhite
 	call getword	;get word into DX
 	mov bx,dx
+if RING0
+	and bl,0f8h		;skip bits 0-2
+endif
 	call skipcomm0
 	mov dx,1
 	cmp al,CR
@@ -4269,13 +4274,12 @@ nextdesc:
 	jae nogdt
 	push ds
 	push ebx
-	and bl, 0F8h
 	movzx ebx, bx
 	add ebx, [bp-4]
-	mov ds,[wFlat]
-	mov dx,[ebx+2]
-	mov cl,[ebx+4]
-	mov ch,[ebx+7]
+	mov ds, [wFlat]
+	mov dx, [ebx+2]
+	mov cl, [ebx+4]
+	mov ch, [ebx+7]
 	pop ebx
 	.286
 	pop ds
@@ -4334,7 +4338,7 @@ gateout proc
 	mov dx,1
 	cmp al,CR
 	jz @F
-	call getbyte	;get byte into DL
+	call getword	;get word into DL ( max is 100h )
 	call chkeol
 	and dx,dx
 	jnz @F
@@ -4407,9 +4411,11 @@ gate_exit:
 	push bx
 	call putsline
 	pop bx
-	inc bx
+	inc bl
+	jz @F
 	dec si
 	jnz gateout_00
+@@:
 	ret
 if ?DPMI
 gatefailed:
@@ -5011,6 +5017,7 @@ endif
 ;--- Prompt mode.
 
 ee1:
+	@dprintf "e: bx:edx=%X:%lX", bx, edx
 if REDIRECT
 	mov [bufnext], si  ; update buffer ptr in case stdin is file
 endif
@@ -5877,6 +5884,8 @@ if BOOTDBG or DPCMD
 ;--- out: C=error
 ;--- modifies all std regs except sp, bp
 
+	.errnz RING0, <int 13h not yet supported>
+
 readsect proc
 	@dprintf "readsect: disk=%X", ax
 	mov dl, al
@@ -6727,13 +6736,14 @@ oo_5:
 	.8086
 o_cmd endp
 
-;--- ensure segment in BX is writeable
+if ?PM
+
+;--- ensure segment in BX is writeable.
+;--- if it isn't, BX may be set to an alias (DPMI: scratchsel)
 ;--- out: Carry=1 if segment not writeable
 ;--- might clear HiWord(EDI)
 
-if ?PM
-
-verifysegm proc
+IsWriteableBX proc
 	call ispm
 	jz is_rm
 	.286
@@ -6762,19 +6772,46 @@ verifysegm proc
 	pop ax
  elseif RING0
 	verw bx
-	jz @F
-;--- a stable fix is to allocate a scratch GDT descriptor and
-;--- create an alias if BX is a code selector.
-;--- alternately, if just the INT3 byte is to be written, switch
-;--- the code/data bit in the descriptor, write the byte and
-;--- restore the bit. Third: use the DRx registers
-	mov bx, [wFlat]		; that's a hack, but works in Jemm
-@@:
+	jz isok
+;--- no scratchsel in ring0 yet.
+;--- if just the INT3 byte is to be written, the code/data bit in the
+;--- descriptor could be switched temporarily ( or use DRx registers? )
+;--- currently, we use the flat descriptor if base is 0, else return C.
+	test bl, 4
+	jnz error
+	push ds
+	.386
+	push eax
+	push ecx
+	push bp
+	mov bp, sp
+	sub sp, 6
+	sgdt [bp-6]
+	mov ecx, [bp-4]
+	leave
+	mov ds, [wFlat]
+	movzx ebx, bx
+	mov al, [ebx+ecx+4]
+	mov ah, [ebx+ecx+7]
+	shl eax, 16
+	mov ax, [ebx+ecx+2]
+	cmp eax, 0			; base == 0?
+	pop ecx
+	pop eax
+	pop ds
+	jnz error
+	mov bx, [wFlat]
+isok:
  endif
 is_rm:
 	ret
+if RING0
+error:
+	stc
+	ret
+endif
 	.8086
-verifysegm endp
+IsWriteableBX endp
 
 if ?DPMI
 setrmsegm:
@@ -6876,7 +6913,7 @@ setcseipbyte proc
 	push es
 	mov bx,[regs.rCS]
 if ?PM
-	call verifysegm	; checks descriptor only, can't detect r/o pages
+	call IsWriteableBX	; checks descriptor only, can't detect r/o pages
 	jc scib_1
 endif
 	mov es,bx
@@ -6903,17 +6940,18 @@ setcseipbyte endp
 ;--- write a byte (AL) at BX:E/DX
 ;--- OUT: AH=old value at that location
 ;--- C if byte couldn't be written
+;--- used by A, E, G (breakpoints)
 
 writemem proc
-	push ds
 if ?PM
 	call ispm
 	jz weip16
-	call verifysegm	;make bx a writeable segment
-	jc done
+	call IsWriteableBX		;ensure that bx has a writeable selector
+;	jc err					;v1.30: don't exit silently, better to cause a GPF
 	call getseglimit
 	jz weip16
 	.386
+	push ds
 	mov ds, bx
 	mov ah, [edx]
 	mov [edx], al
@@ -6922,6 +6960,7 @@ if ?PM
 	.8086
 weip16:
 endif
+	push ds
 	mov ds,bx
 	push bx
 	mov bx,dx
@@ -6931,9 +6970,9 @@ endif
 	pop bx
 done:
 	pop ds
-	jnz @F
+	jnz err
 	ret
-@@:
+err:
 	stc
 	ret
 writemem endp
@@ -6955,7 +6994,7 @@ endif
 ;--- but nevertheless WRONG; the first is encoded 8A 07, the latter 67 8A 03!
 ;	sizeprfX	;mov ebx,edx
 ;	mov bx,dx
-if ?DPMI
+if ?PM
 ;	jz $+3
 ;	db 67h		;mov al,[ebx]
 	jz @F
@@ -7268,7 +7307,7 @@ if VDD
 endif
 
 if VXCHG
- ifndef VXCHGBIOS
+ ifndef VXCHGFLIP
 	mov dx,[xmsmove.dsthdl]
 	and dx, dx
 	jz @F
@@ -7276,7 +7315,7 @@ if VXCHG
  endif
 	mov al,0             ; restore debuggee screen
 	call swapscreen
- ifndef VXCHGBIOS
+ ifndef VXCHGFLIP
 	pop dx
 	mov ah,0Ah           ; and free XMS handle
 	call [xmsdrv]
@@ -8952,7 +8991,12 @@ _cs     dd ?
 _efl    dd ?
 IRET32 ends
 
-	test [esp].IRET32._efl+2, 2
+FAULT32 struct
+errcode dd ?
+        IRET32 <>
+FAULT32 ends
+
+	test byte ptr [esp].IRET32._efl+2, 2
 	jnz NotOurInt00
 	cmp cs:[bInDbg],0    ; usually an exc 0 shouldn't happen inside debug
 	jz @F
@@ -8987,7 +9031,7 @@ intr01:
 
 if RING0
 
-	test [esp].IRET32._efl+2, 2
+	test byte ptr [esp].IRET32._efl+2, 2
 	jnz NotOurInt01
 	push offset int1msg
 else
@@ -9005,7 +9049,7 @@ NotOurInt06:
 intr06:
 
  if RING0
-	test [esp].IRET32._efl+2, 2
+	test byte ptr [esp].IRET32._efl+2, 2
 	jnz NotOurInt06
 	push offset exc06msg
  else
@@ -9025,7 +9069,7 @@ NotOurInt07:
 intr07:
 
  if RING0
-	test [esp].IRET32._efl+2, 2
+	test byte ptr [esp].IRET32._efl+2, 2
 	jnz NotOurInt07
  endif
 	cmp cs:[bInDbg],0
@@ -9078,7 +9122,7 @@ NotOurInt0C:
 intr0C:
 
  if RING0
-	test [esp].FAULT32._efl+2, 2	;VM bit set?
+	test byte ptr [esp].FAULT32._efl+2, 2	;VM bit set?
 	jnz NotOurInt0C
  endif
 	push ax
@@ -9122,21 +9166,13 @@ endif
 
 if CATCHINT0D
 
-FAULT32 struct
-errcode dd ?
-_eip    dd ?
-_cs     dd ?
-_efl    dd ?
-FAULT32 ends
-
-
 NotOurInt0D:
 	jmp cs:[oldi0D]
 
 intr0D:
 
  if RING0
-	test [esp].FAULT32._efl+2, 2	;VM bit set?
+	test byte ptr [esp].FAULT32._efl+2, 2	;VM bit set?
 	jnz NotOurInt0D
  endif
 	push ax
@@ -9252,7 +9288,7 @@ NotOurInt03:
 endif
 intr03:
 if RING0
-	test [esp].IRET32._efl+2, 2
+	test byte ptr [esp].IRET32._efl+2, 2
 	jnz NotOurInt03
 	push offset int3msg
 else
@@ -9397,7 +9433,7 @@ endif
 if VXCHG
 	mov al, 1           ; restore debugger screen
 	call swapscreen
- ifndef VXCHGBIOS
+ ifndef VXCHGFLIP
 	push es
 	mov ax, 0040h
 	mov es, ax
@@ -9470,7 +9506,9 @@ v_cmd proc
  endif
 	mov ah, 10h
 if RING0
+	.386
 	call cs:[int16vec]
+	.8086
 else
 	int 16h
 endif
@@ -9483,7 +9521,8 @@ v_cmd endp
 ;--- AL=1: save debuggee screen, restore debugger screen
 
 swapscreen proc
- ifndef VXCHGBIOS
+ ifndef VXCHGFLIP
+	.errnz BOOTDBG or RING0,<v cmd with XMS swap not supported>
 	mov si, offset xmsmove
 	cmp [si].XMSM.dsthdl,0
 	jz done
@@ -9529,12 +9568,18 @@ endif
 	call swapsrcdst
  else
     mov ah, 05h          ; just use BIOS to activate video page
+  if RING0
+	.386
+	call cs:[int10vec]
+	.8086
+  else
 	int 10h
+  endif
  endif
 done:
 	ret
 
- ifndef VXCHGBIOS
+ ifndef VXCHGFLIP
 	.8086
 swapsrcdst:
 	mov ax, [si].XMSM.srchdl
@@ -9852,22 +9897,30 @@ dohack_pm:
 endif
 dohack endp
 
+;--- InDos: return NZ if DOS cannot be used
+
 InDos:
+if ( BOOTDBG or RING0 )
+	push ax
+	or al,-1
+	pop ax
+else
 	push ds
 	push si
-if ?DPMI
+ if ?DPMI
 	call ispm
 	mov si,word ptr [pInDOS+0]
 	mov ds, [InDosSel]
 	jnz @F
 	mov ds, word ptr cs:[pInDOS+2]
 @@:
-else
+ else
 	lds si,[pInDOS]
-endif
+ endif
 	cmp byte ptr [si],0
 	pop si
 	pop ds
+endif
 	ret
 
 stdoutal:
@@ -10456,12 +10509,13 @@ errorj2:
 
 getaddr proc
 if ?PM
-	mov dx,offset verifysegm	;make BX a writeable segment
+	mov dx,offset IsWriteableBX	;make BX a writeable segment
 	push dx
 endif
 getaddrX::
-if ?DPMI
+if ?PM
 	mov [bAddr32],0
+ if ?DPMI
 	cmp byte ptr [si-1],'$' ;a real-mode segment?
 	jnz ga1_1
 	lodsb
@@ -10478,6 +10532,7 @@ if ?DPMI
 	pop ax
 	jmp ga1_2
 ga1_1:
+ endif
 endif
 	call getofsforbx
 ga1_2:
@@ -10496,6 +10551,7 @@ ga2:
 ga3:
 	call skipwhite	;skip to next word
 	call getofsforbx
+	@dprintf "getaddr: bx:edx=%X:%lX", bx, edx
 	ret
 getaddr endp
 
@@ -12992,13 +13048,12 @@ if RING0
 else
 	int 10h
 endif
-	mov al, dl
-	and al, 7	; 0  1  2  3  4  5  6  7
-	sub al, 8	;-8 -7 -6 -5 -4 -3 -2 -1
-	neg al		; 8  7  6  5  4  3  2  1
-	mov cl,al
+	mov cl, dl
+	and cx, 7	; 0  1  2  3  4  5  6  7
+	sub cl, 8	;-8 -7 -6 -5 -4 -3 -2 -1
+	neg cl		; 8  7  6  5  4  3  2  1
 @@:
-	mov ax,0E20h
+	mov ax, 0E20h
 if RING0
 	.386
 	call cs:[int10vec]
@@ -13006,8 +13061,7 @@ if RING0
 else
 	int 10h
 endif
-	dec cl
-	jnz @B
+	loop @B
 	pop dx
 	pop cx
 	jmp donetab
@@ -13180,11 +13234,26 @@ _DATA ends
 
 _ITEXT segment
 
-ife (DRIVER or BOOTDBG or RING0)
-
 initcont:
-	mov sp,ax
-	mov ah,4Ah
+
+if DRIVER or RING0 or BOOTDBG
+	sub bx, 2
+	mov [bx], offset ue_int	; make debug display "unexpected interrupt"
+	mov [run_sp], bx
+ if BOOTDBG
+	mov es, [pspdbg]        ; copy debugger beyond conv. memory
+	xor di, di
+	xor si, si
+	rep movsb
+ endif
+	ret
+else
+	push ds
+	pop es
+	mov cl, 4
+	shr bx, cl
+	mov sp, ax
+	mov ah, 4Ah
 	int 21h			;free rest of DOS memory
 	mov byte ptr [line_out-1],'0'	;initialize line_out?
 	cmp [fileext],0
@@ -13192,6 +13261,7 @@ initcont:
 	call loadfile
 @@:
 	jmp cmdloop
+endif
 
 ;---------------------------------------
 ;--- Debug initialization code.
@@ -13203,11 +13273,13 @@ else
 ALTSWHLP textequ <>
 endif
 
+ife (DRIVER or BOOTDBG or RING0)
+
 imsg1 db DBGNAME,' version 1.30',CR,LF,LF
 	db 'Usage: ', DBGNAME, ALTSWHLP ' [[drive:][path]progname [arglist]]',CR,LF,LF
-if ALTVID
+ if ALTVID
 	db '  /2: use alternate video adapter for output if available',CR,LF
-endif
+ endif
 	db '  progname: (executable) file to debug or examine',CR,LF
 	db '  arglist: parameters given to program',CR,LF,LF
 	db 'For a list of debugging commands, '
@@ -13219,10 +13291,11 @@ imsg2a	db 'x',CR,LF,'$'
 endif
 
 if ?DPMI
-if DOSEMU
+ if DOSEMU
 dDosEmuDate db "02/25/93"
+ endif
 endif
-endif
+
 if VDD
 szDebxxVdd	db "DEBXXVDD.DLL",0
 szDispatch	db "Dispatch",0
@@ -13254,14 +13327,11 @@ driver_entry proc far
 	push cx
 	push cs
 	pop ds
-	call initcode			; returns with BX=debugger SP
+	call initcode
 	mov [Intrp],offset interrupt
 	mov dx,offset drv_installed
 	mov ah,9
 	int 21h
-	sub bx,2
-	mov [bx],offset ue_int	;"unexpected interrupt"
-	mov [run_sp],bx
 	pop cx
 	pop dx
 	pop si
@@ -13606,7 +13676,11 @@ contparse:
 	cmp al,'2'
 	jnz noaltvidsw
 	mov ax, 1A00h
+  if RING0
+	call cs:[int10vec]
+  else
 	int 10h
+  endif
 	cmp al, 1Ah
 	jnz noaltvid
 	cmp bh, 0
@@ -13701,10 +13775,6 @@ ife (BOOTDBG or RING0)
 	int 21h
 	mov word ptr [pInDOS+0],bx
 	mov word ptr [pInDOS+2],es
-else
-	mov word ptr [pInDOS+0],0
-	mov ax, [pspdbg]
-	mov word ptr [pInDOS+2],ax
 endif
 ;--- get address of DOS swappable DATA area
 ;--- to be used to get/set PSP and thus avoid DOS calls
@@ -13728,13 +13798,13 @@ if ?DPMI
 ;--- V86 Ints internally without first calling the interrupt chain.
 ;--- This causes various sorts of troubles and incompatibilities.
 
-if WIN9XSUPP
+ if WIN9XSUPP
 	mov ax,1600h	;running in a win3x/win9x dos box?
 	int 2Fh
-	and al,al       ;returns in AL 3=win3x, 4=win9x
+	and al,al		;returns in AL 3=win3x, 4=win9x
 	jnz no2fhook
-endif
-if DOSEMU
+ endif
+ if DOSEMU
 	mov ax,0F000h
 	mov es,ax
 	mov di,0FFF5h
@@ -13742,7 +13812,7 @@ if DOSEMU
 	mov cx,4
 	repe cmpsw		;running in DosEmu?
 	jz no2fhook
-endif
+ endif
 	jmp dpmihostchecked
 no2fhook:
 	inc [bNoHook2F]
@@ -13771,31 +13841,29 @@ if INT22
 endif
 
 if VXCHG
- ifndef VXCHGBIOS
-	.errnz BOOTDBG, <for BOOTDBG, VXCHG works with VXCHGBIOS only>
-	.errnz RING0, <for RING0, VXCHG works with VXCHGBIOS only>
-	mov ax,4300h        ; check if XMM is here
+ ifndef VXCHGFLIP
+	mov ax,4300h	; check if XMM is here
 	int 2Fh
 	cmp al,80h
-	jnz noxmm           ; no - no screen flip
+	jnz noxmm		; no - no screen flip
 	mov ax,4310h
 	int 2Fh
 	mov word ptr [xmsdrv+0],bx
 	mov word ptr [xmsdrv+2],es
 	.286
-	mov dx,32           ; alloc 32 kB EMB
+	mov dx,32		; alloc 32 kB EMB
 	mov ah,9
 	call [xmsdrv]
 	cmp ax,1
 	jnz noxmm
 	mov si, offset xmsmove
-	mov [si].XMSM.dsthdl, dx            ; save the handle in block move struct.
+	mov [si].XMSM.dsthdl, dx			; save the handle in block move struct.
 	mov byte ptr [si].XMSM.dstadr+1, 40h; the XMS memory will be used to
-	push 0                              ; save/restore 2 screens, with a max
-	pop es                              ; capacity per screen of 16 kB
-	mov ax,es:[44Ch]                    ; current screen size, might change!
+	push 0								; save/restore 2 screens, with a max
+	pop es								; capacity per screen of 16 kB
+	mov ax,es:[44Ch]					; current screen size, might change!
 	mov word ptr [si].XMSM.size_, ax
-	mov ax, es:[44Eh]                   ; page start in video memory
+	mov ax, es:[44Eh]					; page start in video memory
 	mov word ptr [si].XMSM.srcadr+0, ax
 	mov ax, 0B000h
 	cmp byte ptr es:[463h],0B4h
@@ -13805,12 +13873,12 @@ if VXCHG
 	mov word ptr [si].XMSM.srcadr+2, ax
 	mov al, es:[484h]
 	mov [vrows], al
-	mov ah, 0Fh                         ; get active video page in BH
+	mov ah, 0Fh					; get active video page in BH
 	int 10h
-	mov ah, 03h                         ; get cursor pos in DX of active page
+	mov ah, 3					; get cursor pos in DX of active page
 	int 10h
 	mov [csrpos], dx
-	mov ah, 0Bh                         ; save current screen now
+	mov ah, 0Bh					; save current screen now
 	call [xmsdrv]
 	.8086
 noxmm:
@@ -13818,26 +13886,52 @@ noxmm:
 ;--- use BIOS to swap page 0/1, a simple approach
 ;--- that in theory would fit perfectly, but
 ;--- unfortunately in reality may have quirks.
+  if RING0
+;--- int 10h cannot be used here, since we haven't switched to the debugger's stack yet.
+	.386
+	push ds
+	push ss
+	pop ds
+	movzx esi, word ptr ds:[44Eh]
+	movzx ecx, word ptr ds:[44Ch]
+	mov dx, ds:[450h+0*1]
+	mov ds:[450h+1*2], dx
+	mov eax, 0B0000h
+	cmp byte ptr ds:[463], 0B4h
+	jz @F
+	or ah, 80h
+@@:
+	mov edi, esi
+	add edi, ecx
+	add esi, eax
+	add edi, eax
+	push ds
+	pop es
+	rep movsb es:[edi], ds:[esi]
+	pop ds
+	.8086
+  else
 	xor ax, ax
 	mov es, ax
-	mov si, es:[44Eh]
-	mov cx, es:[44Ch]
+	mov si, es:[44Eh]	; page offset curr page
+	mov cx, es:[44Ch]	; page size
 	shr cx, 1
-	mov ax, 0501h       ; debugger page is 1
+	mov ax, 0501h	; debugger page is 1
 	int 10h
-	mov di, es:[44Eh]
+	mov di, es:[44Eh]	; page offset page 1
 	mov dx, es:[450h+0*1]
 	mov es:[450h+1*2], dx
-	mov ax, 0B000h
+	mov ax, 0B000h		; copy page contents to page 1
 	cmp byte ptr es:[463h],0B4h
 	jz @F
 	or ah, 8
 @@:
-	mov es, ax
 	push ds
+	mov es, ax
 	mov ds, ax
 	rep movsw
 	pop ds
+  endif
  endif
 	push ds
 	pop es
@@ -13907,42 +14001,18 @@ endif
 
 ;--- prepare to shrink DEBUG and set its stack
 
-	mov ax,offset real_end + STACKSIZ + 15
-	and al,not 15		;new stack pointer
-	mov bx,ax
+	mov ax, offset real_end + STACKSIZ + 15
+	and al, not 15		; debug's top of stack
+	mov [top_sp], ax
 if BOOTDBG
 	mov cx, ax
-endif
-	dec ax
-	dec ax
-	mov [top_sp],ax	;save new SP minus two (for the word we'll push)
-if DRIVER
-	ret
 elseif RING0
 	mov word ptr [d_addr+4], ss
 	mov word ptr [a_addr+4], ss
-	sub bx,2
-	mov [bx],offset ue_int	;"unexpected interrupt"
-	mov [run_sp],bx
-	ret
-elseif BOOTDBG
-	sub bx,2
-	mov [bx],offset ue_int	;"unexpected interrupt"
-	mov [run_sp],bx
-	mov es, [pspdbg]        ; copy debugger beyond conv. memory
-	xor di, di
-	xor si, si
-	rep movsb
-	ret
-else
-	push ds
-	pop es
-	inc ax
-	inc ax
-	mov cl,4
-	shr bx,cl
-	jmp initcont
 endif
+	mov bx, ax
+	jmp initcont
+
 initcode endp
 
 _ITEXT ends
