@@ -78,13 +78,31 @@ ifndef ?DPMI
 ?DPMI      equ 0	;1=create a DPMI-aware variant (DebugX)
 endif
 
+DOSNAME    equ <"DOS">
+DGCMD      = 0		; support DG cmd
+DICMD      = 0		; support DI cmd
+DLCMD      = 0		; support DL cmd
+DMCMD      = 1		; support DM cmd
+DPCMD      = 0		; support DP cmd
+DXCMD      = 0		; support DX cmd
+QCMD       = 1		; support Q cmd
+WCMD       = 1		; support W cmd
+XCMDS      = 1		; support Xx cmds
+LCMDFILE   = 1		; support L cmd for files and N cmd
+WCMDFILE   = 1		; support W cmd for files and N cmd
+USESDA     = 1		; use SDA to get/set PSP in real-mode
+INT22      = 1		; handle int 22h ( DOS program termination )
+INT2324    = 1		; switch int 23h & 24h for debugger/debuggee
+
 if RING0
 DBGNAME    equ <"JEMMDBG">
 DBGNAME2   equ <"JemmDbg">
 ?PM        equ 1
 VDD        equ 0
 NOEXTENDER equ 0
+DGCMD      = 1
 DICMD      = 1
+DMCMD      = 0
 elseif ?DPMI
 DBGNAME    equ <"DEBUGX">
 DBGNAME2   equ <"DebugX">
@@ -102,6 +120,7 @@ CATCHINT41 equ 1	;1=hook into protected-mode debug interface
 MMXSUPP    equ 1	;1=support MMX specific commands
 DPMIMSW    equ 0	;1=use int 2F,ax=1686h to detect mode, 0=use value of cs
 DICMD      = 1
+DLCMD      = 1
 DXCMD      = 1
 else
 DBGNAME    equ <"DEBUG">
@@ -110,18 +129,6 @@ DBGNAME2   equ <"Debug">
 VDD        equ 0
 NOEXTENDER equ 0
 endif
-
-DOSNAME    equ <"DOS">
-DMCMD      = 1		; support DM cmd
-DPCMD      = 0		; support DP cmd
-QCMD       = 1		; support Q cmd
-WCMD       = 1		; support W cmd
-XCMDS      = 1		; support Xx cmds
-LCMDFILE   = 1		; support L cmd for files and N cmd
-WCMDFILE   = 1		; support W cmd for files and N cmd
-USESDA     = 1		; use SDA to get/set PSP in real-mode
-INT22      = 1		; handle int 22h ( DOS program termination )
-INT2324    = 1		; switch int 23h & 24h for debugger/debuggee
 
 if DRIVER
 QCMD       = 0
@@ -132,10 +139,6 @@ INT2324    = 0
 elseif RING0
 CATCHINT0C = 0
 CATCHINT0D = 1
-DICMD      = 1
-DMCMD      = 0
-DPCMD      = 0
-DXCMD      = 0
 QCMD       = 0
 WCMD       = 0
 XCMDS      = 0
@@ -880,10 +883,17 @@ helpmsg db DOSNAME, ' ', DBGNAME2, ' v1.30 help screen',CR,LF
 	db 'assemble', TAB, 'A [address]',CR,LF
 	db 'compare', TAB, TAB, 'C range address',CR,LF
 	db 'dump', TAB, TAB, 'D [range]',CR,LF
-if DICMD
-	db 'dump interrupt', TAB, 'DI interrupt [count]',CR,LF
+if DGCMD
+	db 'dump GDT', TAB, 'DG selector [count]',CR,LF
 endif
-if ?DPMI
+if DICMD
+ if RING0
+	db 'dump IDT', TAB, 'DI interrupt [count]',CR,LF
+ else
+	db 'dump interrupt', TAB, 'DI interrupt [count]',CR,LF
+ endif
+endif
+if DLCMD
 	db 'dump LDT', TAB, 'DL selector [count]',CR,LF
 endif
 if DMCMD
@@ -4009,6 +4019,7 @@ if ?PM
 endif
 	inc cx
 cc1:			;<--- continue compare
+if INT2324
 	push ds
 	push es
 	push ss		;ds=DGROUP
@@ -4016,7 +4027,7 @@ cc1:			;<--- continue compare
 	call dohack	;set debuggee's int 23/24
 	pop es
 	pop ds
-
+endif
 if ?PM
 	cmp cs:[bAddr32],0
 	jz $+3
@@ -4025,10 +4036,9 @@ endif
 	repe cmpsb
 	lahf
 
-;--- v1.30: "mov dl,[si-1]" and "mov dl,[esi-1]" cannot be switched just be an
-;--- address prefix byte!
-;	db 67h	;mov dl,[esi-1]     NO
-;	db 67h	;mov dh,es:[edi-1]  NO
+;--- v1.30: "mov dl,[si-1]" and "mov dl,[esi-1]" differ not just in the prefix!
+;--- mov dl, [si-1]:    8A 54 FF
+;--- mov dl,[esi-1]: 67 8A 56 FF
 
 if ?PM
 	cmp cs:[bAddr32],0
@@ -4043,6 +4053,7 @@ endif
 	mov dl,[si-1]	;save the possibly errant characters
 	mov dh,es:[di-1]
 c_cont:
+if INT2324
 	push ds
 	push es
 	push ss
@@ -4050,12 +4061,15 @@ c_cont:
 	call unhack	;set debugger's int 23/24
 	pop es
 	pop ds
+endif
 	sahf
 	jne @F
 	jmp cc2		;if we're done
 @@:
 	push cx
 	push es
+
+;--- set ES to dgroup ( needed for output routines )
 	push ss
 	pop es
 	sizeprfX	;mov ebx,edi
@@ -4109,13 +4123,16 @@ else
 	lea ax,[bx-1]
 	call hexword
 endif
+
 	push ds
+;--- set DS to dgroup
 	push ss
 	pop ds
 	push bx
 	call putsline
 	pop di
 	pop ds
+
 	pop es
 	pop cx
 if ?PM
@@ -4190,7 +4207,10 @@ error:
 dp_cmd endp
 endif
 
-if ?DPMI
+if DGCMD or DLCMD
+
+;--- DG/DL commands
+
 CONST segment
 descbase db ' base=???????? limit=???????? attr=????',0
 CONST ends
@@ -4211,11 +4231,15 @@ descout proc
 	inc dx
 @@:
 	mov si,dx		;save count
+if ?DPMI
 	call ispm
 	jnz nextdesc
 	mov si,offset nodesc
 	call copystring
 	jmp putsline
+else
+	jmp nextdesc
+endif
 desc_done:
 	ret
 nextdesc:
@@ -4232,9 +4256,34 @@ nextdesc:
 	pop si
 ;	lar ax,bx
 ;	jnz skipdesc	;tell that this descriptor is invalid
+ if ?DPMI
 	mov ax,6
 	int 31h
 	jc @F
+ elseif RING0
+	mov bp, sp
+	sub sp, 6
+	.386
+	sgdt [bp-6]
+	cmp bx, [bp-6]
+	jae nogdt
+	push ds
+	push ebx
+	and bl, 0F8h
+	movzx ebx, bx
+	add ebx, [bp-4]
+	mov ds,[wFlat]
+	mov dx,[ebx+2]
+	mov cl,[ebx+4]
+	mov ch,[ebx+7]
+	pop ebx
+	.286
+	pop ds
+	stc
+nogdt:
+	mov sp, bp
+	jnc desc_done
+ endif
 	add di, 6
 	mov ax,cx
 	call hexword
@@ -4696,12 +4745,18 @@ lastddd:
 	jmp dd2
 
 dd1:
-if ?DPMI or DICMD or DMCMD or DPCMD or DXCMD 
+if ?DPMI or DGCMD or DICMD or DMCMD or DPCMD or DXCMD 
 	mov ah,[si-2]		;test for 2-letter cmds (DI, DL, DM, DP, DX)
 	and ah,TOUPPER
 	cmp ah,'D'
 	jnz dd1_1
 	or al,TOLOWER
+ if DGCMD
+	cmp al,'g'
+	jnz @F
+	jmp  descout
+@@:
+ endif
  if ?DPMI
 	cmp al,'l'
 	jnz @F
@@ -6321,13 +6376,15 @@ endif
 m3:
 	pop cx
 	lahf
+if INT2324
 	push ds
 	push es
-	push ss		;ds := cs
+	push ss		;ds = dgroup
 	pop ds
 	call dohack	;set debuggee's int 23/24
 	pop es
 	pop ds
+endif
 if ?PM
 	cmp cs:[bAddr32],0
 	jz m3_1
@@ -6354,7 +6411,7 @@ endif
 	rep movsb		;do the move
 	movsb			;one more byte
 	cld				;restore flag
-	jmp ee0a		;restore ds and es and undo the int pointer hack
+	jmp ee0a		;restore ds and es and undo the int2324 pointer hack
 m_cmd endp
 
 ;--- 'm'achine command:  set machine type.
@@ -6674,19 +6731,20 @@ o_cmd endp
 ;--- out: Carry=1 if segment not writeable
 ;--- might clear HiWord(EDI)
 
-if ?DPMI
+if ?PM
 
 verifysegm proc
 	call ispm
 	jz is_rm
 	.286
+ if ?DPMI
 	push ax
 	push di
 	push bp
 	mov bp,sp
 	sub sp,8
 	mov di,sp
-	sizeprf				;lea edi,[di] (synonym for movzx edi,di)
+	sizeprf				;lea edi,[di] (synonym for movzx edi,di), 3 bytes long
 	lea di,[di]
 	mov ax,000Bh		;get descriptor
 	int 31h
@@ -6702,12 +6760,23 @@ verifysegm proc
 	leave
 	pop di
 	pop ax
-	ret
+ elseif RING0
+	verw bx
+	jz @F
+;--- a stable fix is to allocate a scratch GDT descriptor and
+;--- create an alias if BX is a code selector.
+;--- alternately, if just the INT3 byte is to be written, switch
+;--- the code/data bit in the descriptor, write the byte and
+;--- restore the bit. Third: use the DRx registers
+	mov bx, [wFlat]		; that's a hack, but works in Jemm
+@@:
+ endif
 is_rm:
 	ret
 	.8086
 verifysegm endp
 
+if ?DPMI
 setrmsegm:
 	.286
 	mov bx,cs:[scratchsel]
@@ -6719,10 +6788,7 @@ setrmaddr:		;<--- set selector in BX to segment address in DX
 	int 31h
 	ret
 	.8086
-
 endif
-
-if ?PM
 
 ;--- out: AL= HiByte of attributes of current CS
 ;--- out: ZF=1 if descriptor's default-size is 16bit
@@ -6809,7 +6875,7 @@ getcseipbyte endp
 setcseipbyte proc
 	push es
 	mov bx,[regs.rCS]
-if ?DPMI
+if ?PM
 	call verifysegm	; checks descriptor only, can't detect r/o pages
 	jc scib_1
 endif
@@ -6840,7 +6906,7 @@ setcseipbyte endp
 
 writemem proc
 	push ds
-if ?DPMI
+if ?PM
 	call ispm
 	jz weip16
 	call verifysegm	;make bx a writeable segment
@@ -6848,10 +6914,10 @@ if ?DPMI
 	call getseglimit
 	jz weip16
 	.386
-	mov ds,bx
-	mov ah,[edx]
-	mov [edx],al
-	cmp al,[edx]
+	mov ds, bx
+	mov ah, [edx]
+	mov [edx], al
+	cmp al, [edx]
 	jmp done
 	.8086
 weip16:
@@ -9726,7 +9792,9 @@ restdbgi2324:			;set debugger's int 23/24 in PM
  endif
 endif
 
-unhack::				;set debugger's int 23/24, set ES to debugger segment
+;--- set debugger's int 23/24, set ES to debugger segment
+
+unhack::
 ife INT2324
 	push ss
 	pop es
@@ -9753,6 +9821,7 @@ hak1:
 	push cs
 	pop es
 	ret
+
  if ?DPMI
 
 ;--- set debuggee's int 23/24 pmode
@@ -10386,7 +10455,7 @@ errorj2:
 ;--- writeable in pmode
 
 getaddr proc
-if ?DPMI
+if ?PM
 	mov dx,offset verifysegm	;make BX a writeable segment
 	push dx
 endif
