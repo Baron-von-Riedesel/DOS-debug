@@ -102,6 +102,7 @@ VDD        equ 0
 NOEXTENDER equ 0
 DGCMD      = 1
 DICMD      = 1
+DLCMD      = 1
 DMCMD      = 0
 elseif ?DPMI
 DBGNAME    equ <"DEBUGX">
@@ -437,40 +438,17 @@ interrupt:
 	pop di
 	pop ds
 	ret
-elseif RING0
-start:
-	push ds
-	push es
-	mov ds, ax
-	mov es, ax
-	.386
-	mov ax, [esp+4+4]
-	mov dword ptr [int10vec+0], ebx
-	mov word ptr [int10vec+4], ax
-	mov dword ptr [int16vec+0], edx
-	mov word ptr [int16vec+4], ax
-	call initcode
-	pop es
-	pop ds
-	pushfd
-	and byte ptr [esp+1], 0BFh   ; reset NT flag
-	popfd
-	retd
-	.8086
-elseif BOOTDBG
-start:
-	push ds
-	push es
-	push cs
-	pop ds
-	call initcode
-	pop es
-	pop ds
-	retf
 else
+
+ ife (RING0 or BOOTDBG)
 	org 100h
+ endif
 start:
 	jmp initcode
+ if RING0
+	jmp getdbestk
+ endif
+
 endif
 
 _TEXT ends
@@ -704,6 +682,7 @@ if RING0
 oldi0E	INTSDEF 0	;saved vector i0E
 endif
 if CATCHSYSREQ
+	.errnz RING0,<CATCHSYSREQ not supported for RING0>
 oldisrq	INTSDEF 0	;saved vector i09/i15
 endif
 if INT22
@@ -1232,6 +1211,16 @@ opidx = opidx + 1
 CONST ends
 
 _TEXT segment
+
+if RING0
+getdbestk proc
+	.386
+	mov eax, dword ptr cs:[regs.rSP]
+	mov dx, cs:[regs.rSS]
+	retd
+	.8086
+getdbestk endp
+endif
 
 if EXCCSIP
 _DATA segment
@@ -4218,12 +4207,41 @@ descbase db ' base=???????? limit=???????? attr=????',0
 CONST ends
 
 descout proc
+	mov bp, sp
+if RING0
+	sub sp, 6
+	.386
+	sgdt [bp-6]
+	cmp al, 'l'
+	jnz isgdt
+	sldt cx
+	and cx, cx		; any LDT?
+	jz done
+	movzx ecx, cx
+	mov ebx, [bp-4]	; get linear address GDT
+	add ebx, ecx	; now ebx -> LDT descriptor
+	push ds
+	mov ds, [wFlat]
+	mov dl, [ebx+4]
+	mov dh, [ebx+7]
+	shl edx, 16
+	mov dx, [ebx+2]
+	mov [bp-4], edx
+	mov dx, [ebx]
+	mov [bp-6], dx
+	pop ds
+isgdt:
+	push ax
+endif
 	.286
 	call skipwhite
 	call getword	;get word into DX
 	mov bx,dx
 if RING0
-	and bl,0f8h		;skip bits 0-2
+	cmp byte ptr [bp-8], 'l'
+	jnz @F
+	or bl, 4
+@@:
 endif
 	call skipcomm0
 	mov dx,1
@@ -4242,14 +4260,11 @@ if ?DPMI
 	mov si,offset nodesc
 	call copystring
 	jmp putsline
-else
-	jmp nextdesc
 endif
-desc_done:
-	ret
+
 nextdesc:
 	dec si
-	js desc_done
+	js done
 	mov di,offset line_out
 	mov ax,bx
 	call hexword
@@ -4266,29 +4281,26 @@ nextdesc:
 	int 31h
 	jc @F
  elseif RING0
-	mov bp, sp
-	sub sp, 6
 	.386
-	sgdt [bp-6]
-	cmp bx, [bp-6]
+	cmp bx, [bp-6]	;beyond limit?
 	jae nogdt
 	push ds
-	push ebx
-	movzx ebx, bx
-	add ebx, [bp-4]
+	movzx eax, bx
+	and al, 0F8h
+	add eax, [bp-4]
 	mov ds, [wFlat]
-	mov dx, [ebx+2]
-	mov cl, [ebx+4]
-	mov ch, [ebx+7]
-	pop ebx
+	mov dx, [eax+2]
+	mov cl, [eax+4]
+	mov ch, [eax+7]
 	.286
 	pop ds
 	stc
 nogdt:
-	mov sp, bp
-	jnc desc_done
+	jnc done
+	lar ax, bx
+	jnz desc_out
  endif
-	add di, 6
+	add di, 6	; render base
 	mov ax,cx
 	call hexword
 	mov ax,dx
@@ -4304,24 +4316,27 @@ nogdt:
 	mov di,offset line_out+25
 	cmp [machine],3
 	jb @F
-	call hexdword
+	call hexdword; limit 32-bit
 	jmp desc_o2
 @@:
-	call hexword
+	call hexword; limit 16-bit
 	mov ax,"  "
 	stosw
 	stosw
 desc_o2:
 	mov di,offset line_out+25+14
 	mov ax,dx
-	call hexword
+	call hexword; attr   
 desc_out:
-	mov di,offset line_out+25+14+4
+	mov di,offset line_out+25+14+4 ; position to end of line
 	push bx
-	call putsline
+	call putsline	; add cr/lf, then print
 	pop bx
 	add bx,8
 	jmp nextdesc
+done:
+	mov sp, bp
+	ret
 descout endp
 
 endif
@@ -4383,12 +4398,14 @@ gate16:
 	dec bh
 	jnz gateout_01
  else
-	sub sp, 6
+	push bp
 	mov bp, sp
+	sub sp, 6
 	.386
-	sidt [bp]
-	mov edx, [bp+2]
-	add sp, 6
+	sidt [bp-6]
+	pop dx
+	pop edx
+	pop bp
 	push ds
 	mov ds, [wFlat]
 	movzx ebx, bl
@@ -4751,7 +4768,7 @@ lastddd:
 	jmp dd2
 
 dd1:
-if ?DPMI or DGCMD or DICMD or DMCMD or DPCMD or DXCMD 
+if DGCMD or DICMD or DLCMD or DMCMD or DPCMD or DXCMD 
 	mov ah,[si-2]		;test for 2-letter cmds (DI, DL, DM, DP, DX)
 	and ah,TOUPPER
 	cmp ah,'D'
@@ -4763,7 +4780,7 @@ if ?DPMI or DGCMD or DICMD or DMCMD or DPCMD or DXCMD
 	jmp  descout
 @@:
  endif
- if ?DPMI
+ if DLCMD
 	cmp al,'l'
 	jnz @F
 	jmp  descout
@@ -9283,6 +9300,7 @@ endif
 ;--- Interrupt 3 (breakpoint interrupt) handler.
 
 if RING0
+	.386
 NotOurInt03:
 	jmp cs:[oldi03]
 endif
@@ -13234,6 +13252,11 @@ _DATA ends
 
 _ITEXT segment
 
+;--- initcont is located at the start of _ITEXT because either
+;--- a word is written into this segment ( the "mov [bx], ..." below )
+;--- or SP has to be adjusted before memory is freed.
+;--- ax,bx=top of memory
+
 initcont:
 
 if DRIVER or RING0 or BOOTDBG
@@ -13241,12 +13264,34 @@ if DRIVER or RING0 or BOOTDBG
 	mov [bx], offset ue_int	; make debug display "unexpected interrupt"
 	mov [run_sp], bx
  if BOOTDBG
-	mov es, [pspdbg]        ; copy debugger beyond conv. memory
+	mov cx, ax
+	mov es, [pspdbg]		; copy debugger beyond conv. memory
 	xor di, di
 	xor si, si
 	rep movsb
- endif
+  ifdef _DEBUG
+	push bp
+	mov bp, sp
+	@dprintf "[sp]=%X %X %X %X", [bp+2], [bp+4], [bp+6], [bp+8]
+	pop bp
+  endif
+	pop es
+	pop ds
+	retf
+ elseif RING0
+	.386
+	pop eax					; switch stack back
+	pop ss
+	mov esp, eax
+	pushf
+	and byte ptr [esp+1], 0BFh   ; reset NT flag
+	popf
+	pop es
+	pop ds
+	retd
+ else
 	ret
+ endif
 else
 	push ds
 	pop es
@@ -13366,13 +13411,56 @@ cantrun:
 
 endif
 
+;--- initialization.
+;--- BOOTDBG: no cmdline
+;--- RING0: ESI -> cmdline ( linear address )
+;--- DRIVER: cmdline in init_req.cmdline
+;--- anything else: PSP:80h
+;--- register (E)BP must be preserved!
+
 initcode proc
 	cld
 if RING0
-	mov [wFlat], ss
+
+;--- in:
+;---  ax: dgroup
+;---  cx: flat data selector
+;--- ebx: offset output routine (int 10h)
+;--- edx: offset input routine (int 16h)
+
+	push ds
+	push es
+	mov ds, ax
+	mov es, ax
+	mov [wFlat], cx
+	mov word ptr [d_addr+4], cx
+	mov word ptr [a_addr+4], cx
+	.386
+	mov ax, [esp+2*2+4]	; get caller's CS
+	mov dword ptr [int10vec+0], ebx
+	mov word ptr [int10vec+4], ax
+	mov dword ptr [int16vec+0], edx
+	mov word ptr [int16vec+4], ax
+
+;--- set stack to dgroup
+	mov bx, ss
+	mov eax, esp
+	mov cx, ds
+	lsl dx, cx
+	inc dx
+	mov ss, cx
+	mov sp, dx
+	push bx
+	push eax
 	mov ax, ds
-elseif DRIVER or BOOTDBG
-    mov ax, cs
+elseif DRIVER
+	mov ax, cs
+elseif BOOTDBG
+	push ds
+	push es
+	push cs
+	pop ds
+	mov ax, cs
 else
 	mov ax, cs
 	mov word ptr [execblk.cmdtail+2],ax
@@ -13614,7 +13702,9 @@ endif
 
 ;--- Interpret switches and erase them from the command line.
 
-ife (BOOTDBG or RING0)
+ife BOOTDBG
+
+ ife RING0
 	mov ax,3700h		;get switch character in DL
 	int 21h
 	mov [switchar],dl
@@ -13622,9 +13712,11 @@ ife (BOOTDBG or RING0)
 	jne @F
 	mov [swch1],dl
 @@:
- ife DRIVER
-	mov si,DTA+1
- else
+ endif
+
+ if RING0
+	mov es, [wFlat] 
+ elseif DRIVER
 	les si, cs:[request_ptr]	; load address of request header
 	les si, es:[si].init_req.cmdline
 @@:
@@ -13634,10 +13726,16 @@ ife (BOOTDBG or RING0)
 	cmp al,' '
 	jnz @B
 @@:
+ else
+	mov si,DTA+1
  endif
 contparse:
 @@:
- if DRIVER
+ if RING0
+	.386
+	lodsb es:[esi]
+	.8086
+ elseif DRIVER
 	lodsb es:[si]
  else
 	lodsb
@@ -13650,12 +13748,18 @@ contparse:
 ;--- Process the /? switch (or the [switchar]? switch).
 ;--- If switchar != / and /? occurs, make sure nothing follows.
 
+ ife RING0
 	cmp al,[switchar]
 	je @F			;if switch character
+ endif
 	cmp al,'/'
 	jne doneoptions	;if not the help switch
 @@:
- if DRIVER
+ if RING0
+	.386
+	lodsb es:[esi]
+	.8086
+ elseif DRIVER
 	lodsb es:[si]
  else
 	lodsb
@@ -13687,7 +13791,7 @@ contparse:
 	jz noaltvid
 	mov byte ptr [setscreen], 1Eh	;"push ds"
 	push ds
-	mov ax, 40h
+	mov ax, 40h		; segment value 40h even works in Jemm ring 0
 	mov ds, ax
 	mov dx, ds:[63h]
 	pop ds
@@ -13723,7 +13827,7 @@ noaltvid:
 noaltvidsw:
  endif
 
- ife DRIVER	; the driver version ignores invalid cmdline args
+ ife (DRIVER or RING0)	; those versions ignore invalid cmdline args
 	mov [imsg2a],al
 	mov dx,offset imsg2	;Invalid switch
 ;	call int21ah9	;v1.30: int21ah9 cannot be used ( pInDOS not yet set )
@@ -13736,13 +13840,13 @@ noaltvidsw:
 ;--- Feed the remaining command line to the 'n' command.
 
 doneoptions:
- ife DRIVER
+ ife (DRIVER or RING0)
 	dec si
 	lodsb
 	call n_cmd		;process the rest of the line
  endif
 
-endif ; ife (BOOTDBG or RING0)
+endif ; ife BOOTDBG
 
 if BOOTDBG
 
@@ -13817,6 +13921,7 @@ if ?DPMI
 no2fhook:
 	inc [bNoHook2F]
 dpmihostchecked:
+
 endif
 
 	push ds
@@ -13887,11 +13992,9 @@ noxmm:
 ;--- that in theory would fit perfectly, but
 ;--- unfortunately in reality may have quirks.
   if RING0
-;--- int 10h cannot be used here, since we haven't switched to the debugger's stack yet.
 	.386
 	push ds
-	push ss
-	pop ds
+	mov ds, [wFlat]
 	movzx esi, word ptr ds:[44Eh]
 	movzx ecx, word ptr ds:[44Ch]
 	mov dx, ds:[450h+0*1]
@@ -13917,6 +14020,9 @@ noxmm:
 	mov cx, es:[44Ch]	; page size
 	shr cx, 1
 	mov ax, 0501h	; debugger page is 1
+  ife (DRIVER or BOOTDBG)
+	mov [vpage], al		; std: init here since we'll jump right into the debugger
+  endif
 	int 10h
 	mov di, es:[44Eh]	; page offset page 1
 	mov dx, es:[450h+0*1]
@@ -13949,20 +14055,25 @@ endif
 if RING0
 	.erre ?PM, <RING0 requires ?PM to be 1>
 	.386
-	sub esp, 8
-	sidt [esp]
-	mov ebx, [esp+2]
-	add esp, 8
+	sub sp, 6
+	mov bx, sp
+	sidt [bx]
+	pop bx
+	pop ebx
+	mov es, [wFlat]
+elseif BOOTDBG
+	xor ax, ax
+	mov es, ax
 endif
 @@:
 	lodsb
 if RING0
 	movzx edx, al
-	mov ax, ss:[ebx+edx*8+0]
+	mov ax, es:[ebx+edx*8+0]
 	mov [di+0], ax
-	mov ax, ss:[ebx+edx*8+6]
+	mov ax, es:[ebx+edx*8+6]
 	mov [di+2], ax
-	mov ax, ss:[ebx+edx*8+2]
+	mov ax, es:[ebx+edx*8+2]
 	mov [di+4], ax
 	add di, 2
 elseif BOOTDBG
@@ -13983,14 +14094,14 @@ else
 endif
 	lodsw			;get address
 if RING0
-	mov ss:[ebx+edx*8+0], ax
-	mov ss:[ebx+edx*8+2], cs
+	mov es:[ebx+edx*8+0], ax
+	mov es:[ebx+edx*8+2], cs
 	xor ax, ax
-	mov ss:[ebx+edx*8+6], ax
+	mov es:[ebx+edx*8+6], ax
 elseif BOOTDBG
-	mov ax, [pspdbg]
-	mov es:[bx+0], dx
-	mov es:[bx+2], ax
+	mov dx, [pspdbg]
+	mov es:[bx+0], ax
+	mov es:[bx+2], dx
 else
 	xchg ax, dx		;AL=int#, DX=offset
 	mov ah, 25h		;set interrupt vector
@@ -14004,12 +14115,6 @@ endif
 	mov ax, offset real_end + STACKSIZ + 15
 	and al, not 15		; debug's top of stack
 	mov [top_sp], ax
-if BOOTDBG
-	mov cx, ax
-elseif RING0
-	mov word ptr [d_addr+4], ss
-	mov word ptr [a_addr+4], ss
-endif
 	mov bx, ax
 	jmp initcont
 

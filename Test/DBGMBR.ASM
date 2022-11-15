@@ -1,10 +1,15 @@
 
-;--- simple MBR to load DebugB
-;--- 1. loaded at 7C00h
-;--- 2. relocates itself to 600h
-;--- 3. reads 40 sectors (# 1-40 ) at 8000h
+;--- simple MBR showing how DebugB may be invoked.
+
+;--- 1. the MBR is loaded by the BIOS at 0000:7C00
+;--- 2. it relocates itself to 0000:0600
+;--- 3. reads 40 sectors (# 1-40 ) at 0800:0000
 ;--- 4. calls 0800h:0000
-;--- 5. breakpoint to activate debugger
+;--- 5. runs an INT 3 to activate debugger
+
+;--- To continue from inside the debugger, use the DP and L commands to
+;--- select and load a partition boot sector ( at address 0000:7C00 ). 
+;--- After that, set register IP to 7C00h and G(o).
 
 _TEXT segment word public 'CODE'
 
