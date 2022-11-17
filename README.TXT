@@ -190,6 +190,10 @@
      active. Definitely not for beginners. See "Installing and Initializing
      DebugB" in DEBUG.TXT for details.
 
+   - DebugR.BIN: a version that runs in ring0 protected-mode. This variant
+     needs additional software a) to be loaded and b) to handle its i/o
+     requests.
+
   d. The following features of MS Debug are not implemented:
 
    - Loading of .HEX files.

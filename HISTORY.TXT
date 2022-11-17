@@ -277,6 +277,7 @@
        - added a "boot" variant of the debugger - it's supposed to be loaded
          before DOS by boot loader code.
        - fixed: correctly handle tabs if output is via BIOS.
-       - added a ring0 variant of the debugger - it's supposed to be loaded
-         into the Jemm386/JemmEx address context.
+       - added a ring0 variant of the debugger - DebugR.bin.
        - DEBUGX fix: c & s cmds finally work with 32-bit offsets.
+       - DEBUGX fix, e cmd: generate a GPF if no data alias can be found for
+         a code segment ( instead of silently skip the write ).

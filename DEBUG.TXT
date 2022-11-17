@@ -10,7 +10,8 @@
   7. DEBUG Statements in Assembly Mode
   8. Debugging with DEBUGX
   9. Installing and Initializing DebugB
- 10. DEBUG Scripts
+ 10. DebugR Basics
+ 11. DEBUG Scripts
 
 
  1. About
@@ -837,7 +838,24 @@
  the EMS branch. OTOH, unlike DEBUG, it understands the DI & DX commands.
 
 
- 10. DEBUG Scripts
+ 10. DebugR Basics
+ -----------------
+
+  DebugR is a variant of DEBUG that runs in ring-0 (privileged) protected-mode.
+ It's a plain binary that has to be loaded and initialized by some helper code,
+ suitable for the environment. Once loaded, DebugR can debug programs running
+ in both ring-0 and ring-3 protected-mode.
+  There are a few special commands for this variant:
+
+ DG start [count]: display GDT ( Global Descriptor Table )
+ DI start [count]: display IDT ( Interrupt Descriptor Table )
+ DL start [count]: display LDT ( Local Descriptor Table )
+ SK: Skip handling of current exception, hand it over to previous handler.
+
+ Exceptions that can be "skipped" are Exceptions 0, 6, 0Dh and 0Eh.
+
+
+ 11. DEBUG Scripts
  -----------------
 
  Because DEBUG uses the standard input and output devices, and because

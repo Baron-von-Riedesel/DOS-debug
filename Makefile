@@ -4,7 +4,7 @@
 OUTD=build
 
 ALL: $(OUTD)\DEBUG.COM   $(OUTD)\DEBUGX.COM  $(OUTD)\DEBUGXD.COM $(OUTD)\DEBUGXE.COM $(OUTD)\DEBUGXF.COM \
-     $(OUTD)\DEBUGXG.EXE $(OUTD)\DEBUGXU.COM $(OUTD)\DEBUGXV.COM $(OUTD)\DEBUGB.BIN  $(OUTD)\DEBUGJ.BIN
+     $(OUTD)\DEBUGXG.EXE $(OUTD)\DEBUGXU.COM $(OUTD)\DEBUGXV.COM $(OUTD)\DEBUGB.BIN  $(OUTD)\DEBUGR.BIN
 
 DEPS= src\debug.asm src\debugtbl.inc src\dprintf.inc src\fptostr.inc
 
@@ -35,6 +35,6 @@ $(OUTD)\DEBUGXV.COM: $(DEPS)
 $(OUTD)\DEBUGB.BIN:  $(DEPS)
 	@echo creating debugB.bin - a "boot loader"  version
 	@jwasm -nologo -bin  -Fo $(OUTD)\DEBUGB.BIN -Fl=$(OUTD)\DEBUGB.LST -DCATCHINT06=1 -DBOOTDBG=1 src\debug.asm
-$(OUTD)\DEBUGJ.BIN:  $(DEPS)
-	@echo creating debugJ.bin - a protected-mode "ring 0"  version
-	@jwasm -nologo -bin  -Fo $(OUTD)\DEBUGJ.BIN -Fl=$(OUTD)\DEBUGJ.LST -DCATCHINT06=1 -DRING0=1 src\debug.asm
+$(OUTD)\DEBUGR.BIN:  $(DEPS)
+	@echo creating debugR.bin - a protected-mode "ring 0"  version
+	@jwasm -nologo -bin  -Fo $(OUTD)\DEBUGR.BIN -Fl=$(OUTD)\DEBUGR.LST -DCATCHINT06=1 -DRING0=1 src\debug.asm

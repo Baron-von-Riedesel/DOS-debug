@@ -22,5 +22,5 @@ jwasm -nologo -D?DPMI=1 -bin -Fo build\DEBUGXV.COM -Fl=build\DEBUGXV.LST -DVXCHG
 echo creating debugB.bin - a "boot loader"  version
 jwasm -nologo -bin  -Fo build\DEBUGB.BIN -Fl=build\DEBUGB.LST -DCATCHINT06=1 -DBOOTDBG=1 src\debug.asm
 
-echo creating debugJ.bin - a protected-mode "ring 0"  version
-jwasm -nologo -bin  -Fo build\DEBUGJ.BIN -Fl=build\DEBUGJ.LST -DCATCHINT06=1 -DRING0=1 src\debug.asm
+echo creating debugR.bin - a protected-mode "ring 0"  version
+jwasm -nologo -bin  -Fo build\DEBUGR.BIN -Fl=build\DEBUGR.LST -DCATCHINT06=1 -DRING0=1 src\debug.asm
