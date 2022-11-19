@@ -1,50 +1,20 @@
 
- 1. About Debug and DebugX
+ 1. About Debug/X
 
-    Debug is a clone of the MS-DOS DEBUG command. Some minor things aren't
-    implemented. OTOH it has many features not available in the original
-    MS DEBUG. For details see below. DebugX is an extended version of Debug,
-    that allows to debug protected-mode (DPMI) DOS programs.
+    Debug/X is a package of debuggers. The most important ones are:
+    
+    - Debug: is a clone of the MS-DOS DEBUG command - although, "clone"
+      isn't the correct name, because it has many features not available in
+      the original MS DEBUG. For details see below. 
 
+    - DebugX: is an extended version of Debug that allows to debug both
+      real-mode and protected-mode (DPMI) DOS programs.
 
- 2. Files Overview
-
-    The files in this distribution are:
-
-    debug.com     the executable binary.
-    debugx.com    a DPMI aware version of Debug.
-    debxxvdd.dll  a Win32 dll (VDD) loaded if debugx runs in a Windows XP 
-                  NTVDM "DOS box". Makes debugx's L and W command work with
-                  sectors on this platform.
-    readme.txt    this file.
-    history.txt   list of changes.
-    debug.txt     a MS-Debug tutorial originally written by Michael Webster,
-                  extended to describe all additional features of Debug(X).
-    SAMPLES       contains samples of 16 and 32-bit DPMI clients in Masm
-                  syntax.
-
-    The following files, which may be distributed separately, are needed if 
-    debug.com or debugx.com is to be rebuilt:
-
-    debug.asm     Assembler source code for both debug.com and debugx.com.
-                  Assemble with JWasm or Masm (see Make.bat).
-    debugtbl.inc  include file for debug.asm, contains tables for Debug's
-                  internal assembler and disassembler command.
-    instr.*       input data for mktables.
-    mktables.c    C program to compile the internal instruction-set
-                  tables into source file debugtbl.inc. It's supposed to
-                  be translated with Open Watcom's 16bit compiler WCC.
-    make.bat      batch file to (re)create debug.com and debugx.com.
-    makecm.bat    batch file to (re)create mktables.exe with MS C.
-    makecw.bat    batch file to (re)create mktables.exe with OW C.
-    makex.bat     batch file to create special versions of Debugx.
-
-    Note: files mktables.c and instr.* are to be removed in one of the next
-    versions of Debug. Then file debugtbl.inc is supposed to be modified
-    directly if new instructions are to be supported..
+    - additional variants like DebugXv, DebugXg, DebugB or DebugR that are
+      useful for special cases. For details see below.
 
 
- 3. Added/Missing Features
+ 2. Added/Missing Features
 
   a. Debug extends MS-Debug in the following ways:
 
@@ -153,30 +123,30 @@
      Run file makex.bat to create them; you'll need the JWasm assembler
      for a successful run. The additional versions are:
   
-   - DebugXD.COM: a version which doesn't hook int 01 and int 03. This
+   - DebugXd.COM: a version which doesn't hook int 01 and int 03. This
      allows to debug this version with a "normal" version of Debug(X).
 
-   - DebugXE.COM: a version which hooks interrupts 06, 0Ch and 0Dh in
+   - DebugXe.COM: a version which hooks interrupts 06, 0Ch and 0Dh in
      real-mode. This is for - rare - cases when such exceptions may
      occur in real-mode applications.
 
-   - DebugXF.COM: a version which hooks interrupt 31h in protected-mode
+   - DebugXf.COM: a version which hooks interrupt 31h in protected-mode
      and then rejects any attempt to modify exception vectors 01, 03,
      0Dh and 0Eh. This allows to debug DOS-extended applications that
      modify these vectors.
 
-   - DebugXG.EXE: a version that is in DOS device driver format. This
+   - DebugXg.EXE: a version that is in DOS device driver format. This
      variant can be used to debug other device drivers. There are a
      few peculiarities: commands N and Q are rejected, commands
      R and W can't be used to read/write files and interrupt 06 (invalid
      opcode exception) is hooked.
 
-   - DebugXU.COM: a version that uses "unreal" mode to access extended
+   - DebugXu.COM: a version that uses "unreal" mode to access extended
      memory for the DX command. This is useful to debug applications
      that set/use "unreal" mode themselves, because DebugXU will not
      change the current "unreal" state by its DX command.
 
-   - DebugXV.COM: a version that takes care that screen output of
+   - DebugXv.COM: a version that takes care that screen output of
      debuggee and debugger are strictly separated - the new 'v'
      command is provided to watch the debuggee screen while the
      debugger is active. Additionally, the SysReq key is detected and
@@ -192,19 +162,58 @@
 
    - DebugR.BIN: a version that runs in ring0 protected-mode. This variant
      needs additional software a) to be loaded and b) to handle its i/o
-     requests.
+     requests. Like DebugB.BIN it doesn't use DOS - actually, it doesn't even
+     use the BIOS - and hence it's not really a "DOS debugger" anymore. See
+     "DebugR Basics" in DEBUG.TXT for more details.
 
   d. The following features of MS Debug are not implemented:
 
    - Loading of .HEX files.
 
 
- 4. How to rebuild the Debug.COM/DebugX.COM Binaries
+ 3. How to (re)build the Debug.COM/DebugX.COM Binaries
 
     MAKE.BAT is intended for rebuilding the debugger binaries. The
     recommended tool for this step is to use the JWasm assembler.
     Alternatively, one can use MS Masm, but then a 16-bit OMF linker 
     will be needed as well (Open Watcom's WLink might do the job).
+
+
+ 4. Files Overview
+
+    The files in this distribution are:
+
+    debug.com     the executable binary.
+    debugx.com    a DPMI aware version of Debug.
+    debxxvdd.dll  a Win32 dll (VDD) loaded if debugx runs in a Windows XP 
+                  NTVDM "DOS box". Makes debugx's L and W command work with
+                  sectors on this platform.
+    readme.txt    this file.
+    history.txt   list of changes.
+    debug.txt     a MS-Debug tutorial originally written by Michael Webster,
+                  extended to describe all additional features of Debug(X).
+    SAMPLES       contains samples of 16 and 32-bit DPMI clients in Masm
+                  syntax.
+
+    The following files, which may be distributed separately, are needed if 
+    debug.com or debugx.com is to be rebuilt:
+
+    debug.asm     Assembler source code for both debug.com and debugx.com.
+                  Assemble with JWasm or Masm (see Make.bat).
+    debugtbl.inc  include file for debug.asm, contains tables for Debug's
+                  internal assembler and disassembler command.
+    instr.*       input data for mktables.
+    mktables.c    C program to compile the internal instruction-set
+                  tables into source file debugtbl.inc. It's supposed to
+                  be translated with Open Watcom's 16bit compiler WCC.
+    make.bat      batch file to (re)create debug.com and debugx.com.
+    makecm.bat    batch file to (re)create mktables.exe with MS C.
+    makecw.bat    batch file to (re)create mktables.exe with OW C.
+    makex.bat     batch file to create special versions of Debugx.
+
+    Note: files mktables.c and instr.* are to be removed in one of the next
+    versions of Debug. Then file debugtbl.inc is supposed to be modified
+    directly if new instructions are to be supported..
 
 
  5. Copyright

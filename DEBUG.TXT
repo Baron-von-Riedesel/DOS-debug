@@ -842,17 +842,32 @@
  -----------------
 
   DebugR is a variant of DEBUG that runs in ring-0 (privileged) protected-mode.
- It's a plain binary that has to be loaded and initialized by some helper code,
- suitable for the environment. Once loaded, DebugR can debug programs running
- in both ring-0 and ring-3 protected-mode.
-  There are a few special commands for this variant:
+ A 80386 or better CPU is required. DebugR is a plain binary that has to be
+ loaded and initialized (in protected-mode!) by some kind of "loader" code.
+ Unlike DebugX, the DebugR binary isn't bimodal ( meaning to be able to run
+ in both real-mode and protected-mode ). Exceptions in v86-mode, which are
+ reported if DebugR runs in the context of a v86-monitor program like
+ Jemm386, are ignored.
+  DebugR doesn't use DOS and actually doesn't use any BIOS calls at all. For
+ its tty i/o it calls out to the "loader" program, which is responsible to
+ route those calls to the OS or handle them on its own.
+ 
+ Once loaded, DebugR can debug programs running in both ring-0 and ring-3
+ protected-mode. Since it doesn't use DOS or BIOS, a few commands implemented
+ in the standard Debug/X aren't available: DM, DX, L, N, Q, W, Xx. OTOH, DebugR
+ has a few special commands:
 
  DG start [count]: display GDT ( Global Descriptor Table )
  DI start [count]: display IDT ( Interrupt Descriptor Table )
  DL start [count]: display LDT ( Local Descriptor Table )
  SK: Skip handling of current exception, hand it over to previous handler.
 
- Exceptions that can be "skipped" are Exceptions 0, 6, 0Dh and 0Eh.
+ Exceptions that can be "skipped" are Exceptions 0, 1, 3, 6, 0Dh and 0Eh.
+
+ Currently the debugger will stop at any GPF in protected-mode. This might
+ become a problem for ring3 applications running with IOPL 0, since CLI/STI
+ and (optionally) IN/INS/OUT/OUTS instructions will cause a GPF then. This
+ most likely will be changed in a future release.
 
 
  11. DEBUG Scripts

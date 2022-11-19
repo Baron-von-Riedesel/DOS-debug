@@ -446,7 +446,8 @@ else
 start:
 	jmp initcode
  if RING0
-	jmp getr0stk
+	jmp getr0stk	; get ring 0 SS:ESP
+	jmp entercmd	; enter command loop
  endif
 
 endif
@@ -1032,7 +1033,12 @@ if CATCHINT0D or ?PM
 exc0Dmsg db 'General protection fault',CR,LF,'$'
 endif
 if ?PM
+ if RING0
+exc0Emsg db 'Page fault, CR2='
+exc0Ecr2 db '________',CR,LF,'$'
+ else
 exc0Emsg db 'Page fault.',CR,LF,'$'
+ endif
 endif
 if INT22
 progtrm	db CR,LF,'Program terminated normally ('
@@ -1839,9 +1845,14 @@ intr22:
 	mov ax,cs
 	mov ds,ax
 	mov ss,ax
+elseif RING0
+entercmd:
+	mov ds, cs:[pspdbg]
+	push ds
+	pop ss
 endif
 
-;--- fall through to cmdloop
+;--- fall through to cmdloop!
 
 ;--- Begin main command loop.
 
@@ -5116,7 +5127,7 @@ endif
 ;--- Prompt mode.
 
 ee1:
-;	@dprintf "e: bx:edx=%X:%lX", bx, edx
+	@dprintf "e: bx:edx=%X:%lX", bx, edx
 if REDIRECT
 	mov [bufnext], si  ; update buffer ptr in case stdin is file
 endif
@@ -5556,6 +5567,9 @@ if ?DPMI
 	push [regs.msw]	;save old MSW
 endif
 	call run		;run the program
+if ?DPMI
+	pop dx			;get old MSW
+endif
 if (DRIVER or BOOTDBG or RING0)
 	@dprintf "g_cmd: run returned, ds=%X", ds
 else
@@ -5563,47 +5577,37 @@ else
 endif
 if ?PM
 	call getcsattr
-	mov [bCSAttr],al
+	mov [bCSAttr],al	; must be set for getcseipbyte() & IsUnexpInt3()
 endif
+
+if 0 ; v1.30: not needed for soft/hard bp detection
 	mov cx,-1
 	call getcseipbyte	;get byte at [cs:eip-1], set E/BX to E/IP-1
-if ?DPMI
-	pop dx			;get old MSW
+	push ax
 endif
 
 ;--- Restore breakpoint bytes.
 
-;--- it's questionable if this should be done when
-;--- the debuggee has terminated [run_int] == INT22MSG.
-;--- for protected-mode, if the DPMI host has been terminated as well
-;--- it will most likely crash when a raw-mode switch is to be done.
-
-	push ax
 if ?DPMI
-	call resetbpsEx		;reset BPs, switch tmp. to previous mode
+;--- if debuggee has terminated ( [run_int] == INT22MSG ),
+;--- nothing will be done if mode has changed ( see resetbpsEx() ).
+	call resetbpsEx		;reset BPs ( expects DX=old msw ), may switch tmp. to previous mode
 else
 	call resetbps
 endif
-	pop ax
 
 ;--- Finish up.  Check if it was one of _our_ breakpoints.
+;--- if yes, (E)IP isdecremented ( inside IsUnexpInt3() ).
 
-	cmp al,0CCh
+if 0 ; v1.30: not needed for soft/hard bp detection
+	pop ax
+	cmp al,0CCh		; was a CC at CS:[EIP-1]?
 	jnz gg_exit
-	cmp [run_int], EXC03MSG
-	jne gg_exit		;if not CC interrupt
-	mov cx,-1
-	call getcseipbyte	;will set E/BX to E/IP-1
-	cmp al,0CCh
-	jz gg_exit
-
-;--- it WAS one of our BPs! Decrement E/IP!
-
-	sizeprfX		;mov [regs.rIP],ebx
-	mov [regs.rIP],bx
-;	@dprintf "g_cmd: call dumpregs"
-	call dumpregs
-	ret
+endif
+	call IsUnexpInt3; was bp set by debugger?   
+	jc gg_exit
+	call dumpregs	; then just display register dump
+	ret				; and done ( no "unexpected breakpoint" msg )
 gg_exit:
 	jmp ue_int		;print messages and quit.
 
@@ -6982,11 +6986,11 @@ getseglimit endp
 endif
 
 ;--- read [EIP+x] value 
-;--- in: CX=x 
-;--- [regs.rCS]=CS
-;--- [regh_(e)ip]=EIP
+;--- in:  CX=x 
+;---      [regs.rCS]=CS
+;---      [regh_(e)ip]=EIP
 ;--- out: AL=[CS:(E)IP]
-;--- [E]BX=[E]IP+x 
+;---      [E]BX=[E]IP+x 
 ;--- called by T and G
 
 getcseipbyte proc
@@ -7123,24 +7127,37 @@ readmem_1:
 	ret
 readmem endp
 
-;--- check if an unexpected int 3 has occured
-;--- CS:(E)IP in regs.rCS:regs.rIP
-;--- in: DX=0, out: DX=msg
-;--- called by P, T
+;--- check if an unexpected int 3 has occured;
+;--- called by G and P/T ( for "INT xx" )
+;--- rewritten for v1.30.
+;--- when called, resetbps() has happened already!
+;--- checks if [run_int] = EXC03MSG
+;--- checks if [cs:(e)ip-1] still contains a CC; if yes, it's a "hard" bp.
+;--- in:
+;--- out: NC if soft bp set by debugger
+;---       C if hard bp or another exception
+;--- modifies al, (e)bx, cx and - if it WAS a soft bp - [regs.rIP] 
 
 IsUnexpInt3 proc
-	mov cx,-1
-	call getcseipbyte
-	cmp al,0CCh
-	jz isunexp_exit
-	mov dx, EXC03MSG
+	cmp [run_int], EXC03MSG
+	jnz exit
+	mov cx,  -1
+	call getcseipbyte	; modifies (E)BX
+	cmp al, 0CCh		; still a INT3 at [cs:eip-1] ?
+	jz exit
 if ?PM
-	test [bCSAttr],40h
+	test [bCSAttr], 40h
 	jz $+3
 	db 66h	;mov [regs.rIP],ebx
 endif
-	mov [regs.rIP],bx
-isunexp_exit:
+	mov [regs.rIP], bx	; decrement (E)IP
+if RING0
+	mov [run_int], -1	; v1.30: reset entry ( so SK cmd won't accept soft bps )
+endif
+	clc
+	ret
+exit:
+	stc
 	ret
 IsUnexpInt3 endp
 
@@ -7286,24 +7303,21 @@ else
 	call resetbps
 endif
 
-	xor dx,dx		;set flag
-	cmp [run_int], EXC03MSG
-	jne pp13		;if not CC interrupt
-	call IsUnexpInt3;test byte at regs.rCS:regs.rIP-1 if CCh
-	jmp pp13
+	call IsUnexpInt3; stopped at a hard bp?
+	jnc pp13
+	jmp pp15      
 
 ;--- Ordinary instruction.  Just do a trace.
 
 pp12:
 	or byte ptr [regs.rFL+1],1	;set single-step mode
 	call run
-	mov dx, EXC01MSG
+	cmp [run_intw], EXC01MSG
+	jne pp15		; stop if some other interrupt
 
 ;--- Common part to finish up.
 
 pp13:
-	cmp [run_intw], dx
-	jne pp15		;if some other interrupt
 	call dumpregs
 	pop cx
 	loop pp14		;back for more
@@ -7699,17 +7713,28 @@ errorj9:
 
 if RING0
 
+CONST segment
+
 exctab label byte
 	db EXC00MSG
+	db EXC01MSG
+	db EXC03MSG
 	db EXC06MSG
 	db EXC0DMSG
 	db EXC0EMSG
 SIZEEXCTAB equ $ - offset exctab
 	db offset oldi00 - offset intsave
+	db offset oldi01 - offset intsave
+	db offset oldi03 - offset intsave
 	db offset oldi06 - offset intsave
 	db offset oldi0D - offset intsave
 	db offset oldi0E - offset intsave
-errcb db 1100b
+errcb db 110000b   ; bits for EXC00, EXC01, EXC03, EXC06, EXC0D, EXC0E
+
+noskip db "No exception to skip",13,10,'$'
+yesskip db "Exception skipped",13,10,'$'
+
+CONST ends
 
 ;--- skip exception
 
@@ -7722,7 +7747,6 @@ sk_cmd proc
 	pop es
 	repnz scasb
 	jz @F
-error:
 	mov dx, offset noskip
 	jmp int21ah9
 @@:
@@ -7755,14 +7779,17 @@ error:
 	lodsw
 	mov [regs.rCS], ax
 	mov [u_addr+4], ax
-	mov [run_int], -1
+
+	pushf
+	pop ax
+	mov byte ptr [regs.rFL+1], ah
+	
+	mov [run_int], -1		; reset run_int, so skip is "deactivated" for this time
 	mov dx, offset yesskip
 	jmp int21ah9
 
-noskip db "No exception to skip",13,10,'$'
-yesskip db "Exception skipped",13,10,'$'
-
 sk_cmd endp
+
 endif
 
 ;--- S command - search for a string of bytes.
@@ -8008,13 +8035,13 @@ isstdtrace:
 	push ax
 	call run
 	pop ax
-	cmp al,9Ch				;was opcode "PUSHF"?
+	cmp al,9Ch			;was opcode "PUSHF"?
 	jnz @F
 	call clear_tf_onstack
 @@:
 	cmp [run_int], EXC01MSG
 	je tt1_1
-	jmp ue_int		;if some other interrupt
+	jmp ue_int			;if some other interrupt ( is always "unexpected" )
 tt1_1:
 	call dumpregs
 	ret
@@ -9389,10 +9416,10 @@ intr0C:
 	jmp ue_intx
 @@:
  if RING0
-	add esp, 4		; skip error code
-	push EXC0CMSG
+;	add esp, 4		; error code now popped in intrtn
+	push EXC0CMSG or 8000h
  else
-	mov cs:[run_int], EXC0DMSG
+	mov cs:[run_int], EXC0CMSG
  endif
 	jmp intrtn
 endif
@@ -9434,15 +9461,15 @@ intr0D:
 	pop ss
 	mov sp,cs:[top_sp]
  endif
-	.286
-	push EXC0DMSG	; exception 0D won't happen on 8086
+	.286			; exception 0D won't happen on 8086
+	push EXC0DMSG
 	.8086
 	jmp ue_intx
 @@:
  if RING0
 	.386
-;	add esp, 4		; skip error code
-	push EXC0DMSG+8000h
+;	add esp, 4		; error code now popped in intrtn!
+	push EXC0DMSG or 8000h
  else
 	mov cs:[run_int], EXC0DMSG
  endif
@@ -9463,8 +9490,23 @@ intr0E:
 	test al, 40h	; IRQ6 (int 0Eh) occured?
 	pop ax
 	jnz NotOurInt0E
+
+if 1 ; display value of cr2
+	cld
+	push es
+	push di
+	push eax
+	mov es, cs:[pspdbg]
+	mov di, offset exc0Ecr2
+	mov eax, cr2
+	call hexdword
+	pop eax
+	pop di
+	pop es
+endif
 	cmp cs:[bInDbg],0
 	jz @F
+	add esp, 4		; skip error code
   if EXCCSIP
 	pop eax
 	pop edx
@@ -9475,12 +9517,11 @@ intr0E:
 	mov ss:[intexcip], ax 
 	mov ss:[intexccs], dx 
   endif
-	add esp, 4		; skip error code
 	push EXC0EMSG
 	jmp ue_intx
 @@:
-;	add esp, 4		; skip error code
-	push EXC0EMSG+8000h
+;	add esp, 4		; error code now popped in intrtn!
+	push EXC0EMSG or 8000h
 	jmp intrtn
 
 endif
@@ -9612,7 +9653,7 @@ intrtn_progtrm::		;<--- int 22h
 	mov ss,sp
 	mov sp,offset regs.rSS
 endif
-intrtn2::				;<--- entry protected-mode
+intrtn2::				;<--- entry DPMI protected-mode
 	push es
 	push ds
 	push ss
@@ -13235,11 +13276,18 @@ hexword endp	;fall through!
 
 hexbyte:
 	push ax
+if RING0
+	.386
+	shr al, 4
+else
 	push cx
 	mov cl,4
 	shr al,cl
+endif
 	call hexnyb
+ife RING0
 	pop cx
+endif
 	pop ax
 
 hexnyb:
@@ -13693,19 +13741,21 @@ initcode proc
 if RING0
 
 ;--- in:
-;---  ax: dgroup selector
-;---  di: scratch selector
-;---  bp: size dgroup
+;--- loword(ax): dgroup selector
+;--- hiword(ax): scratch selector
 ;---  cx: flat data selector
+;---  bp: size dgroup
 ;--- ebx: offset output routine (int 10h)
 ;--- edx: offset input routine (int 16h)
+;--- es:edi=IDT ( currently ignored, got address IDT from SIDT instr )
 
 	push ds
 	push es
 	mov ds, ax
 	mov es, ax
 	mov [wFlat], cx
-	mov [scratchsel], di
+	shr eax, 16
+	mov [scratchsel], ax
 	mov word ptr [d_addr+4], cx
 	mov word ptr [a_addr+4], cx
 	.386
