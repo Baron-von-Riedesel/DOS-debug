@@ -861,8 +861,11 @@
  DI start [count]: display IDT ( Interrupt Descriptor Table )
  DL start [count]: display LDT ( Local Descriptor Table )
  SK: Skip handling of current exception, hand it over to previous handler.
+ VC vector: untrap vector
+ VL: list (un)trapped vectors ( vectors marked with '*' are untrapped )
+ VT vector: trap vector
 
- Exceptions that can be "skipped" are Exceptions 0, 1, 3, 6, 0Dh and 0Eh.
+ Vectors that can be trapped are vectors 0, 1, 3, 6, 0Dh and 0Eh.
 
  Currently the debugger will stop at any GPF in protected-mode. This might
  become a problem for ring3 applications running with IOPL 0, since CLI/STI
@@ -924,11 +927,11 @@
  N
  N HELLO.COM
  A
-    mov	ah,9
-    mov	dx,109
-    int	21
-    int	20
-    db	'Hello World$'
+    mov ah,9
+    mov dx,109
+    int 21
+    int 20
+    db 'Hello World$'
 
  RCX
  015

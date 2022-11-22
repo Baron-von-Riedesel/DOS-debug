@@ -1,5 +1,11 @@
 
-;--- simple printf() implementation
+;--- debug printf - all registers preserved, including flags
+
+if CATCHINT41
+;--- .486 makes jwasm avoid LEAVE generation - problem if stack is 32-bit
+;--- and hiword(ebp) != 0. That can happen for @dprintf inside intr41().
+	.486
+endif
 
 handle_char proc
 

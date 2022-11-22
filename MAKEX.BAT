@@ -11,7 +11,7 @@ echo creating debugxF - client can't modify exc 01, 03, 0d and 0e in protected-m
 jwasm -nologo -D?DPMI=1 -bin -Fo build\DEBUGXF.COM -Fl=build\DEBUGXF.LST -DCATCHINT31=1 src\debug.asm
 
 echo creating debugxG - device driver version of debugx
-jwasm -nologo -D?DPMI=1 -mz  -Fo build\DEBUGXG.EXE -Fl=build\DEBUGXG.LST -DCATCHINT06=1 -DDRIVER=1 src\debug.asm
+jwasm -nologo -D?DPMI=1 -mz  -Fo build\DEBUGXG.EXE -Fl=build\DEBUGXG.LST -DDRIVER=1 src\debug.asm
 
 echo creating debugxU - dx cmd uses unreal mode
 jwasm -nologo -D?DPMI=1 -bin -Fo build\DEBUGXU.COM -Fl=build\DEBUGXU.LST -DUSEUNREAL=1 -DCATCHINT0D=1 src\debug.asm
@@ -20,7 +20,7 @@ echo creating debugxV - v cmd flips screens & sysreq trapped
 jwasm -nologo -D?DPMI=1 -bin -Fo build\DEBUGXV.COM -Fl=build\DEBUGXV.LST -DVXCHG=1 -DCATCHSYSREQ=1 src\debug.asm
 
 echo creating debugB.bin - a "boot loader"  version
-jwasm -nologo -bin  -Fo build\DEBUGB.BIN -Fl=build\DEBUGB.LST -DCATCHINT06=1 -DBOOTDBG=1 src\debug.asm
+jwasm -nologo -bin  -Fo build\DEBUGB.BIN -Fl=build\DEBUGB.LST -DBOOTDBG=1 src\debug.asm
 
 echo creating debugR.bin - a protected-mode "ring 0"  version
-jwasm -nologo -bin  -Fo build\DEBUGR.BIN -Fl=build\DEBUGR.LST -DCATCHINT06=1 -DRING0=1 src\debug.asm
+jwasm -nologo -bin  -Fo build\DEBUGR.BIN -Fl=build\DEBUGR.LST -DRING0=1 src\debug.asm
