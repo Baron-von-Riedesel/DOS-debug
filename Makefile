@@ -11,25 +11,25 @@ DEPS= src\debug.asm src\debugtbl.inc src\dprintf.inc src\fptostr.inc
 $(OUTD)\DEBUG.COM: $(DEPS)   src\trapr.inc
 	@echo creating debug.com
 	@jwasm -nologo -bin -Fo$(OUTD)\DEBUG.COM -Fl$(OUTD)\DEBUG.LST src\debug.asm
-$(OUTD)\DEBUGX.COM: $(DEPS)  src\trapr.inc
+$(OUTD)\DEBUGX.COM: $(DEPS)  src\trapr.inc src\trapd.inc
 	@echo creating debugx.com
 	@jwasm -nologo -D?DPMI=1 -DALTVID=1 -bin -Fo $(OUTD)\DEBUGX.COM -Fl$(OUTD)\DEBUGX.LST src\debug.asm
-$(OUTD)\DEBUGXD.COM: $(DEPS) src\trapr.inc
+$(OUTD)\DEBUGXD.COM: $(DEPS) src\trapr.inc src\trapd.inc
 	@echo creating debugxD - debug version of debugx
 	@jwasm -nologo -D?DPMI=1 -bin -Fo $(OUTD)\DEBUGXD.COM -Fl=$(OUTD)\DEBUGXD.LST -DCATCHINT01=0 -DCATCHINT03=0 -DPROMPT=] src\debug.asm
-$(OUTD)\DEBUGXE.COM: $(DEPS) src\trapr.inc
+$(OUTD)\DEBUGXE.COM: $(DEPS) src\trapr.inc src\trapd.inc
 	@echo creating debugxE - checks for exc 06, 0C and 0D in real-mode
 	@jwasm -nologo -D?DPMI=1 -bin -Fo $(OUTD)\DEBUGXE.COM -Fl=$(OUTD)\DEBUGXE.LST -DCATCHINT06=1 -DCATCHINT0C=1 -DCATCHINT0D=1 src\debug.asm
-$(OUTD)\DEBUGXF.COM: $(DEPS) src\trapr.inc
+$(OUTD)\DEBUGXF.COM: $(DEPS) src\trapr.inc src\trapd.inc
 	@echo creating debugxF - client can't modify exc 01, 03, 0d and 0e in protected-mode
 	@jwasm -nologo -D?DPMI=1 -bin -Fo $(OUTD)\DEBUGXF.COM -Fl=$(OUTD)\DEBUGXF.LST -DCATCHINT31=1 src\debug.asm
-$(OUTD)\DEBUGXG.EXE: $(DEPS) src\trapr.inc
+$(OUTD)\DEBUGXG.EXE: $(DEPS) src\trapr.inc src\trapd.inc
 	@echo creating debugxG - device driver version of debugx
 	@jwasm -nologo -D?DPMI=1 -mz  -Fo $(OUTD)\DEBUGXG.EXE -Fl=$(OUTD)\DEBUGXG.LST -DDRIVER=1 src\debug.asm
-$(OUTD)\DEBUGXU.COM: $(DEPS) src\trapr.inc
+$(OUTD)\DEBUGXU.COM: $(DEPS) src\trapr.inc src\trapd.inc
 	@echo creating debugxU - dx cmd uses unreal mode
 	@jwasm -nologo -D?DPMI=1 -bin -Fo $(OUTD)\DEBUGXU.COM -Fl=$(OUTD)\DEBUGXU.LST -DUSEUNREAL=1 -DCATCHINT0D=1 src\debug.asm
-$(OUTD)\DEBUGXV.COM: $(DEPS) src\trapr.inc
+$(OUTD)\DEBUGXV.COM: $(DEPS) src\trapr.inc src\trapd.inc
 	@echo creating debugxV - v cmd flips screens & sysreq trapped
 	@jwasm -nologo -D?DPMI=1 -bin -Fo $(OUTD)\DEBUGXV.COM -Fl=$(OUTD)\DEBUGXV.LST -DVXCHG=1 -DCATCHSYSREQ=1 src\debug.asm
 $(OUTD)\DEBUGB.BIN:  $(DEPS) src\trapr.inc

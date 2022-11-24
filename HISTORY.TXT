@@ -261,7 +261,7 @@
          intercepted protected-mode int 21h and refuses to quit.
        - another variant - DEBUGXV - may be created. It allows to flip video
          screen between debugger and debuggee.
-    2.00 [20 November 2022]
+    2.00 [22 November 2022]
        - ensure the correct video page is used when debugger has to display
          something if the InDOS flag is set AND page swapping is active.
        - DEBUGX: hook into protected-mode debug interface Int 41h and make
@@ -281,3 +281,6 @@
        - DEBUGX fix: c & s cmds finally work with 32-bit offsets.
        - DEBUGX fix, e cmd: generate a GPF if no data alias can be found for
          a code segment ( instead of silently skip the write ).
+       - DEBUGX fix: disassembly of [CS:IP] in register dump may have caused
+         a GPF in debugger if the memory address was beyond seg limit - 3.
+       - fix L/W cmds: error msg for read/write drive was crumbled since v1.18.

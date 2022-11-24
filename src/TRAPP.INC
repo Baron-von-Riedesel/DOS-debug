@@ -2,9 +2,12 @@
 ;--- debugger entries for ring0 protected-mode
 ;--- a) exceptions ( 0, 1, 3, 6, 7, C, D, E )
 ;--- b) sysreq pressed
+
 ;--- v2.0: code changed so [run_int] is set only if entry is from
 ;--- debuggee. If debugger is reentered because of an exception inside
-;--- the debugger, this var isn't modified anymore.
+;--- the debugger, this var must not be modified anymore.
+
+SKIPINTGPF equ 1	; ignore GPFs caused by INT xx
 
 	.386
 
@@ -57,7 +60,7 @@ checkioplinstr proc
 	jz isiopl
 	cmp al, 0FBh	;STI?
 	jz isiopl
-if 1
+if SKIPINTGPF
 	cmp al, 0CDh	;INT XX? ( causes GPF if gate's DPL=0 )
 	jz isiopl
 endif
@@ -65,11 +68,11 @@ endif
 	jz isiopl
 	cmp al, 0E6h	;OUT XX, AL?
 	jz isiopl
-	cmp al, 0ECh	;IN AL, DX?
+	mov ah, al
+	and al, 0FCh
+	cmp al, 0ECh	;EC/ED/EE/EF? IN AL/AX,DX OUT DX,AL/AX
 	jz isiopl
-	cmp al, 0EEh	;OUT DX, AL?
-	jz isiopl
-	cmp al, 0F3h	;REP
+	cmp ah, 0F3h	;REP
 	jnz @F
 	lodsb ds:[esi]
 @@:
@@ -315,7 +318,6 @@ endif
 	jnc @F
 	pop [regs.dwErrCode]
 @@:
-	mov byte ptr [run_intw+1], 0
 	pop dword ptr [regs.rIP]
 	pop [regs.rCS]
 	add esp, 2
@@ -337,12 +339,12 @@ endif
 	mov [regs.rSS], ss
 	mov [regs.r0SS], ss
 intrtn_r0:
+	mov ss, [pspdbg]
+	mov esp, offset regs.rSS
 	cmp [run_int], EXC0EMSG
 	jnz @F
 	call rendercr2
 @@:
-	mov ss, [pspdbg]
-	mov esp, offset regs.rSS
 	.8086
 	mov ds, [regs.rDS]
 

@@ -3,9 +3,10 @@
 ;--- a) program termination
 ;--- b) exceptions ( 0, 1, 3, 6, 7, C, D, E )
 ;--- c) sysreq pressed
+
 ;--- v2.0: code changed so [run_int] is set only if entry is from
 ;--- debuggee. If debugger is reentered because of an exception inside
-;--- the debugger, this var isn't modified anymore.
+;--- the debugger, this must not be modified anymore.
 
 if INT22
 ;--- debugger's int 22h (program termination) handler.
@@ -157,7 +158,7 @@ intrtn_progtrm::		;<--- int 22h
 	mov cs:[regs.rSS],ss;save stack position
 	sizeprf
 	mov cs:[regs.rSP],sp
-	mov sp,cs			;mov ss,cs
+	mov sp,cs			; "push cs", "pop ss" without modifying [SP-2]
 	mov ss,sp
 	mov sp,offset regs.rSS
 
