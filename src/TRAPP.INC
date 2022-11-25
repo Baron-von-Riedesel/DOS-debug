@@ -11,28 +11,18 @@ SKIPINTGPF equ 1	; ignore GPFs caused by INT xx
 
 	.386
 
-IRET32 struct
-_eip    dd ?
-_cs     dd ?
-_efl    dd ?
-IRET32 ends
-
-EXCFR1 struct
-wMsg dw ?
-wOld dw ?
-	IRET32 <>
-EXCFR1 ends
-
 FAULT32 struct
 _errc   dd ?
-        IRET32 <>
+_eip	dd ?
+_cs		dd ?
+_efl	dd ?
 FAULT32 ends
 
-EXCFR2 struct
+EXCFR struct
+_ret dw ?
 wMsg dw ?
-wOld dw ?
 	FAULT32 <>
-EXCFR2 ends
+EXCFR ends
 
 if CHKIOPL
 
@@ -41,12 +31,12 @@ dwESI	dd ?
 wAX		dw ?
 wDS		dw ?
 wRet	dw ?
-		EXCFR2 <>
+		EXCFR <>
 CIIFR ends        
 
 ;--- check if at cs:(e)ip is an IOPL-sensitive instruction that
 ;--- caused a GPF.
-;--- in: ESP+2 = EXCFR2
+;--- in: ESP = CIIFR
 ;--- out: C if yes
 
 checkioplinstr proc
@@ -64,15 +54,17 @@ if SKIPINTGPF
 	cmp al, 0CDh	;INT XX? ( causes GPF if gate's DPL=0 )
 	jz isiopl
 endif
-	cmp al, 0E4h	;IN AL, XX?
-	jz isiopl
-	cmp al, 0E6h	;OUT XX, AL?
-	jz isiopl
+
+;--- todo: add missing: IN EAX,XX/DX - OUT XX/DX,EAX ( 66h prefix )
+
+;--- E4/E5/E6/E7? IN AL/AX,XX - OUT XX,AL/AX
+;--- EC/ED/EE/EF? IN AL/AX,DX - OUT DX,AL/AX
+
 	mov ah, al
-	and al, 0FCh
-	cmp al, 0ECh	;EC/ED/EE/EF? IN AL/AX,DX OUT DX,AL/AX
+	and al, 0F4h
+	cmp al, 0E4h
 	jz isiopl
-	cmp ah, 0F3h	;REP
+	cmp ah, 0F3h	;REP?
 	jnz @F
 	lodsb ds:[esi]
 @@:
@@ -109,77 +101,56 @@ rendercr2:
 	pop es
 	ret
 
-NotOurInt00:
-	jmp cs:[oldi00]
-NotOurInt01:
-	jmp cs:[oldi01]
-NotOurInt03:
-	jmp cs:[oldi03]
-if CATCHINT06
-NotOurInt06:
-	jmp cs:[oldi06]
-endif
-if CATCHINT07
-NotOurInt07:
-	jmp cs:[oldi07]
-endif
-if CATCHINT0C
-NotOurInt0C:
-	jmp cs:[oldi0C]
-endif
-NotOurInt0D:
-	jmp cs:[oldi0D]
-NotOurInt0E:
-	jmp cs:[oldi0E]
-
 
 intr00:				; divide error
-	push NotOurInt00
 	push EXC00MSG or (0 shl 8)
-	jmp intrtnp
+	call intrtnpX
+	jmp cs:[oldi00]
 
 intr01:				; single-step interrupt
-	push NotOurInt01
 	push EXC01MSG or (1 shl 8)
-	jmp intrtnp
+intr01ex:
+	call intrtnpX
+	jmp cs:[oldi01]
 
 intr03:				; breakpoint interrupt
-	push NotOurInt03
 	push EXC03MSG or (3 shl 8)
-	jmp intrtnp
+	call intrtnpX
+	jmp cs:[oldi03]
 
 if CATCHINT06
 intr06:
-	push NotOurInt06
 	push EXC06MSG or (6 shl 8)
-	jmp intrtnp
+	call intrtnpX
+	jmp cs:[oldi06]
 endif
 
 if CATCHINT07
 intr07:
-	push NotOurInt07
 	push EXC07MSG or (7 shl 8)
-	jmp intrtnp
+	call intrtnpX
+	jmp cs:[oldi07]
 endif
 
 if CATCHINT0C
 intr0C:
-	push NotOurInt0C
 	push EXC0CMSG or (12 shl 8) or 8000h
-	jmp intrtnp
+	call intrtnp
+	jmp cs:[oldi0C]
 endif
 
 if CATCHINT0D
 intr0D:
-	push NotOurInt0D
 	push EXC0DMSG or (13 shl 8) or 8000h
-	jmp intrtnp
+	call intrtnp
+	jmp cs:[oldi0D]
 endif
 
 intr0E:
-	push NotOurInt0E
 	push EXC0EMSG or (14 shl 8) or 8000h
-	jmp intrtnp
+	call intrtnp
+	jmp cs:[oldi0E]
+
 
 if CATCHSYSREQ
 
@@ -213,26 +184,28 @@ intrsrq:
 	mov al, 20h
 	out 20h, al
 	pop ax
-	push 0
-	push SYSRQMSG
-	jmp intrtnp
-
+	push SYSRQMSG or (1 shl 8)
+	jmp intr01ex
 endif
+
+
+intrtnpX:
+	push dword ptr [esp]	; add a fake "error code" to the stack frame
 
 ;--- Common interrupt routine.
 
 intrtnp proc
 
-	test byte ptr [esp].EXCFR1.wMsg+1, 08	; int 08-0F?
-	jz @F
+	test byte ptr [esp].EXCFR.wMsg+1, 08	; int 08-0F?
+	jz noirq
 if MCLOPT
 	cmp cs:[bMPicB], 20h
-	jae @F
+	jae noirq
 endif
 	push ax
 	push cx
 	mov al, 0Bh		; get ISR mask from PIC
-	mov cl, byte ptr [esp+4].EXCFR1.wMsg+1
+	mov cl, byte ptr [esp+4].EXCFR.wMsg+1
 	mov ch, 0
 	out 20h, al
 	and cl, 7
@@ -240,29 +213,20 @@ endif
 	bt ax, cx
 	pop cx
 	pop ax
-	jnc @F
-	add esp, 2
-	ret
-@@:
-	test byte ptr [esp].EXCFR1.wMsg+1, 80h
-	jnz witherrc
-	test byte ptr [esp].EXCFR1._efl+2, 2	; VM set?
-	jz nov86
+	jnc noirq
 nostop:
-	add esp,2
-	ret
-witherrc:
-	test byte ptr [esp].EXCFR2._efl+2, 2	; VM set?
+	test byte ptr [esp].EXCFR.wMsg+1, 80h	; error code real or faked?
+	jnz @F
+	ret 2+4				; skip msg + faked error code
+@@:
+	ret 2
+noirq:
+	test byte ptr [esp].EXCFR._efl+2, 2	; VM set?
 	jnz nostop
-nov86:
-
 	cmp cs:[bInDbg],0
 	jz int_dbgee
-	pop eax		; get msg + old
-	test ah, 80h
-	jz @F
-	pop ecx	; skip error code
-@@:
+	pop eax		; get ret + msg
+	pop ecx		; skip error code
   if EXCCSIP
 	pop ecx
 	pop edx
@@ -273,6 +237,7 @@ nov86:
 	mov ss:[intexcip], cx 
 	mov ss:[intexccs], dx 
   endif
+	shr eax, 16
 	mov ah, 0
 	push ax
 	cmp al, EXC0EMSG
@@ -284,7 +249,7 @@ int_dbgee:
 
 ;--- check vector traps (set/reset by VT/VC)
 	push ax
-	mov al, byte ptr [esp+2].EXCFR1.wMsg+1
+	mov al, byte ptr [esp+2].EXCFR.wMsg+1
 	and ax, 1Fh
 	bt cs:[wTrappedExc], ax	; exception trapped?
 	pop ax
@@ -292,12 +257,12 @@ int_dbgee:
 
 if CHKIOPL
 ;--- check if GPF caused by running CLI/STI/IN/OUT in IOPL=0
-	cmp byte ptr [esp].EXCFR2.wMsg, EXC0DMSG
+	cmp byte ptr [esp].EXCFR.wMsg, EXC0DMSG
 	jnz @F
-	test byte ptr [esp].EXCFR2._efl+1, 30h	;IOPL==0?
+	test byte ptr [esp].EXCFR._efl+1, 30h	;IOPL==0?
 	jnz @F
 	push ax
-	lar ax, word ptr [esp+2].EXCFR2._cs
+	lar ax, word ptr [esp+2].EXCFR._cs
 	test ah, 60h	; ring 0?
 	pop ax
 	jz @F
@@ -309,15 +274,12 @@ endif
 	push ds
 	mov ds, cs:[pspdbg]
 	pop [regs.rDS]
+	add esp, 2		; skip return addr
 	pop [run_intw]
-	add esp, 2		; skip offset to NotOur...
 
 ;--- the rest of the stack contents should be preserved ( for skip cmd )
 
-	bt [run_intw], 15
-	jnc @F
 	pop [regs.dwErrCode]
-@@:
 	pop dword ptr [regs.rIP]
 	pop [regs.rCS]
 	add esp, 2

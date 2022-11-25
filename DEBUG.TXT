@@ -127,8 +127,8 @@
   which tells DEBUGX that F000 should be interpreted as a segment,
   not as a selector when debuggee is in protected-mode.
 
- if debuggee is in protected-mode and the segment part of the starting
- address is a 32bit selector, the offset parts of the starting and ending
+ if debuggee is in protected-mode and the segment part of an address
+ has a limit beyond 64k, the offset parts of the starting and ending
  address - as well as the length - can be 32bit. Examples:
 
  #D DS:110000 110FFF
@@ -150,6 +150,7 @@
 
  The Compare command (C) compares two memory regions. All differences will be
  listed, both addresses are displayed, with their respective data bytes.
+ Note that the default for the segment part of both range and address is DS.
  Example:
 
  -C 0100 l 2 0200
@@ -347,6 +348,7 @@
 
  The Move command (M) copies a memory region to another location. If
  source and destination overlap, parts of the source will be overwritten.
+ Note that the default for the segment part of both range and address is DS.
 
  Syntax: M range address
 

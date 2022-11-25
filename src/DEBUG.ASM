@@ -64,6 +64,7 @@ TOUPPER_W  equ (TOUPPER shl 8) or TOUPPER
 MNEMONOFS  equ 28	;offset in output line where mnemonics start (disassember)
 STACKSIZ   equ 200h	;debug's stack size
 MCLOPT     equ 1	;1=accept /m cmdline opt ( disable IRQ checks for int 08-0F )
+LINE_IN_LEN equ 257	;length of line_in (including header stuff)
 
 ifndef DRIVER
 DRIVER     equ 0	;1=create a device driver (for CONFIG.SYS) variant
@@ -212,25 +213,16 @@ ifndef CATCHINT03
 CATCHINT03 equ 1	;catch INT 03 (break)
 endif
 ifndef CATCHINT06
-CATCHINT06 equ 0	;catch exception 06h in real-mode
-endif
-ifndef CATCHEXC06
-CATCHEXC06 equ 0	;catch exception 06h in protected-mode
+CATCHINT06 equ 0	;catch exception 06h
 endif
 ifndef CATCHINT07
-CATCHINT07 equ 0	;catch exception 07h in real-mode
-endif
-ifndef CATCHEXC07
-CATCHEXC07 equ 0	;catch exception 07h in protected-mode
+CATCHINT07 equ 0	;catch exception 07h
 endif
 ifndef CATCHINT0C
-CATCHINT0C equ 0	;catch exception 0Ch in real-mode
-endif
-ifndef CATCHEXC0C
-CATCHEXC0C equ 0	;catch exception 0Ch in protected-mode
+CATCHINT0C equ 0	;catch exception 0Ch
 endif
 ifndef CATCHINT0D
-CATCHINT0D equ 0	;catch exception 0Dh in real-mode
+CATCHINT0D equ 0	;catch exception 0Dh
 endif
 ifndef CATCHSYSREQ
 CATCHSYSREQ equ 0	;catch int 09h/15h (sysreq)
@@ -239,13 +231,23 @@ ifndef CATCHINT41
 CATCHINT41 equ 0	;hook int 41h
 endif
 
+;--- DPMI exceptions in protected-mode
+
+ifndef CATCHEXC06
+CATCHEXC06 equ 0	;catch exception 06h in protected-mode
+endif
+ifndef CATCHEXC07
+CATCHEXC07 equ 0	;catch exception 07h in protected-mode
+endif
+ifndef CATCHEXC0C
+CATCHEXC0C equ 0	;catch exception 0Ch in protected-mode
+endif
+
 if ?PM or CATCHINT07
 EXCCSIP    equ 1	;display CS:IP where exception occured
 else
 EXCCSIP    equ 0
 endif
-
-LINE_IN_LEN equ 257	;length of line_in (including header stuff)
 
 ;--- PSP offsets
 
@@ -640,11 +642,13 @@ run_int	db 0,0		;interrupt type that stopped the running
 eqflag	db 0		;flag indicating presence of '=' argument
 bInit	db 0		;0=ensure a valid opcode is at debuggee's CS:IP
 if ?PM
-scratchsel dw 0		;scratch selector used for various purposes
+scratchsel dw 0		;scratch selector ( used by cmds a,c,e,f,g,m,p,t )
 bCSAttr db 0		;current code attribute (D bit).
 bAddr32 db 0		;Address attribute. if 1, hiword(edx) is valid
  if RING0
-wTrappedExc dw (1 shl 0) or (1 shl 1) or (1 shl 3) or (CATCHINT06 shl 6) or (CATCHINT0D shl 13) or (1 shl 14)
+;--- exceptions trapped ( modified by VC/VT )
+wTrappedExc dw (1 shl 0) or (1 shl 1) or (1 shl 3) or (CATCHINT06 shl 6) (CATCHINT07 shl 7) or \
+		(CATCHINT0C shl 12 ) or (CATCHINT0D shl 13) or (1 shl 14)
  endif
 endif
 if LCMDFILE or WCMDFILE
@@ -689,48 +693,48 @@ packet PACKET <0,0,0,0>
 
 endif
 
-if RING0
-INTSDEF textequ <FWORD>
+if RING0	; vectors in intsave are either real-mode or - if RING0 == 1 - protected-mode
+INTVEC textequ <FWORD>
 else
-INTSDEF textequ <DWORD>
+INTVEC textequ <DWORD>
 endif
 
 ;--- order in intsave must match order in inttab
 
 intsave label dword
-oldi00	INTSDEF 0	;saved vector i00
+oldi00	INTVEC 0	;saved vector i00
 if RING0 or CATCHINT01
-oldi01	INTSDEF 0	;saved vector i01
+oldi01	INTVEC 0	;saved vector i01
 endif
 if RING0 or CATCHINT03
-oldi03	INTSDEF 0	;saved vector i03
+oldi03	INTVEC 0	;saved vector i03
 endif
 if CATCHINT06
-oldi06	INTSDEF 0	;saved vector i06
+oldi06	INTVEC 0	;saved vector i06
 endif
 if CATCHINT07
-oldi07	INTSDEF 0	;saved vector i07
+oldi07	INTVEC 0	;saved vector i07
 endif
 if CATCHINT0C
-oldi0C	INTSDEF 0	;saved vector i0C
+oldi0C	INTVEC 0	;saved vector i0C
 endif
 if CATCHINT0D
-oldi0D	INTSDEF 0	;saved vector i0D
+oldi0D	INTVEC 0	;saved vector i0D
 endif
 if RING0
-oldi0E	INTSDEF 0	;saved vector i0E
+oldi0E	INTVEC 0	;saved vector i0E
 endif
 if CATCHSYSREQ
-oldisrq	INTSDEF 0	;saved vector i09/i15
+oldisrq	INTVEC 0	;saved vector i09/i15
 endif
 if INT22
-		INTSDEF 0	;saved vector i22
+		INTVEC 0	;saved vector i22 ( real-mode only )
 endif
 if RING0 and CATCHINT41
-oldint41 INTSDEF 0	;saved vector i41
+oldint41 INTVEC 0	;saved vector i41 ( protected-mode only )
 endif
 if ?DPMI ;must be last
-oldi2f	dd 0		; is always real-mode vector
+oldi2f	dd 0		; real-mode only
 endif
 
 if RING0
@@ -754,7 +758,7 @@ execblk	EXECS {0,0,5ch,6ch,0,0}
 endif
 
 REGS struct
-rDI		dw ?,?	;+00 edi
+rDI		dw ?,?	;+00 edi	; must be in PUSHAD order
 rSI		dw ?,?	;+04 esi
 rBP		dw ?,?	;+08 ebp
 		dw ?,?	;+12 reserved
@@ -763,7 +767,7 @@ rDX		dw ?,?	;+20 edx
 rCX		dw ?,?	;+24 ecx
 rAX		dw ?,?	;+28 eax
 
-rDS		dw ?	;+32 ds
+rDS		dw ?	;+32 ds		; code in run() and intrtn() relies on this order!
 rES		dw ?	;+34 es
 rSS		dw ?	;+36 ss
 rCS		dw ?	;+38 cs
@@ -1324,6 +1328,43 @@ getr0stk proc
 	retd
 	.8086
 getr0stk endp
+
+;--- save/restore GDT descriptor of scratch selector
+;--- al=1 -> save, al=0 -> restore
+;--- ds=dgroup
+
+srscratch:
+	mov bp, sp
+	sub sp, 6
+	.386
+	sgdt [bp-6]
+	movzx esi, [scratchsel]
+	pop ax
+	pop eax
+	add esi, eax
+	mov di, offset sdescsave
+	push ds
+	mov ds, [wFlat]
+	cmp al,0
+	jz @F
+	mov eax, [esi+0]
+	mov edx, [esi+4]
+	mov ss:[di+0], eax
+	mov ss:[di+4], edx
+	pop ds
+	ret
+@@:
+	mov eax,ss:[di+0]
+	mov edx,ss:[di+4]
+	mov [esi+0], eax
+	mov [esi+4], edx
+	pop ds
+	ret
+
+_DATA segment
+sdescsave dd 0,0
+_DATA ends
+
 endif
 
 if EXCCSIP
@@ -2044,7 +2085,7 @@ a_cmd proc
 	je aa01			;if end of line
 	mov bx,[regs.rCS]	;default segment to use
 aa00a:
-	call getaddr	;get address into bx:(e)dx
+	call getaddrW	;get address into bx:(e)dx
 	call chkeol		;expect end of line here
 	sizeprfX		;mov [a_addr+0],edx
 	mov [a_addr+0],dx	;save the address
@@ -4796,7 +4837,7 @@ endif
 	xor cx,cx
 	mov cl,80h		;default length
 	mov bx,[regs.rDS]
-	call getrangeX	;get address range into bx:(e)dx ... bx:(e)cx
+	call getrangeR	;get (readable) address range into bx:(e)dx ... bx:(e)cx
 	call chkeol		;expect end of line here
 
 	mov [d_addr+4],bx	;save segment (offset is saved later)
@@ -4958,7 +4999,7 @@ errorj4:
 e_cmd proc
 	call prephack
 	mov bx,[regs.rDS]
-	call getaddr	;get address into bx:(e)dx
+	call getaddrW	;get address into bx:(e)dx
 	call skipcomm0
 	cmp al,CR
 	je ee1			;if prompt mode
@@ -5185,7 +5226,7 @@ f_cmd proc
 	sizeprfX		;xor ecx, ecx
 	xor cx,cx		;get address range (no default length)
 	mov bx,[regs.rDS]
-	call getrange	;get address range into bx:(e)dx/(e)cx
+	call getrangeW	;get (writable) address range into bx:(e)dx/(e)cx
 if ?PM
 	cmp [bAddr32],0
 	jz @F
@@ -5308,14 +5349,14 @@ setbps proc
 	ret
 setbp1::
 	mov al,0CCh
-	call writemem
-	mov [si],ah		;save the current contents
+	call writemem	; write byte at bx:e/dx
+	mov [si],ah		; save the current contents
 	retn
 resetbp1::
 	mov al,[si]
 	cmp al,0CCh
 	jz @F
-	call writemem
+	call writemem	; write byte at bx:e/dx
 @@:
 	retn
 
@@ -5414,12 +5455,8 @@ endif
 ;--- G command - go.
 
 g_cmd proc
-	xchg ax,bx		;mov bx,ax
-	mov ax,[regs.rCS]	;save original CS
-;	mov [run_cs],ax
-	mov [eqladdr+4],ax
-	xchg ax,bx		;mov ax,bx
-	call parseql	;get optional <=addr> argument
+
+	call parseql	;get optional <=addr> argument; always writes [eqladdr+4]
 
 ;--- Parse the rest of the line for breakpoints
 
@@ -5431,15 +5468,23 @@ g_cmd proc
 	call skipcomma
 	cmp al,CR		;end of line?
 	je @F
-	mov bx,[eqladdr+4]	;default segment
-	call getaddr	;get address into bx:(e)dx
+	mov bx,[eqladdr+4]	;default segment ( either CS or segm of '=' )
+
+;--- calling getaddrW was a severe bug in protected-mode up to v1.29.
+;--- if there are multiple BPs with different segment parts, getaddrW()
+;--- will always return the very same "scratch" selector.
+;--- correct way is to call getaddrR here - later setbps() will call
+;--- writemem(), which ensures that the segment part is writeable.
+
+	call getaddrR	;get address into bx:(e)dx
+	@dprintf "g_cmd: bp=%X:%lX", bx, edx
 	sizeprfX		;xchg eax,edx
 	xchg ax,dx		;mov ax,dx
 	sizeprfX		;stosd
 	stosw
 	xchg ax,bx		;mov ax,bx
 	stosw
-	inc di
+	inc di			; reserve to store byte at bp location
 	inc byte ptr line_out	;use [line_out+0] to count bps
 	jmp @B			;next bp
 @@:
@@ -5448,6 +5493,7 @@ g_cmd proc
 
 	mov di,offset setbp1
 	call setbps
+
 if ?DPMI
 	push [regs.msw]	;save old MSW
 endif
@@ -5455,11 +5501,9 @@ endif
 if ?DPMI
 	pop dx			;get old MSW
 endif
-if (DRIVER or BOOTDBG or RING0)
-	@dprintf "g_cmd: run returned, ds=%X", ds
-else
-	@dprintf "g_cmd: run returned, ds=%X, [spadjust]=%X, [spsav]=%lX", ds, [spadjust], dword ptr ds:[SPSAV]
-endif
+
+;	@dprintf "g_cmd: run returned, [spadjust]=%X, [spsav]=%lX", [spadjust], dword ptr ds:[SPSAV]
+
 if ?PM
 	call getcsattr
 	mov [bCSAttr],al	; must be set for getcseipbyte() & IsUnexpInt3()
@@ -6735,7 +6779,7 @@ if ?PM
 ;--- called by:
 ;---   setcseipbyte(); write at regs.cs:e/ip + cx
 ;---   writemem(): write byte at bx:e/dx 
-;---   getaddr() 
+;---   getaddrW() 
 
 IsWriteableBX proc
  if ?DPMI
@@ -6962,6 +7006,7 @@ if ?PM
 ;	jc err					;v2.0: don't exit silently, better to cause a GPF
 	call getseglimit
 	jz weip16
+	@dprintf "writemem: bx:edx=%X:%lX", bx, edx
 	.386
 	push ds
 	mov ds, bx
@@ -6972,7 +7017,7 @@ if ?PM
 	.8086
 weip16:
 endif
-;	@dprintf "writemem: bx=%X", bx
+	@dprintf "writemem: bx:dx=%X:%X", bx, dx
 	push ds
 	mov ds,bx
 	push bx
@@ -7618,6 +7663,9 @@ exctab label byte	; ring 0 exc table used by SK, VC, VT
  if CATCHINT06
 	db 6
  endif
+ if CATCHINT07
+	db 7
+ endif
  if CATCHINT0C
 	db 0Ch
  endif
@@ -7638,25 +7686,21 @@ CONST ends
 
 sk_cmd proc
 	.386
+	mov dl, [run_int+1]
+	and dl, 1Fh
 	mov cx, SIZEEXCTAB
-	mov al, byte ptr [run_intw+1]
-	and al, 1Fh
-	mov di, offset exctab
-	push ds
-	pop es
-	repnz scasb
-	jz @F
+	mov si, offset exctab
+	mov bx, offset intsave
+@@:
+	lodsb
+	cmp dl, al
+	jz found
+	add bx, sizeof INTVEC
+	loop @B
 	mov dx, offset noskip
 	jmp int21ah9
-@@:
-	sub di, offset exctab + 1
-	mov si, di
-	shl si, 1
-	mov ax, si
-	shl si, 1
-	add si, ax	; 6 bytes/vector
-	add si, offset intsave
-
+found:
+	xchg si, bx
 	mov ebx, dword ptr [regs.rSP]
 	mov dx, [regs.rSS]
 	lar ax, [regs.rCS]
@@ -7708,7 +7752,7 @@ if RING0
 endif
 	mov bx,[regs.rDS]	;get search range
 	xor cx,cx
-	call getrangeX	;get address range into BX:(E)DX..BX:(E)CX
+	call getrangeR	;get (readable) address range into BX:(E)DX..BX:(E)CX
 	call skipcomm0
 	push cx
 	push dx
@@ -8126,8 +8170,12 @@ ue_intxx:
 	pop ss
 	mov sp,cs:[top_sp]
 	push ax
+
+;--- fall thru
+
  endif
 endif
+
 
 if ?PM or CATCHINT07 or CATCHINT0C or CATCHINT0D
 
@@ -8206,7 +8254,7 @@ uu1:
 	xor cx,cx
 	mov cl,20h		;default length
 	mov bx,[regs.rCS]
-	call getrangeX	;get address range into bx:(e)dx
+	call getrangeR	;get (readable) address range into bx:(e)dx
 	call chkeol		;expect end of line here
 	sizeprfX		;mov [u_addr+0],edx
 	mov [u_addr+0],dx
@@ -9016,6 +9064,10 @@ endif
 
 run proc
 
+if RING0
+	mov al, 0
+	call srscratch	; restore scratch GDT entry
+endif
 if VXCHG
 	mov al, 0       ;restore debuggee screen
 	call swapscreen
@@ -9054,9 +9106,13 @@ endif
 	cmp [machine],3
 	jb no386
 	.386
-	popad
 	mov fs,[regs.rFS]
 	mov gs,[regs.rGS]
+if RING0
+	lar ax, [regs.rCS]
+	and ah, 60h		; the check for ZF is below
+endif
+	popad
 	jmp loadsegs
 	.8086
 no386:
@@ -9078,14 +9134,10 @@ loadsegs:
 	pop es		;temporary load DS value into ES (to make sure it is valid)
 	pop es		;now load the true value for ES
 if RING0
-	push ax
-	.386
-	lar ax, [regs.rCS]
-	and ah, 60h
-	pop ax
 	jz @F
-	lss esp, [regs.r0SSEsp]
-	push dword ptr [regs.rSS]
+	.386
+	lss esp, [regs.r0SSEsp]		; debuggee runs in non-privileged mode, so
+	push dword ptr [regs.rSS]	; create a full IRETD stack frame with SS:ESP
 	push dword ptr [regs.rSP]
 	jmp r0exit
 @@:
@@ -9209,6 +9261,11 @@ if INT2324
 endif
 	push ds
 	pop es
+
+if RING0
+	mov al, 1
+	call srscratch		;save GDT scratch entry
+endif
 
 if LCMDFILE
 	call setpspdbg		;set debugger's PSP
@@ -9360,7 +9417,7 @@ nextitem:
 @@:
 	call putsline
 	pop cx
-	add bx, sizeof INTSDEF
+	add bx, sizeof INTVEC
 	loop nextitem
 	ret
 vl_cmd endp
@@ -10010,7 +10067,7 @@ fillbuf endp
 
 endif
 
-;   PARSECM - Parse command line for C and M commands.
+;   PARSECM - Parse arguments for C and M commands.
 ;   Entry   AL          First nonwhite character of parameters
 ;           SI          Address of the character after that
 ;   Exit    DS:(E)SI    Address from first parameter
@@ -10019,11 +10076,16 @@ endif
 
 parsecm proc
 	call prephack
-	mov bx,[regs.rDS]	;get source range
+	mov bx,[regs.rDS];DS = default for source range segment
 	sizeprfX		;xor ecx, ecx
 	xor cx,cx
-	call getrange	;get address range into bx:(e)dx bx:(e)cx
-	push bx			;save segment first address
+
+;--- v2.0: call getrangeR() instead of getrangeW. It's actually
+;--- a bug in protected-mode - uncovered only if the segment part of
+;--- the destination differs from the source's one.
+;	call getrangeW
+	call getrangeR	;get address range into bx:(e)dx bx:(e)cx
+	push bx			;save segment first address ( src for m cmd )
 if ?PM
 	cmp [bAddr32],0
 	jz @F
@@ -10040,12 +10102,16 @@ endif
 	push cx
 pc_01:
 	call skipcomm0
-	mov bx,[regs.rDS]
+
+;--- get the second ( destination ) address
+;--- only M would need it writable, but we can't distinguish the cmds here
+
+	mov bx,[regs.rDS]	; DS = default for "destination"
 if ?PM
 	cmp [bAddr32],0
 	jz pc_1
 	.386
-	call getaddr		;get address into bx:(e)dx
+	call getaddrW		;get address into bx:(e)dx
 	mov [bAddr32],1		;restore bAddr32
 	pop ecx
 	mov edi,ecx
@@ -10060,7 +10126,7 @@ if ?PM
 	.8086
 pc_1:
 endif
-	call getaddr	;get destination address into bx:(e)dx
+	call getaddrW	;get destination address into bx:(e)dx
 	pop cx
 	mov di,cx
 	add di,dx
@@ -10106,7 +10172,7 @@ parselw proc
 	mov dx,100h		;default offset
 	cmp al,CR
 	je plw2			;if no arguments
-	call getaddr	;get buffer address into bx:(e)dx
+	call getaddrW	;get buffer address into bx:(e)dx
 	call skipcomm0
 	cmp al,CR
 	je plw2			;if only one argument
@@ -10218,26 +10284,25 @@ parse_pt endp
 
 parseql proc
 	mov [eqflag],0	;mark '=' as absent
+	mov bx,[regs.rCS]	;default segment
 	cmp al,'='
 	jne peq1		;if no '=' operand
 	call skipwhite
-	mov bx,[regs.rCS]	;default segment
 if ?DPMI
 	sizeprf
 	xor dx,dx
 endif
-	call getaddrX	;get the address into bx:(e)dx
+	call getaddrR	;get address into bx:(e)dx
 	sizeprfX		;mov [eqladdr+0],edx
 	mov [eqladdr+0],dx
-	mov [eqladdr+4],bx
 	inc [eqflag]
 peq1:
+	mov [eqladdr+4],bx
 	ret
 parseql endp
 
-;   SETEQ - Copy the = arguments to their place, if appropriate.  (This
-;   is not done immediately, because the 'g' command may have a syntax
-;   error.)
+;   SETEQ - Copy the = arguments to their place, if appropriate. This
+;   is not done immediately, because the g/p/t cmds may have syntax errors.
 ;   Uses AX.
 
 seteq proc
@@ -10322,7 +10387,8 @@ glfbx_2:
 	ret
 getlenforbx endp
 
-;   GETRANGE - Get address range from input line.
+;   getrangeR - Get (readable) address range from input line.
+;   getrangeW - Get (writable) address range from input line.
 ;    a range consists of either start and end address
 ;    or a start address, a 'L' and a length.
 ;   Entry   AL  First character of range
@@ -10335,15 +10401,15 @@ getlenforbx endp
 ;       BX:(E)CX    Last address in range
 ;   Uses    AH
 
-getrangeX:
-	push cx
-	call getaddrX	;like getaddr, but don't modify segment attributes
+getrangeW:			; used by f cmd
+	push cx			;save the default length
+	call getaddrW	;get address into bx:(e)dx (sets bAddr32)
 	jmp getrange_1
 
-getrange proc
-	push cx			;save the default length
-	call getaddr	;get address into bx:(e)dx (sets bAddr32)
-getrange_1::		;<-- entry getrangeX
+getrangeR proc		; used by c, d, m, s, u cmds
+	push cx
+	call getaddrR	;get address into bx:(e)dx (sets bAddr32)
+getrange_1::		;<-- entry getrangeW
 	push si
 	call skipcomm0
 	cmp al,' '
@@ -10405,12 +10471,13 @@ gr3:
 gr4:
 	add sp,4			;discard saved cx, si
 	ret
-getrange endp
+getrangeR endp
 
 errorj2:
 	jmp cmd_error
 
-;   GETADDR - Get address from input line.
+;   getaddrW - Get (writable) address from input line.
+;   getaddrR - Get (readable) address from input line.
 ;   Entry   AL  First character of address
 ;       SI  Address of next character
 ;       BX  Default segment to use
@@ -10419,15 +10486,12 @@ errorj2:
 ;       BX:(E)DX    Address found
 ;   Uses    AH,CX
 
-;--- entry getaddrX differs from getaddr in that BX isn't made
-;--- writeable in pmode
-
-getaddr proc
+getaddrW proc
 if ?PM
 	mov dx,offset IsWriteableBX	;make BX a writeable segment
 	push dx
 endif
-getaddrX::
+getaddrR::
 if ?PM
 	mov [bAddr32],0
  if ?DPMI
@@ -10474,7 +10538,7 @@ ga3:
 	call getofsforbx
 ;	@dprintf "getaddr: bx:edx=%X:%lX", bx, edx
 	ret
-getaddr endp
+getaddrW endp
 
 ;   GETSTR - Get string of bytes.  Put the answer in line_out.
 ;   Entry   AL first character
@@ -14064,7 +14128,7 @@ else
 	int 21h
 endif
 	add si, 2
-	add di, sizeof INTSDEF
+	add di, sizeof INTVEC
 	loop @B
 
 ;--- prepare to shrink DEBUG and set its stack

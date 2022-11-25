@@ -67,7 +67,7 @@ intr0C:
 	push ax
 	mov al, 0Bh		; get ISR mask from PIC
 	out 20h, al
-	in al, 10h
+	in al, 20h
 	test al, 10h	; IRQ4 (int 0Ch) occured?
 	pop ax
 	jnz NotOurInt0C
@@ -125,11 +125,11 @@ intrsrq:
 	push cs
 	call @B
 	push ds
-	.286
-	push 40h
-	.8086
-	pop ds
-	test byte ptr ds:[18h], 4	;bit should be set while sysreq is pressed
+	push ax
+	xor ax, ax
+	mov ds, ax
+	pop ax
+	test byte ptr ds:[418h], 4	;bit should be set while sysreq is pressed
 	pop ds
 	jnz @F
 	iret
