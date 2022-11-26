@@ -104,51 +104,51 @@ rendercr2:
 
 intr00:				; divide error
 	push EXC00MSG or (0 shl 8)
-	call intrtnpX
+	call intrtnp1
 	jmp cs:[oldi00]
 
 intr01:				; single-step interrupt
 	push EXC01MSG or (1 shl 8)
 intr01ex:
-	call intrtnpX
+	call intrtnp1
 	jmp cs:[oldi01]
 
 intr03:				; breakpoint interrupt
 	push EXC03MSG or (3 shl 8)
-	call intrtnpX
+	call intrtnp1
 	jmp cs:[oldi03]
 
 if CATCHINT06
 intr06:
 	push EXC06MSG or (6 shl 8)
-	call intrtnpX
+	call intrtnp1
 	jmp cs:[oldi06]
 endif
 
 if CATCHINT07
 intr07:
 	push EXC07MSG or (7 shl 8)
-	call intrtnpX
+	call intrtnp1
 	jmp cs:[oldi07]
 endif
 
 if CATCHINT0C
 intr0C:
 	push EXC0CMSG or (12 shl 8) or 8000h
-	call intrtnp
+	call intrtnp2
 	jmp cs:[oldi0C]
 endif
 
 if CATCHINT0D
 intr0D:
 	push EXC0DMSG or (13 shl 8) or 8000h
-	call intrtnp
+	call intrtnp2
 	jmp cs:[oldi0D]
 endif
 
 intr0E:
 	push EXC0EMSG or (14 shl 8) or 8000h
-	call intrtnp
+	call intrtnp2
 	jmp cs:[oldi0E]
 
 
@@ -189,43 +189,64 @@ intrsrq:
 endif
 
 
-intrtnpX:
+;--- exceptions with error code
+
+intrtnp2:
+if 0
+	test byte ptr [esp].EXCFR.wMsg+1, 08	; int 08-0F?
+	jz intrtnp
+endif
+if MCLOPT
+	cmp cs:[bMPicB], 20h
+	jae intrtnp
+endif
+
+	push ax
+if 1
+;--- before checking the PIC, we check the status of EXCFR._cs
+;--- Since IRQs don't push error codes, this would be the
+;--- saved flags then. if IF and bit 1 aren't 1 (202h), it can't be
+;--- an IRQ.
+	mov ax, word ptr [esp+2].EXCFR._cs
+	and ax, 202h
+	cmp ax, 202h
+	clc
+	jnz @F
+endif
+	push cx
+	mov al, 0Bh		; get ISR mask from PIC
+	mov cl, byte ptr [esp+4].EXCFR.wMsg+1
+	out 20h, al
+	and cx, 7
+	in al, 20h    
+	bt ax, cx
+	pop cx
+@@:
+	pop ax
+	jnc intrtnp
+	ret 2
+
+;--- exceptions without error code
+intrtnp1:
 	push dword ptr [esp]	; add a fake "error code" to the stack frame
 
 ;--- Common interrupt routine.
 
 intrtnp proc
 
-	test byte ptr [esp].EXCFR.wMsg+1, 08	; int 08-0F?
-	jz noirq
-if MCLOPT
-	cmp cs:[bMPicB], 20h
-	jae noirq
-endif
-	push ax
-	push cx
-	mov al, 0Bh		; get ISR mask from PIC
-	mov cl, byte ptr [esp+4].EXCFR.wMsg+1
-	mov ch, 0
-	out 20h, al
-	and cl, 7
-	in al, 20h
-	bt ax, cx
-	pop cx
-	pop ax
-	jnc noirq
+	test byte ptr [esp].EXCFR._efl+2, 2	; VM set?
+	jz novm86
 nostop:
 	test byte ptr [esp].EXCFR.wMsg+1, 80h	; error code real or faked?
 	jnz @F
 	ret 2+4				; skip msg + faked error code
 @@:
 	ret 2
-noirq:
-	test byte ptr [esp].EXCFR._efl+2, 2	; VM set?
-	jnz nostop
+novm86:
 	cmp cs:[bInDbg],0
 	jz int_dbgee
-	pop eax		; get ret + msg
+	pop ax		; skip _ret
+	pop ax		; get msg
 	pop ecx		; skip error code
   if EXCCSIP
 	pop ecx
@@ -237,7 +258,6 @@ noirq:
 	mov ss:[intexcip], cx 
 	mov ss:[intexccs], dx 
   endif
-	shr eax, 16
 	mov ah, 0
 	push ax
 	cmp al, EXC0EMSG
@@ -303,10 +323,6 @@ endif
 intrtn_r0:
 	mov ss, [pspdbg]
 	mov esp, offset regs.rSS
-	cmp [run_int], EXC0EMSG
-	jnz @F
-	call rendercr2
-@@:
 	.8086
 	mov ds, [regs.rDS]
 

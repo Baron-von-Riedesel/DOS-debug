@@ -286,3 +286,5 @@
        - fix L/W cmds: error msg for read/write drive was crumbled since v1.18.
        - DEBUGX fix, g cmd: if multiple breakpoints with different segment parts
          were set in protected-mode, hazardous writes may have happened.
+       - DEBUGX, a & e cmd: usage of scratch descriptor for readonly segments
+         now hidden, so the displayed address' segment part isn't changed.

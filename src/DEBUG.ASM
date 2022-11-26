@@ -2085,7 +2085,7 @@ a_cmd proc
 	je aa01			;if end of line
 	mov bx,[regs.rCS]	;default segment to use
 aa00a:
-	call getaddrW	;get address into bx:(e)dx
+	call getaddr	;get address into bx:(e)dx
 	call chkeol		;expect end of line here
 	sizeprfX		;mov [a_addr+0],edx
 	mov [a_addr+0],dx	;save the address
@@ -3991,6 +3991,7 @@ aagetreg endp
 
 c_cmd proc
 	call parsecm		;parse arguments (sets DS:e/si, ES:e/di, e/cx)
+;--- note: DS unknown here
 if ?PM
 	cmp cs:[bAddr32],0
 	jz $+3
@@ -4837,7 +4838,7 @@ endif
 	xor cx,cx
 	mov cl,80h		;default length
 	mov bx,[regs.rDS]
-	call getrangeR	;get (readable) address range into bx:(e)dx ... bx:(e)cx
+	call getrange	;get address range into bx:(e)dx ... bx:(e)cx
 	call chkeol		;expect end of line here
 
 	mov [d_addr+4],bx	;save segment (offset is saved later)
@@ -4999,7 +5000,7 @@ errorj4:
 e_cmd proc
 	call prephack
 	mov bx,[regs.rDS]
-	call getaddrW	;get address into bx:(e)dx
+	call getaddr	;get address into bx:(e)dx
 	call skipcomm0
 	cmp al,CR
 	je ee1			;if prompt mode
@@ -5020,6 +5021,9 @@ endif
 @@:
 	call dohack		;set debuggee's int 23/24
 	mov si,dx
+if ?PM
+	call IsWriteableBX
+endif
 	mov es,bx
 if ?PM
 	cmp [bAddr32],0
@@ -5226,7 +5230,8 @@ f_cmd proc
 	sizeprfX		;xor ecx, ecx
 	xor cx,cx		;get address range (no default length)
 	mov bx,[regs.rDS]
-	call getrangeW	;get (writable) address range into bx:(e)dx/(e)cx
+;--- v2.0: getRange must now be followed by a IsWriteableBX() in pm
+	call getrange	;get address range into bx:(e)dx/(e)cx
 if ?PM
 	cmp [bAddr32],0
 	jz @F
@@ -5248,6 +5253,9 @@ ff_01:
 	call getstr		;get string of bytes
 	mov cx, di
 	sub cx, offset line_out
+if ?PM
+	call IsWriteableBX	; ensure BX is writeable
+endif
 	mov es,bx
 if ?PM
 	cmp [bAddr32],0
@@ -5468,15 +5476,16 @@ g_cmd proc
 	call skipcomma
 	cmp al,CR		;end of line?
 	je @F
+
+;--- calling getaddr was a bug in protected-mode up to v1.29.
+;--- ( it was a different getaddr than now, one that ensured the
+;--- segment part is a writeable selector in pm; with 2.0, getaddr
+;--- does this no longer ).
+;--- Anyway,  multiple BPs with different segment parts all used
+;--- the very same "scratch" selector, resulting in "random" mem writes.
+
 	mov bx,[eqladdr+4]	;default segment ( either CS or segm of '=' )
-
-;--- calling getaddrW was a severe bug in protected-mode up to v1.29.
-;--- if there are multiple BPs with different segment parts, getaddrW()
-;--- will always return the very same "scratch" selector.
-;--- correct way is to call getaddrR here - later setbps() will call
-;--- writemem(), which ensures that the segment part is writeable.
-
-	call getaddrR	;get address into bx:(e)dx
+	call getaddr	;get address into bx:(e)dx
 	@dprintf "g_cmd: bp=%X:%lX", bx, edx
 	sizeprfX		;xchg eax,edx
 	xchg ax,dx		;mov ax,dx
@@ -6391,6 +6400,7 @@ m_cmd proc
 	dec si
 	lodsb
 	call parsecm		;parse arguments (DS:(E)SI, ES:(E)DI, (E)CX)
+;--- note: DS unknown here
 	push cx
 if ?PM
  if ?DPMI
@@ -6429,7 +6439,15 @@ if INT2324
 	pop ds
 endif
 if ?PM
-	cmp cs:[bAddr32],0
+;--- v2.0: ensure ES is writeable ( parsecm does that no longer )
+	mov bx, es
+	push ds
+	push ss
+	pop ds
+	call IsWriteableBX	; needs DS=dgroup
+	cmp [bAddr32],0
+	pop ds
+	mov es, bx
 	jz m3_1
 	.386
 	sahf
@@ -6775,11 +6793,12 @@ if ?PM
 ;--- ensure segment in BX is writeable.
 ;--- if it isn't, BX may be set to an alias (scratchsel)
 ;--- out: Carry=1 if segment not writeable
-;--- might clear HiWord(EDI)
+;--- clears HiWord(EDI) in DPMI protected-mode
 ;--- called by:
 ;---   setcseipbyte(); write at regs.cs:e/ip + cx
 ;---   writemem(): write byte at bx:e/dx 
-;---   getaddrW() 
+;---   e, f, m cmds
+;---   parselw()
 
 IsWriteableBX proc
  if ?DPMI
@@ -7752,7 +7771,7 @@ if RING0
 endif
 	mov bx,[regs.rDS]	;get search range
 	xor cx,cx
-	call getrangeR	;get (readable) address range into BX:(E)DX..BX:(E)CX
+	call getrange	;get address range into BX:(E)DX..BX:(E)CX
 	call skipcomm0
 	push cx
 	push dx
@@ -8214,20 +8233,40 @@ endif
 u_cmd proc
 	mov [lastcmd],offset lastuu
 	cmp al,CR
-	jne uu1		;if an address was given
+	je lastuu		;if no address was given
+	sizeprfX		;xor ecx, ecx
+	xor cx,cx
+	mov cl,20h		;default length
+	mov bx,[regs.rCS]
+	call getrange	;get address range into bx:(e)dx
+	call chkeol		;expect end of line here
+	sizeprfX		;mov [u_addr+0],edx
+	mov [u_addr+0],dx
+	mov [u_addr+4],bx
+	@dprintf "u_cmd: u_addr=%X:%lX, ecx=%lX", bx, edx, ecx
+	jmp u_cxset
+
 lastuu:
-if ?PM
-	call getcsattr
-	mov [bCSAttr],al
-	jz uu_0
-	.386
-	mov ecx,dword ptr [u_addr]
-	add ecx,1Fh
-	jnc @F
-	mov ecx,-1
+	sizeprfX	; mov ecx, [u_addr]
+	mov cx, [u_addr]
+	sizeprfX	; add ecx, 1fh
+	add cx,1fh
+	jnc @F		; if no overflow
+	sizeprfX	; or ecx, -1
+	or cx,-1
 @@:
-	inc ecx
-uu3_32:
+
+;--- At this point, e/cx holds the last address, and e/dx the address.
+
+u_cxset:
+	sizeprfX
+	inc cx
+if ?PM
+	mov bx,[u_addr+4]
+	call getseldefsize
+	jz uu_16
+	.386
+uuloop32:
 	push ecx
 	push edx
 	call disasm1
@@ -8238,34 +8277,12 @@ uu3_32:
 	sub eax,ecx		;current position - end
 	sub ebx,ecx		;previous position - end
 	cmp eax,ebx
-	jnb uu3_32		;if we haven't reached the goal
+	jnb uuloop32	;if we haven't reached the goal
 	ret
 	.8086
-uu_0:
+uu_16:
 endif
-	mov cx,word ptr [u_addr]
-	add cx,1fh
-	jnc uu2		;if no overflow
-	mov cx,-1
-	jmp uu2
-
-uu1:
-	sizeprfX		;xor ecx, ecx
-	xor cx,cx
-	mov cl,20h		;default length
-	mov bx,[regs.rCS]
-	call getrangeR	;get (readable) address range into bx:(e)dx
-	call chkeol		;expect end of line here
-	sizeprfX		;mov [u_addr+0],edx
-	mov [u_addr+0],dx
-	mov [u_addr+4],bx
-;	@dprintf "u_cmd: u_addr=%X:%lX", bx, edx
-
-;--- At this point, cx holds the last address, and dx the address.
-
-uu2:
-	inc cx
-uu3:
+uuloop16:
 	push cx
 	push dx
 	call disasm1	;do it
@@ -8276,7 +8293,7 @@ uu3:
 	sub ax,cx		;current position - end
 	sub bx,cx		;previous position - end
 	cmp ax,bx
-	jnb uu3		;if we haven't reached the goal
+	jnb uuloop16	;if we haven't reached the goal
 	ret
 u_cmd endp
 
@@ -9263,6 +9280,10 @@ endif
 	pop es
 
 if RING0
+	cmp [run_int], EXC0EMSG
+	jnz @F
+	call rendercr2		; add value of CR2 to msg
+@@:
 	mov al, 1
 	call srscratch		;save GDT scratch entry
 endif
@@ -10080,11 +10101,7 @@ parsecm proc
 	sizeprfX		;xor ecx, ecx
 	xor cx,cx
 
-;--- v2.0: call getrangeR() instead of getrangeW. It's actually
-;--- a bug in protected-mode - uncovered only if the segment part of
-;--- the destination differs from the source's one.
-;	call getrangeW
-	call getrangeR	;get address range into bx:(e)dx bx:(e)cx
+	call getrange	;get address range into bx:(e)dx bx:(e)cx
 	push bx			;save segment first address ( src for m cmd )
 if ?PM
 	cmp [bAddr32],0
@@ -10104,14 +10121,13 @@ pc_01:
 	call skipcomm0
 
 ;--- get the second ( destination ) address
-;--- only M would need it writable, but we can't distinguish the cmds here
 
 	mov bx,[regs.rDS]	; DS = default for "destination"
 if ?PM
 	cmp [bAddr32],0
 	jz pc_1
 	.386
-	call getaddrW		;get address into bx:(e)dx
+	call getaddr		;get address into bx:(e)dx
 	mov [bAddr32],1		;restore bAddr32
 	pop ecx
 	mov edi,ecx
@@ -10126,7 +10142,7 @@ if ?PM
 	.8086
 pc_1:
 endif
-	call getaddrW	;get destination address into bx:(e)dx
+	call getaddr	;get destination address into bx:(e)dx
 	pop cx
 	mov di,cx
 	add di,dx
@@ -10172,7 +10188,12 @@ parselw proc
 	mov dx,100h		;default offset
 	cmp al,CR
 	je plw2			;if no arguments
-	call getaddrW	;get buffer address into bx:(e)dx
+;--- v2.0: added IsWriteableBX since getaddr will no longer translate BX
+;--- to a writeable selector.
+	call getaddr	;get buffer address into bx:(e)dx
+if ?PM
+	call IsWriteableBX
+endif
 	call skipcomm0
 	cmp al,CR
 	je plw2			;if only one argument
@@ -10180,11 +10201,11 @@ parselw proc
 	push dx			;save offset
 	mov bx,80h		;max number of sectors to read
 	neg dx
-	jz plw1			;if address is zero
+	jz @F			;if address is zero
 	mov cl,9
 	shr dx,cl		;max number of sectors which can be read
 	mov di,dx
-plw1:
+@@:
 	call getbyte	;get drive number (DL)
 	call skipcomm0
 	push dx
@@ -10292,7 +10313,7 @@ if ?DPMI
 	sizeprf
 	xor dx,dx
 endif
-	call getaddrR	;get address into bx:(e)dx
+	call getaddr	;get address into bx:(e)dx
 	sizeprfX		;mov [eqladdr+0],edx
 	mov [eqladdr+0],dx
 	inc [eqflag]
@@ -10339,8 +10360,8 @@ if ?PM
 	.8086
 gofbx_2:
 endif
-	sizeprfX		; v2.0
-	xor dx, dx		; v2.0
+	sizeprfX		; v2.0: xor edx,edx
+	xor dx, dx
 	call getword
 ;	@dprintf "getofsforbx: edx=%lX", edx
 	ret
@@ -10387,8 +10408,7 @@ glfbx_2:
 	ret
 getlenforbx endp
 
-;   getrangeR - Get (readable) address range from input line.
-;   getrangeW - Get (writable) address range from input line.
+;   getrange - Get address range from input line.
 ;    a range consists of either start and end address
 ;    or a start address, a 'L' and a length.
 ;   Entry   AL  First character of range
@@ -10401,15 +10421,9 @@ getlenforbx endp
 ;       BX:(E)CX    Last address in range
 ;   Uses    AH
 
-getrangeW:			; used by f cmd
-	push cx			;save the default length
-	call getaddrW	;get address into bx:(e)dx (sets bAddr32)
-	jmp getrange_1
-
-getrangeR proc		; used by c, d, m, s, u cmds
+getrange proc		; used by c, d, m, s, u cmds
 	push cx
-	call getaddrR	;get address into bx:(e)dx (sets bAddr32)
-getrange_1::		;<-- entry getrangeW
+	call getaddr	;get address into bx:(e)dx (sets bAddr32)
 	push si
 	call skipcomm0
 	cmp al,' '
@@ -10471,13 +10485,12 @@ gr3:
 gr4:
 	add sp,4			;discard saved cx, si
 	ret
-getrangeR endp
+getrange endp
 
 errorj2:
 	jmp cmd_error
 
-;   getaddrW - Get (writable) address from input line.
-;   getaddrR - Get (readable) address from input line.
+;   getaddr - Get address from input line.
 ;   Entry   AL  First character of address
 ;       SI  Address of next character
 ;       BX  Default segment to use
@@ -10486,12 +10499,7 @@ errorj2:
 ;       BX:(E)DX    Address found
 ;   Uses    AH,CX
 
-getaddrW proc
-if ?PM
-	mov dx,offset IsWriteableBX	;make BX a writeable segment
-	push dx
-endif
-getaddrR::
+getaddr proc
 if ?PM
 	mov [bAddr32],0
  if ?DPMI
@@ -10535,10 +10543,13 @@ ga2:
 	mov bx,dx	;mov segment into BX
 ga3:
 	call skipwhite	;skip to next word
+if ?PM
+	mov [bAddr32],0	;v2.0: init bAddr32, will be set if limit > 64k
+endif
 	call getofsforbx
-;	@dprintf "getaddr: bx:edx=%X:%lX", bx, edx
+	@dprintf "getaddr: bx:edx=%X:%lX, bAddr32=%X", bx, edx, word ptr [bAddr32]
 	ret
-getaddrW endp
+getaddr endp
 
 ;   GETSTR - Get string of bytes.  Put the answer in line_out.
 ;   Entry   AL first character
@@ -11202,6 +11213,8 @@ da21:
 	mov ah,PREWAIT
 	test al,ah
 	jnz @F			;if there's a WAIT prefix hanging
+
+;--- todo: the string instructions may have both 66h&67h prefixes
 
 	mov cx,N_LTABO
 	mov bx,offset ltabo1
@@ -13062,7 +13075,7 @@ istab:
 	mov ah, 3
 if RING0
 	.386
-	call cs:[int10vec]
+	call [int10vec]
 	.8086
 else
 	int 10h
@@ -13075,7 +13088,7 @@ endif
 	mov ax, 0E20h
 if RING0
 	.386
-	call cs:[int10vec]
+	call [int10vec]
 	.8086
 else
 	int 10h
@@ -13792,7 +13805,7 @@ contparse:
 	mov ax, 1A00h
   if RING0
 	.386
-	call cs:[int10vec]
+	call [int10vec]
   else
 	int 10h
   endif

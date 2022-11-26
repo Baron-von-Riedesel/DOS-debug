@@ -1362,7 +1362,6 @@ endif
 	 variant 030h, 4, ASM_LOCKABLE
 	 variant 032h, 5
 	 endvariant
-
 end_mnlist label byte
 
 ;--- Disassembler: compressed table of the opcode types.
