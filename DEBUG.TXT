@@ -120,12 +120,9 @@
  is also possible, if the debuggee has been stopped in a so-called
  DPMI real-mode callback.
 
- As for the Dump command, DEBUGX understands this additional syntax:
-
- #D $F000:FFF6
-
-  which tells DEBUGX that F000 should be interpreted as a segment,
-  not as a selector when debuggee is in protected-mode.
+ When an address is entered in protected-mode, a '$' just before the
+ segment part will tell DEBUGX to interpret the address as a real-mode
+ address.
 
  if debuggee is in protected-mode and the segment part of an address
  has a limit beyond 64k, the offset parts of the starting and ending

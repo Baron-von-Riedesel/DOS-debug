@@ -767,16 +767,19 @@ rDX		dw ?,?	;+20 edx
 rCX		dw ?,?	;+24 ecx
 rAX		dw ?,?	;+28 eax
 
-rDS		dw ?	;+32 ds		; code in run() and intrtn() relies on this order!
+rDS		dw ?	;+32 ds		; check run()/intrtn()/createdummytask() if this order changes!
 rES		dw ?	;+34 es
-rSS		dw ?	;+36 ss
-rCS		dw ?	;+38 cs
-rFS		dw ?	;+40 fs
-rGS		dw ?	;+42 gs
+rFS		dw ?	;+36 fs		; v2.0: order changed
+rGS		dw ?	;+38 gs
+rSS		dw ?	;+40 ss		; should start on a DWORD boundary ( in case AC is on )
+rCS		dw ?	;+42 cs
+if ?PM
+		dw ?	; added ( for 32-bit CS push )
+endif
 
-rSP		dw ?,?	;+44 esp
-rIP		dw ?,?	;+48 eip
-rFL		dw ?,?	;+52 eflags
+rSP		dw ?,?	;+46 esp
+rIP		dw ?,?	;+50 eip
+rFL		dw ?,?	;+54 eflags
 if RING0
 union
 r0SSEsp df ?
@@ -1138,7 +1141,9 @@ dpmihook db 'DPMI entry hooked, new entry=',0
 nodesc	db 'not accessible in real-mode',0
 gatewrong db 'gate not accessible',0
 endif
-
+if RING0
+segerr	db "Debuggee segments invalid",CR,LF,'$'
+endif
 cantwritebp db "Can't write breakpoint",0
 
 if WCMDFILE
@@ -1390,7 +1395,8 @@ dpmi_pm2rm df 0	;raw mode switch protected-mode to real-mode
 dpmi_size  dw 0	;size of raw mode save state buffer
 dpmi_rmsav dd 0	;raw mode save state real-mode
 dpmi_pmsav df 0	;raw mode save state protected-mode
-dpmi32    db 0	;00=16-bit client, else 32-bit client
+dpmi32     db 0	;bit 0: 0=16-bit client, 1=32-bit client
+bFlagsPM   db 0	;bit 0: 0=no default set for A cmd 
 bNoHook2F db 0	;1=int 2F, ax=1687h cannot be hooked (win3x/9x dos box, DosEmu?)
 
 ;--- pmints and pmvectors must match!
@@ -1465,6 +1471,7 @@ if CATCHINT21
 endif
 LPMINTS equ ($ - offset pmints) / 3
 
+if 0	;v2.0: removed
 convsegs label word
 ;	dw offset run_cs
 ;	dw offset pInDOS+2
@@ -1474,6 +1481,7 @@ convsegs label word
 	dw offset a_addr+4
 	dw offset d_addr+4
 NUMSEGS equ ($-convsegs)/2
+endif
 
 exctab label byte	; DPMI exception table
 	db 0
@@ -1496,10 +1504,19 @@ CONST ends
 
 ;--- client entered protected mode.
 ;--- inp: [sp+4] = client real-mode CS
+
+INSTFRM struct
+	org -2
+_ds	dw ?			; client's DS ( selector )
+	dw 8 dup (?)	; pusha
+_ret dw ?			; return addr installdpmi()
+_ip	dw ?			; client's IP
+_cs	dw ?			; client's CS
+INSTFRM ends
     
 installdpmi proc
 	pusha
-	mov bp,sp		;[bp+16] = ret installdpmi, [bp+18]=ip, [bp+20]=cs
+	mov bp,sp
 	push ds
 	mov bx,cs
 	mov ax,000Ah	;get a data descriptor for DEBUG's segment
@@ -1521,10 +1538,10 @@ fataldpmierr:
 	mov bx,ax
 	xor cx,cx
 if 1
-	cmp [machine],3				;is at least a 80386?
+	cmp [machine],3		; is at least a 80386?
 	jb @F
 else
-	cmp [dpmi32],0		;is a 16-bit client?
+	cmp [dpmi32],0		; is a 16-bit client?
 	jz @F
 endif
 	dec cx			;set a limit of FFFFFFFFh
@@ -1536,14 +1553,21 @@ endif
 	xor cx,cx		;this limit is FFFF even for 32-bits
 	mov ax,0008h
 	int 31h
-	mov dx,[bp+20]	;get client's CS
-	call setrmaddr	;set base
+	mov dx,[bp].INSTFRM._cs	; get client's CS
+	call setrmaddr			; set base
 	mov ax,cs
 	lar cx,ax
-	shr cx,8		;CS remains 16-bit
+	shr cx,8				; CS remains 16-bit
 	mov ax,0009h
 	int 31h
-	mov [bp+20],bx	;set client's CS
+	mov [bp].INSTFRM._cs,bx	; set client's CS
+
+if 1
+;--- v2.0: (re)init default for d cmd
+	mov ax, [bp].INSTFRM._ds
+	mov [d_addr+4], ax
+	mov [bFlagsPM], 0		; reset all pm flags
+endif
 
 	cld
 
@@ -1557,6 +1581,8 @@ if USESDA
 	int 31h
 	mov [SDASel],ax
 endif
+
+if 0	; v2.0: removed, default for a/d cmds see above
 	mov si,offset convsegs
 	mov cx,NUMSEGS
 @@:
@@ -1568,39 +1594,42 @@ endif
 	jc fataldpmierr
 	mov [di],ax
 	loop @B
+endif
 
-	sizeprf	;push edi
+	sizeprf			; push edi - save hiword(edi)
 	push di
-	mov bp, 2
+
+	mov bp, 2		; 2=size offset for DPMi16
 	cmp dpmi32,0
 	jz @F
 	inc bp
-	inc bp
+	inc bp			; 4=size offset for DPMI32
 @@:
-	mov ax,0305h			;get raw-mode save state addresses
+	mov ax,0305h			; get raw-mode save state addresses
 	int 31h
 	mov word ptr [dpmi_rmsav+0],cx
 	mov word ptr [dpmi_rmsav+2],bx
-	sizeprf	;mov dword ptr [dpmi_pmsav],edi
+	sizeprf					; mov dword ptr [dpmi_pmsav],edi
 	mov word ptr [dpmi_pmsav],di
 	mov word ptr ds:[bp+dpmi_pmsav],si
 	mov word ptr [dpmi_size],ax
-	mov ax,0306h			;get raw-mode switch addresses
+	mov ax,0306h			; get raw-mode switch addresses
 	int 31h
 	mov word ptr [dpmi_rm2pm+0],cx
 	mov word ptr [dpmi_rm2pm+2],bx
-	sizeprf	;mov dword ptr [dpmi_pm2rm],edi
+	sizeprf					; mov dword ptr [dpmi_pm2rm],edi
 	mov word ptr [dpmi_pm2rm],di
 	mov word ptr ds:[bp+dpmi_pm2rm],si
-	sizeprf	;pop edi
+
+	sizeprf			; pop edi - restore hiword(edi)
 	pop di
 
 ;--- hook exceptions 0,1,3,6,(7),(C),D,E
 
 	mov si,offset exctab
-	sizeprf	;push edx
+	sizeprf			; push edx - save hiword(edx)
 	push dx
-	sizeprf	;xor edx,edx
+	sizeprf			; xor edx,edx
 	xor dx,dx
 	mov dx,offset exc00
 @@:
@@ -1639,7 +1668,7 @@ nextpmint:
 	loop nextpmint
 endif
 
-	sizeprf	;pop edx
+	sizeprf				; pop edx - restore hiword(edx)
 	pop dx
 
 	mov bl,2Fh			;get int 2Fh real-mode vector
@@ -2082,7 +2111,7 @@ writeasmn endp
 a_cmd proc
 	mov [errret],offset aa01
 	cmp al,CR
-	je aa01			;if end of line
+	je aa01x		;if end of line
 	mov bx,[regs.rCS]	;default segment to use
 aa00a:
 	call getaddr	;get address into bx:(e)dx
@@ -2090,10 +2119,32 @@ aa00a:
 	sizeprfX		;mov [a_addr+0],edx
 	mov [a_addr+0],dx	;save the address
 	mov word ptr [a_addr+4],bx
+if ?DPMI
+	jmp aa01
+aa01x:
+	call ispm_dbe
+	jz aa01
+;--- v2.0: def seg for a is no longer automatically converted
+;--- when pm is entered.
+	test [bFlagsPM], 1	; default for a cmd already set?
+	jnz aa01
+	mov ax, [regs.rCS]	; use current CS:IP as default
+	mov [a_addr+4], ax
+	sizeprfX
+	mov ax, [regs.rIP]
+	sizeprfX
+	mov [a_addr+0], ax
+else
+aa01x:
+endif
 
 ;--- Begin loop over input lines.
 
 aa01:
+if ?DPMI
+	or [bFlagsPM], 1
+endif
+	@dprintf "a: a_addr=%X:%lX", word ptr [a_addr+4], dword ptr [a_addr+0]
 	mov sp,[top_sp]	;restore the stack (this implies no "ret")
 	mov di,offset line_out
 	mov ax,[a_addr+4]
@@ -9085,11 +9136,44 @@ setint2324 endp
 endif
 endif
 
+if RING0
+	.386
+checksegm proc
+	lar ax, [regs.rCS]
+	jnz error
+	test ah, 8
+	jz error
+	lar ax, [regs.rSS]
+	jnz error
+	test ah, 8
+	jnz error
+
+	mov cx, 4
+	mov si, offset regs.rDS
+nextitem:
+	lodsw
+	and ax, 0fffch
+	jz @F
+	lar ax, ax
+	jnz error
+@@:
+	loop nextitem
+	ret
+error:
+	stc
+	ret
+checksegm endp
+endif
+
 ;--- This is the routine that starts up the running program.
 
 run proc
 
 if RING0
+;--- check segment values, since there's no stack switch if a GPF occurs.
+	call checksegm
+	mov dx, offset segerr
+	jc int21ah9
 	mov al, 0
 	call srscratch	; restore scratch GDT entry
 endif
@@ -9128,19 +9212,18 @@ ife RING0
 	cli
 endif
 	mov sp,offset regs
+ife RING0
 	cmp [machine],3
-	jb no386
+	jb @F
 	.386
-	mov fs,[regs.rFS]
-	mov gs,[regs.rGS]
-if RING0
-	lar ax, [regs.rCS]
-	and ah, 60h		; the check for ZF is below
-endif
 	popad
-	jmp loadsegs
+	pop es		;temporary load DS value into ES (to make sure it is valid)
+	pop es		;now load the true value for ES
+	pop fs
+	pop gs
+	jmp loadss
 	.8086
-no386:
+@@:
 	pop di
 	pop si	;skip hi edi
 	pop si
@@ -9155,30 +9238,38 @@ no386:
 	pop ax	;skip hi ecx
 	pop ax
 	add sp,2;skip hi eax
-loadsegs:
-	pop es		;temporary load DS value into ES (to make sure it is valid)
-	pop es		;now load the true value for ES
-if RING0
-	jz @F
+	pop es	; that's DS
+	pop es
+	add sp,2*2	; skip places for FS,GS
+else
 	.386
+	lar ax, [regs.rCS]
+	and ah, 60h
+	popad
+	pop es
+	pop es
+	pop fs
+	pop gs
+	jz @F
 	lss esp, [regs.r0SSEsp]		; debuggee runs in non-privileged mode, so
 	push dword ptr [regs.rSS]	; create a full IRETD stack frame with SS:ESP
 	push dword ptr [regs.rSP]
 	jmp r0exit
 @@:
 endif
+loadss:
 	pop ss
 patch_movsp label byte		;patch with 3Eh (=DS:) if cpu < 386
 	db 66h				;mov esp,[regs.rSP]
 	mov sp,[regs.rSP]	;restore program stack
 r0exit:
-	mov [bInDbg],0
 	sizeprf				;push dword ptr [regs.rFL]
 	push [regs.rFL]
 	sizeprf				;push dword ptr [regs.rCS]
 	push [regs.rCS]
 	sizeprf				;push dword ptr [regs.rIP]
 	push [regs.rIP]
+	mov [bInDbg],0
 if RING0
 	mov ds,[regs.rDS]
 else
@@ -9207,31 +9298,31 @@ endif
 ;--- in: SS:SP=regs.rSS
 
 intrtn proc
-	push es
-	push ds
-	push ss
-	pop ds
-	cmp [machine],3
+
+;--- DWORD pushs are safe here
+
+	cmp cs:[machine],3
 	jb @F
 	.386
-	mov [regs.rFS],fs
-	mov [regs.rGS],gs
-
-;--- regs.rDI+4 is dword aligned, so DWORD pushs are safe here
-
 ife RING0
 	pushfd
 	popf		;skip LoWord(EFL)
-	pop word ptr [regs.rFL+2]
+	pop word ptr ss:[regs.rFL+2]
 endif
 	push 0
 	pushf
 	popfd		;clear HiWord(EFL) inside debugger (resets AC flag)
-
+	push gs
+	push fs
+	push es
+	push ds
 	pushad
 	jmp intrtn1
 	.8086
 @@:
+	sub sp, 2*2	; skip space for GS, FS
+	push es
+	push ds
 	push ax
 	push ax
 	push cx
@@ -9247,9 +9338,10 @@ endif
 	push di
 	push di
 intrtn1::		;<--- entry for int 22
-
-	mov sp,[run_sp]		;restore running stack
-	cld					;clear direction flag
+	mov sp,cs:[run_sp]	;restore running stack
+	cld
+	push ss
+	pop ds
 
 ife RING0
 	sti					;interrupts back on
@@ -10555,7 +10647,9 @@ if ?PM
 	mov [bAddr32],0	;v2.0: init bAddr32, will be set if limit > 64k
 endif
 	call getofsforbx
+if ?PM
 	@dprintf "getaddr: bx:edx=%X:%lX, bAddr32=%X", bx, edx, word ptr [bAddr32]
+endif
 	ret
 getaddr endp
 
@@ -12559,7 +12653,6 @@ no386_31:
 	mov ax,[regs.rIP]
 	sizeprf
 	mov [u_addr],ax
-;	@dprintf "r0 ss:esp=%X:%lX [%lX %lX %lX]", [regs.r0SS], [regs.r0Esp], eax, edx, ecx
 	ret
 dumpregs endp
 
@@ -13128,15 +13221,16 @@ createdummytask proc
 
 	mov byte ptr [regs.rIP+1],1	;IP=100h
 
-	call setespefl
+	call setespefl	; set regs.rSP/rFL
 
 	push bx
-	mov di,offset regs.rDS	;init regs.rDS,regs.rES,regs.rSS,regs.rCS
+	mov di,offset regs.rDS	;init regs.rDS,regs.rES
 	stosw
 	stosw
+	mov di,offset regs.rSS	;init regs.rSS,regs.rCS
 	stosw
 	stosw
-	call setup_adu
+	call setup_adu			; setup default for a/d/u cmds
 	mov bx,[regs.rCS]	;bx:dx = where to load program
 	mov es,bx
 	pop ax			;get size of memory block
@@ -13712,6 +13806,8 @@ endif
 init7:
 
 ;--- remove size and addr prefixes if cpu is < 80386
+
+;	mov [machine], 2; activate to test non-386 code branches
 
 ife RING0
 	cmp [machine],3
