@@ -8206,6 +8206,14 @@ ue_intx proc
 	push ss
 	pop ds
 	call unhack		;set debugger's int 23/24
+if ?PM
+	test [disflags], DIS_I_MEMACC
+	jz @F
+	mov [disflags], 0
+	mov dx,offset crlf
+	call int21ah9
+@@:
+endif
 	pop dx
 	add dx, offset int0msg
 	call int21ah9	;print string
@@ -10850,6 +10858,7 @@ DIS_I_SHOW		equ 4	;there are memory contents to show
 DIS_I_UNUSED	equ 8	;(internal) print " (unused)"
 DIS_I_SHOWSIZ	equ 10h	;(internal) always show the operand size
 DIS_I_KNOWSIZ	equ 20h	;(internal) we know the operand size of instr.
+DIS_I_MEMACC	equ 80h	;(internal) we're just accessing a mem ref ( dumpreg )
 
 disflags2 db 0		;another copy of DIS_I_KNOWSIZ
 
@@ -11451,15 +11460,17 @@ ife RING0			; for DebugR, FS/GS memory contents aren't skipped
 	cmp [segmnt],3 
 	ja da32z		;if FS or GS
 endif
-	mov ax,offset line_out+79-10	; room for ss:oooo=bb|wwww|dddddddd
+	mov ax,offset line_out+79-8	; room for ss:oooo=bb|wwww|dddddddd
+	mov cx,2
 	cmp [rmsize],0
 	jl da32h		;if byte
 	jz @F			;if word
-	sub ax,4		; 4 more chars
+	add cx, 4		; 4 more chars
 @@:
-	dec ax			; 2 more chars
-	dec ax
+	add cx, 2		; 2 more chars
 da32h:
+	sub ax, cx
+	push cx
 	call tab_to
 	call showseg		;show segment register
 	mov al,':'
@@ -11474,40 +11485,30 @@ da32h:
 	xchg ax,bx			;mov bx,ax
 	mov bx,[segrgaddr+bx] ;get address of value
 if ?PM
- if ?DPMI
-	call ispm_dbg
-	jz @F
- endif
-	.286
-	verr [bx]
-	.8086
-	jz @F
-	mov al,'?'
-	stosb
-	jmp da32z
-@@:
+;--- v2.0: we don't want that just msg "General Protection Fault"
+;--- appears, without a hint what the underlying problem is.
+;--- so display what's rendered up to now...
+	call puts
+	or [disflags], DIS_I_MEMACC	; tell exc handler to print a crlf first
+	mov di, offset line_out
 endif
-;--- v2.0: just read the bytes the instruction would
+	pop cx
+	shr cl, 1
+;--- v2.0: just read the bytes that the instruction would
 	push ds
-	cmp [rmsize], 0
 	mov ds, [bx]
 	mov bx, cs:[addrr]
-	mov al, [bx+0]
-	jl da32j		;if byte
-	mov ah, [bx+1]
-	jz @F			;if word
-	push ax
-	mov al, [bx+2]	;avoid "mov ax,[-1]"
-	mov ah, [bx+3]
-	call hexword
-	pop ax
+	add bx, cx
 @@:
-	call hexword
-	jmp da32k		;done
-da32j:
+	dec bx
+	mov al, [bx]
 	call hexbyte	;display byte
-da32k:
+	dec cl
+	jnz @B
 	pop ds
+if ?PM
+	and [disflags], not DIS_I_MEMACC
+endif
 
 da32z:
 	call trimputs	;done with operand list
