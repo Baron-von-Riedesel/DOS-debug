@@ -1144,7 +1144,7 @@ endif
 if RING0
 segerr	db "Debuggee segments invalid",CR,LF,'$'
 endif
-cantwritebp db "Can't write breakpoint",0
+cantwritebp db "Can't write breakpoint",CR,LF,'$'
 
 if WCMDFILE
 nowhexe	db 'EXE and HEX files cannot be written',CR,LF,'$'
@@ -5410,6 +5410,10 @@ setbp1::
 	mov al,0CCh
 	call writemem	; write byte at bx:e/dx
 	mov [si],ah		; save the current contents
+	jc @F
+	retn
+@@:
+	call bp			; either ignore error (g cmd) or abort with msg (p cmd)
 	retn
 resetbp1::
 	mov al,[si]
@@ -5551,6 +5555,8 @@ g_cmd proc
 
 ;--- Store breakpoint bytes in the given locations.
 
+	mov bp, offset _ret	; ignore write errors for g
+gg_1::				; <--- called by p ( run an int/call/... - set 1 bp )
 	mov di,offset setbp1
 	call setbps
 
@@ -5566,7 +5572,7 @@ endif
 
 if ?PM
 	call getcsattr
-	mov [bCSAttr],al	; must be set for getcseipbyte() & IsUnexpInt3()
+	mov [bCSAttr],al	; must be set for getcseipbyte()
 endif
 
 if 0 ; v2.0: not needed for soft/hard bp detection
@@ -5586,16 +5592,30 @@ else
 endif
 
 ;--- Finish up.  Check if it was one of _our_ breakpoints.
-;--- if yes, (E)IP isdecremented ( inside IsUnexpInt3() ).
+;--- if yes, decrement (E)IP 
 
 if 0 ; v2.0: not needed for soft/hard bp detection
 	pop ax
 	cmp al,0CCh		; was a CC at CS:[EIP-1]?
 	jnz gg_exit
 endif
-	call IsUnexpInt3; was bp set by debugger?   
-	jc gg_exit
+	cmp [run_int], EXC03MSG
+	jnz gg_exit
+	mov cx,  -1
+	call getcseipbyte	; modifies (E)BX
+	cmp al, 0CCh		; still a INT3 at [cs:eip-1] ?
+	jz gg_exit
+if ?PM
+	test [bCSAttr], 40h
+	jz $+3
+	db 66h	;mov [regs.rIP],ebx
+endif
+	mov [regs.rIP], bx	; decrement (E)IP
+if RING0
+	mov [run_int], -1	; v2.0: reset entry ( so SK cmd won't accept soft bps )
+endif
 	call dumpregs	; then just display register dump
+_ret:
 	ret				; and done ( no "unexpected breakpoint" msg )
 gg_exit:
 	jmp ue_int		;print messages and quit.
@@ -6910,7 +6930,7 @@ is_rm:
 	lea esi, [esi+ebx]
 	movzx eax, [scratchsel]
 	add edi, eax
-;	@dprintf "IsWriteableBX: esi=%lX, edi=%lX", esi, edi
+	@dprintf "IsWriteableBX: esi=%lX, edi=%lX", esi, edi
 	push ds
 	mov ds, [wFlat]
 	lodsd ds:[esi]
@@ -7152,40 +7172,6 @@ readmem_1:
 	ret
 readmem endp
 
-;--- check if an unexpected int 3 has occured;
-;--- called by G and P/T ( for "INT xx" )
-;--- rewritten for v2.0.
-;--- when called, resetbps() has happened already!
-;--- checks if [run_int] = EXC03MSG
-;--- checks if [cs:(e)ip-1] still contains a CC; if yes, it's a "hard" bp.
-;--- in:
-;--- out: NC if soft bp set by debugger
-;---       C if hard bp or another exception
-;--- modifies al, (e)bx, cx and - if it WAS a soft bp - [regs.rIP] 
-
-IsUnexpInt3 proc
-	cmp [run_int], EXC03MSG
-	jnz exit
-	mov cx,  -1
-	call getcseipbyte	; modifies (E)BX
-	cmp al, 0CCh		; still a INT3 at [cs:eip-1] ?
-	jz exit
-if ?PM
-	test [bCSAttr], 40h
-	jz $+3
-	db 66h	;mov [regs.rIP],ebx
-endif
-	mov [regs.rIP], bx	; decrement (E)IP
-if RING0
-	mov [run_int], -1	; v2.0: reset entry ( so SK cmd won't accept soft bps )
-endif
-	clc
-	ret
-exit:
-	stc
-	ret
-IsUnexpInt3 endp
-
 ;--- P command - proceed (i.e., skip over call/int/loop/string instruction).
 
 p_cmd proc
@@ -7193,7 +7179,7 @@ p_cmd proc
 
 ;--- Do it <CX=count> times.  First check the type of instruction.
 
-pp1:
+instrloop:
 	push cx			;save cx
 	mov dx,15		;DL = number of bytes to go; DH = prefix flags.
 if ?PM
@@ -7211,6 +7197,7 @@ pp2:
 	mov cx,PPLEN
 	repne scasb
 	jne pp5			;if not one of these
+
 	mov al,[di+PPLEN-1]	;get corresponding byte in ppinfo
 	test al,PP_PREFIX
 	jz @F			;if not a prefix
@@ -7219,6 +7206,7 @@ pp2:
 	jnz pp2			;if not out of bytes
 	jmp pp12		;more than 15 prefixes will cause a GPF
 @@:
+
 	test al,40h
 	jz @F		;if no size dependency
 	and al,3fh
@@ -7273,64 +7261,11 @@ pp9:
 	call inceip
 pp10:
 	call inceip
-
 pp11:
-	mov bx,[regs.rCS]
-	jmp pp11x_1
+	call process2
+	jmp pp13
 pp14:
-	jmp pp1			;back for more
-
-;--- Special instruction.  Set a breakpoint and run until we hit it.
-;--- BX:(E)SI == address where a breakpoint is to be set.
-
-process1::		;<--- used by T if an INT is to be processed
-	@dprintf "process1: bx:esi=%X:%lX", bx, esi
-	mov cx,1
-	push cx
-pp11x_1:		;BX=CS
-	mov di,offset line_out	;use the same breakpoint structure as in G
-	sizeprfX	;mov edx,esi
-	mov dx,si
-	mov al,0cch
-	call writemem
-	mov al,ah
-	jnc @F
-	mov si,offset cantwritebp
-	call copystring
-	call putsline
-	jmp cmdloop
-@@:
-	push ax
-	mov ax,1	;bp cnt
-	stosw
-	sizeprfX	;xchg eax,esi
-	xchg ax,si
-	sizeprfX	;stosd
-	stosw
-	mov ax,bx
-	stosw
-	pop ax
-	stosb
-if ?DPMI
-	push [regs.msw]
-endif
-	call run		;this might change mode and/or terminate the debuggee!
-if ?PM
-	call getcsattr	;set variable bCSAttr
-	mov [bCSAttr],al
- if ?DPMI
-	pop dx
-	call resetbpsEx
- else
-	call resetbps
- endif
-else
-	call resetbps
-endif
-
-	call IsUnexpInt3; stopped at a hard bp?
-	jnc pp13
-	jmp pp15      
+	jmp instrloop	;back for more
 
 ;--- Ordinary instruction.  Just do a trace.
 
@@ -7339,15 +7274,11 @@ pp12:
 	call run
 	cmp [run_int], EXC01MSG
 	jne pp15		; stop if some other interrupt
-
-;--- Common part to finish up.
-
-pp13:
 	call dumpregs
+pp13:				;<--- Common part to finish up.
 	pop cx
 	loop pp14		;back for more
 	ret
-
 pp15:
 	jmp ue_int		;print message about unexpected interrupt and quit
 
@@ -7358,7 +7289,7 @@ if ?PM
 	db 66h		;inc esi
 endif
 	inc si
-	ret
+	retn
 
 addeip:
 if ?PM
@@ -7371,7 +7302,7 @@ if ?PM
 @@:
 endif
 	add si,ax
-	ret
+	retn
 
 ;--- getnextb - Get next byte in instruction stream.
 ;--- [e]si = eip
@@ -7386,7 +7317,32 @@ if ?PM
 endif
 	lodsb
 	pop ds
-	ret
+	retn
+
+process2:
+	mov bx, [regs.rCS]
+
+;--- Special instruction.  Set a breakpoint and run until we hit it.
+;--- BX:(E)SI == address where a breakpoint is to be set.
+
+process1::		;<--- used by T if an INT is to be processed
+	@dprintf "process1: bx:esi=%X:%lX", bx, esi
+	mov di,offset line_out	;use the same breakpoint structure as in G
+	mov ax,1	;bp cnt
+	stosw
+	sizeprfX	;xchg eax,esi
+	xchg ax,si
+	sizeprfX	;stosd
+	stosw
+	mov ax,bx
+	stosw
+	mov bp, offset pp_err1	; abort if bp couldn't be written
+	call gg_1	; use g_cmd to write bp, run program, reset bp
+	retn
+pp_err1:
+	mov dx, offset cantwritebp
+	call int21ah9
+	jmp cmdloop
 
 p_cmd endp
 
