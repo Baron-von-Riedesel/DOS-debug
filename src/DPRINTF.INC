@@ -72,7 +72,7 @@ ltob PROC stdcall uses edi number:dword, outb:word, base:word
 
 ltob ENDP
 
-;--- ds=dgroup, ss don't need to be dgroup
+;--- ss doesn't need to be dgroup
 
 dprintf PROC c uses si di eax bx cx edx fmt:ptr, args:VARARG
 
@@ -83,11 +83,14 @@ local fill:byte
 local szTmp[12]:byte
 
 	pushf
+	push ds
+	push cs
+	pop ds
 	lea di,[fmt+2]
 @@L335:
 	mov si,[fmt]
 nextchar:
-	lodsb
+	lodsb [si]
 	or al,al
 	je done
 	cmp al,'%'
@@ -95,6 +98,7 @@ nextchar:
 	call handle_char
 	jmp nextchar
 done:
+	pop ds
 	popf
 	ret
 

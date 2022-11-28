@@ -122,7 +122,9 @@
 
  When an address is entered in protected-mode, a '$' just before the
  segment part will tell DEBUGX to interpret the address as a real-mode
- address.
+ address. However, this should be used sparsely, since DPMI function
+ 0002 is used to convert the segment - the selector returned cannot
+ be released anymore.
 
  if debuggee is in protected-mode and the segment part of an address
  has a limit beyond 64k, the offset parts of the starting and ending

@@ -6426,19 +6426,77 @@ loadpgm endp
 
 endif
 
-;--- M command - move/copy memory.
+;--- 'm'achine command:  set machine type.
 
-;--- first check if there is more than 1 argument
-;--- 0 or 1 arguments are handled by the 'M [cpu]' code
-;--- also check if command is MC, MC2 or MNC
+mach proc
+;	dec si
+;	call skipwhite
+;	cmp al,CR
+;	je mach_query		;if just an 'm' (query machine type)
+	mov al,[si-1]     
+	call getbyte
+	mov al,dl
+	cmp al,6
+	ja errorj3			;dl must be 0-6
+	mov [machine],al	;set machine type
+	mov [mach_87],al	;coprocessor type, too
+	cmp al,3
+	jnc @F
+	and [rmode],not RM_386REGS	;reset 386 register display
+@@:
+	ret
+mach endp
+
+errorj3:
+	jmp cmd_error
+
+;--- 'mc' command:  set coprocessor.
+;--- optional arguments:
+;--- N: no coprocessor
+;--- 2: 80287 with 80386
+
+mc_cmd proc
+	call skipwhite	;get next nonblank character
+	mov ah,[machine]
+	cmp al,CR
+	jz set_mpc
+	or al,TOLOWER
+	push ax
+	lodsb
+	call chkeol
+	pop ax
+	cmp al,'n'
+	jne @F			;if something else
+	mov [has_87],0	;clear coprocessor flag
+	ret				;done
+@@:
+	cmp al,'2'
+	jne errorj3		;if not '2'
+	cmp [machine],3
+	jnz errorj3		;if not a 386
+	mov ah,2
+set_mpc:
+	mov [has_87],1	;set coprocessor flag
+	mov [mach_87],ah
+	ret
+mc_cmd endp
+
+;--- M command - move/copy memory.
+;--- 1. check if there's no argument at all: mach_query, display cpu
+;--- 2. check for MC cmd: mc_cmd, set/reset coprocessor 
+;--- 3. check if there's just 1 argument:  mach, set cpu
 
 m_cmd proc
 	cmp al,CR
-	jz mach
+	jz mach_query
 	mov ah,[si-2]
-	or ah,TOLOWER
-	cmp ah,'m'
-	jz mach
+	or ax,TOLOWER or (TOLOWER shl 8)
+	cmp ax,'mc'			; mc cmd?
+	jz mc_cmd
+if ?PM
+	cmp al,'0'			; is there a '$' or '%' modifier?
+	jb ismove			; ( would throw an error in getdword )
+endif
 	push si
 	call getdword
 	cmp al,CR
@@ -6448,10 +6506,12 @@ m_cmd proc
 	pop si
 	cmp al,CR
 	je mach				; jump if 1 argument only
+ismove:
 	dec si
 	lodsb
-	call parsecm		;parse arguments (DS:(E)SI, ES:(E)DI, (E)CX)
+	call parsecm		;parse arguments: src=DS:(E)SI, dst=ES:(E)DI, length-1=(E)CX
 ;--- note: DS unknown here
+
 	push cx
 if ?PM
  if ?DPMI
@@ -6459,12 +6519,14 @@ if ?PM
 	jz @F
  endif
 ;--- TODO: do overlapping check in protected-mode
+
+	@dprintf "m_cmd: ds:esi=%X:%lX, es:edi=%X:%lX, ecx=%lX", ds, esi, es, edi, ecx
 	clc
 	jmp m3
 @@:
 endif
 	mov cl,4
-	shr dx,cl
+	shr dx,cl		; BX:DX=dst seg:ofs
 	add dx,bx		;upper 16 bits of destination
 	mov ax,si
 	shr ax,cl
@@ -6495,7 +6557,11 @@ if ?PM
 	push ds
 	push ss
 	pop ds
-	call IsWriteableBX	; needs DS=dgroup
+ if ?DPMI
+	push ss
+	pop es
+ endif
+	call IsWriteableBX	; expects DS(,ES)=dgroup
 	cmp [bAddr32],0
 	pop ds
 	mov es, bx
@@ -6526,31 +6592,9 @@ endif
 	jmp ee0a		;restore ds and es and undo the int2324 pointer hack
 m_cmd endp
 
-;--- 'm'achine command:  set machine type.
+;--- M without argument - display machine type.
 
-mach proc
-	or al,TOLOWER
-	cmp al,'c'
-	jz mc
-	dec si
-	call skipwhite
-	cmp al,CR
-	je ma1				;if just an 'm' (query machine type)
-	call getbyte
-	mov al,dl
-	cmp al,6
-	ja errorj3			;dl must be 0-6
-	mov [machine],al	;set machine type
-	mov [mach_87],al	;coprocessor type, too
-	cmp al,3
-	jnc @F
-	and [rmode],not RM_386REGS	;reset 386 register display
-@@:
-	ret
-
-;--- Display machine type.
-
-ma1:
+mach_query proc
 	mov si,offset msg8088
 	mov al,[machine]
 	cmp al,0
@@ -6571,41 +6615,7 @@ ma1:
 @@:
 	call copystring	;si->di
 	jmp putsline	;call puts and quit
-mach endp
-
-errorj3:
-	jmp cmd_error
-
-;--- 'mc' command:  set coprocessor.
-;--- optional arguments:
-;--- N: no coprocessor
-;--- 2: 80287 with 80386
-
-mc proc
-	call skipwhite	;get next nonblank character
-	mov ah,[machine]
-	cmp al,CR
-	jz set_mpc
-	or al,TOLOWER
-	push ax
-	lodsb
-	call chkeol
-	pop ax
-	cmp al,'n'
-	jne @F			;if something else
-	mov [has_87],0	;clear coprocessor flag
-	ret				;done
-@@:
-	cmp al,'2'
-	jne errorj3		;if not '2'
-	cmp [machine],3
-	jnz errorj3		;if not a 386
-	mov ah,2
-set_mpc:
-	mov [has_87],1	;set coprocessor flag
-	mov [mach_87],ah
-	ret
-mc endp
+mach_query endp
 
 if LCMDFILE or WCMDFILE
 
@@ -6843,8 +6853,8 @@ if ?PM
 
 ;--- ensure segment in BX is writeable.
 ;--- if it isn't, BX may be set to an alias (scratchsel)
+;--- expects DS,SS=dgroup ( for ?DPMI, also ES=dgroup )
 ;--- out: Carry=1 if segment not writeable
-;--- clears HiWord(EDI) in DPMI protected-mode
 ;--- called by:
 ;---   setcseipbyte(); write at regs.cs:e/ip + cx
 ;---   writemem(): write byte at bx:e/dx 
@@ -6857,10 +6867,11 @@ IsWriteableBX proc
 	jz is_rm
 	.286
 	push ax
+	sizeprf				; push edi
 	push di
 	sub sp, 8
 	mov di, sp
-	sizeprf				;lea edi,[di] (synonym for movzx edi,di), 3 bytes long
+	sizeprf				; lea edi,[di] (synonym for movzx edi,di), 3 bytes long
 	lea di,[di]
 	mov ax,000Bh		;get descriptor
 	int 31h
@@ -6874,6 +6885,7 @@ IsWriteableBX proc
 	int 31h
 @@:
 	lea sp, [di+8]
+	sizeprf				; pop edi
 	pop di
 	pop ax
 	.8086
@@ -10194,6 +10206,7 @@ endif
 ;   Exit    DS:(E)SI    Address from first parameter
 ;           ES:(E)DI    Address from second parameter
 ;           (E)CX       Length of address range minus one
+;   m cmd in real-mode expects dst segm:ofs in BX:DX
 
 parsecm proc
 	call prephack
@@ -10603,24 +10616,24 @@ getaddr proc
 if ?PM
 	mov [bAddr32],0
  if ?DPMI
-	cmp byte ptr [si-1],'$' ;a real-mode segment?
+	cmp al, '$'			; a real-mode segment?
 	jnz @F
 	lodsb
 	call ispm_dbg
 	jz @F
 	call getword
+	cmp al,':'
+	jnz errorj2
 	mov bx,dx
-	push ax
 	mov ax,2
 	int 31h
-	jc errorj2
 	mov bx,ax
 	mov dx,ax
-	pop ax
-	jmp ga1_2
+	jc errorj2
+	jmp ga3
 @@:
  elseif RING0
-	cmp byte ptr [si-1],'%' ;a linear address?
+	cmp al, '%'			; a linear address?
 	jnz @F
 	mov bx, cs:[wFlat]
 	jmp ga3
@@ -10628,7 +10641,6 @@ if ?PM
  endif
 endif
 	call getofsforbx
-ga1_2:
 	push si
 	call skipwh0
 	cmp al,':'
@@ -10769,20 +10781,20 @@ getdword proc
 	cbw
 	xchg ax,dx
 	xor bx,bx		;clear high order word
-gd1:
+nextchar:
 	lodsb
 	call getnyb
-	jc gd3
+	jc done
 	test bh,0f0h
 	jnz errorj6		;if too big
 	mov cx,4
-gd2:
+@@:
 	shl dx,1		;double shift left
 	rcl bx,1
-	loop gd2
+	loop @B
 	or dl,al
-	jmp gd1
-gd3:
+	jmp nextchar
+done:
 	ret
 getdword endp
 
