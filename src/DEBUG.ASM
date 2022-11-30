@@ -44,11 +44,10 @@
 ;       HISTORY.TXT.
 ;
 ;   To do:
-;       - support loading *.HEX files
-;       - make C work with 32bit offsets in protected-mode
-;       - add MMX instructions for A and U
 ;       - allow to modify floating point registers
 ;       - better syntax checks for A (so i.e. "mov ax,al" is rejected)
+;       - add MMX instructions for A and U
+;       - support loading *.HEX files
 
 	option casemap:none
 	option proc:private
@@ -119,14 +118,20 @@ NOEXTENDER equ 1	;1=don't assume DPMI host includes a DOS extender
 WIN9XSUPP  equ 1	;1=avoid to hook DPMI entry when running in Win9x
 DOSEMU     equ 1	;1=avoid to hook DPMI entry when running in DosEmu
 DISPHOOK   equ 1	;1=display "DPMI entry hooked..."
+ ifndef CATCHEXC06
 CATCHEXC06 equ 0	;1=catch exception 06h in protected-mode
+ endif
+ ifndef CATCHEXC07
 CATCHEXC07 equ 0	;1=catch exception 07h in protected-mode
+ endif
 CATCHEXC0C equ 1	;1=catch exception 0Ch in protected-mode
 CATCHINT21 equ 1	;1=hook into protected-mode int 21h
+ ifndef CATCHINT31
 CATCHINT31 equ 0	;1=hook DPMI int 31h
+ endif
 CATCHINT41 equ 1	;1=hook into protected-mode debug interface
 MMXSUPP    equ 1	;1=support MMX specific commands
-DPMIMSW    equ 0	;1=use int 2F,ax=1686h to detect mode, 0=use value of cs
+;DPMIMSW    equ 0	;1=use int 2F,ax=1686h to detect mode, 0=use value of cs
 DICMD      = 1
 DLCMD      = 1
 DXCMD      = 1
@@ -231,16 +236,10 @@ ifndef CATCHINT41
 CATCHINT41 equ 0	;hook int 41h
 endif
 
-;--- DPMI exceptions in protected-mode
-
-ifndef CATCHEXC06
-CATCHEXC06 equ 0	;catch exception 06h in protected-mode
-endif
-ifndef CATCHEXC07
-CATCHEXC07 equ 0	;catch exception 07h in protected-mode
-endif
-ifndef CATCHEXC0C
-CATCHEXC0C equ 0	;catch exception 0Ch in protected-mode
+ife ?DPMI
+CATCHEXC06 equ 0
+CATCHEXC07 equ 0
+CATCHEXC0C equ 0
 endif
 
 if ?PM or CATCHINT07
@@ -790,7 +789,7 @@ ends
 ends
 dwErrCode dd ?
 endif
-if ?PM
+if ?DPMI;?PM
 msw		dw ?	;0000=real-mode, FFFF=protected-mode
 endif
 REGS ends
@@ -1859,6 +1858,8 @@ endif
 	shl bx,1
 	mov dx,[cmdlist+bx]
 	mov [lastcmd],offset dmycmd
+	mov ah,[si-2]	; v2.0: for easily detecting 2-byte cmds
+	or ah, TOLOWER
 cmd4:
 	mov di,offset line_out
 	call dx
@@ -4840,9 +4841,7 @@ lastddd:
 
 dd1:
 if DGCMD or DICMD or DLCMD or DMCMD or DPCMD or DXCMD 
-	mov ah,[si-2]		;test for 2-letter cmds (DI, DL, DM, DP, DX)
-	and ah,TOUPPER
-	cmp ah,'D'
+	cmp ah,'d'
 	jnz dd1_1
 	or al,TOLOWER
  if DGCMD
@@ -7180,96 +7179,103 @@ p_cmd proc
 ;--- Do it <CX=count> times.  First check the type of instruction.
 
 instrloop:
-	push cx			;save cx
-	mov dx,15		;DL = number of bytes to go; DH = prefix flags.
+	push cx			; save cx
+	mov dx,15		; DL = number of bytes to go; DH = prefix flags.
 if ?PM
 	call getcsattr
 	mov [bCSAttr],al
 	jz @F
 	mov dh,PP_ADRSIZ + PP_OPSIZ
-	db 66h		;mov esi,[regs.rIP]
+	db 66h		; mov esi,[regs.rIP]
 @@:
 endif
 	mov si,[regs.rIP]
 pp2:
-	call getnextb	;AL=[cs:(e)ip], eip++
+	call getnextb	; AL=[cs:(e)ip], eip++
 	mov di,offset ppbytes
 	mov cx,PPLEN
 	repne scasb
-	jne pp5			;if not one of these
+	jne pp5			; if not one of these
 
-	mov al,[di+PPLEN-1]	;get corresponding byte in ppinfo
+	mov al,[di+PPLEN-1]	; get corresponding byte in ppinfo
 	test al,PP_PREFIX
-	jz @F			;if not a prefix
-	xor dh,al		;update the flags
+	jz @F			; if not a prefix
+	xor dh,al		; update the flags
 	dec dl
-	jnz pp2			;if not out of bytes
-	jmp pp12		;more than 15 prefixes will cause a GPF
+	jnz pp2			; if not out of bytes
+	jmp dotrace		; more than 15 prefixes will cause a GPF
 @@:
-
 	test al,40h
-	jz @F		;if no size dependency
+	jz @F			; if no size dependency
 	and al,3fh
-	and dh,PP_OPSIZ	;for CALL, operand size 2->4, 4->6
+	and dh,PP_OPSIZ	; for CALL, operand size 2->4, 4->6
 	add al,dh
 @@:
 	cbw
-	call addeip	;add ax to instruction pointer in (E)SI
-	jmp pp11	;we have a skippable instruction here
+	call addeip	; add ax to instruction pointer in (E)SI
+	jmp proceed0; we have a skippable instruction here
 
 pp5:
-	cmp al,0ffh	;indirect call?
+	cmp al,0ffh	; indirect call?
+if 0
 	jz @F
-	jmp pp12	;just an ordinary instruction
+	jmp dotrace	; just an ordinary instruction
 @@:
-	call getnextb	;get MOD REG R/M byte
-	and al,not 8	;clear lowest bit of REG field (/3 --> /2)
-	xor al,10h	;/2 --> /0
+else
+	jnz dotrace
+endif
+	call getnextb	; get MOD REG R/M byte
+	and al,not 8	; clear lowest bit of REG field (/3 --> /2)
+	xor al,10h	; /2 --> /0
 	test al,38h
+if 0
 	jz @F
-	jmp pp12	;if not ff/2 or ff/3
+	jmp dotrace	; if not ff/2 or ff/3
 @@:
+else
+	jnz dotrace	; if not ff/2 or ff/3
+endif
 	cmp al,0c0h
-	jae pp11	;if just a register
+	jae proceed0; if just a register
 	test dh,PP_ADRSIZ
-	jnz pp6		;if 32 bit addressing
+	jnz pp6		; if 32 bit addressing
 	cmp al,6
-	je pp9		;if just plain disp16
+	je proceed2	; if just plain disp16
 	cmp al,40h
-	jb pp11		;if indirect register
+	jb proceed0	; if indirect register
 	cmp al,80h
-	jb pp10		;if disp8[reg(s)]
-	jmp pp9		;it's disp16[reg(s)]
+	jb proceed1	; if disp8[reg(s)]
+	jmp proceed2; it's disp16[reg(s)]
+back2top:
+	jmp instrloop; back for more
 
 pp6:
 	cmp al,5
-	je pp8		;if just plain disp32
+	je proceed4	; if just plain disp32
 	xor al,4
 	test al,7
-	jnz @F		;if no SIB byte
+	jnz @F		; if no SIB byte
 	call inceip
 @@:
 	cmp al,40h
-	jb pp11		;if indirect register
+	jb proceed0	; if indirect register
 	cmp al,80h
-	jb pp10		;if disp8[reg(s)]
-				;otherwise, it's disp32[reg(s)]
-pp8:
+	jb proceed1	; if disp8[reg(s)]
+				; otherwise, it's disp32[reg(s)]
+proceed4:
 	call inceip
 	call inceip
-pp9:
+proceed2:
 	call inceip
-pp10:
+proceed1:
 	call inceip
-pp11:
-	call process2
+proceed0:
+	call doproceed2
 	jmp pp13
-pp14:
-	jmp instrloop	;back for more
 
 ;--- Ordinary instruction.  Just do a trace.
 
-pp12:
+dotrace:
 	or byte ptr [regs.rFL+1],1	;set single-step mode
 	call run
 	cmp [run_int], EXC01MSG
@@ -7277,7 +7283,7 @@ pp12:
 	call dumpregs
 pp13:				;<--- Common part to finish up.
 	pop cx
-	loop pp14		;back for more
+	loop back2top	;back for more
 	ret
 pp15:
 	jmp ue_int		;print message about unexpected interrupt and quit
@@ -7319,14 +7325,14 @@ endif
 	pop ds
 	retn
 
-process2:
+doproceed2:
 	mov bx, [regs.rCS]
 
 ;--- Special instruction.  Set a breakpoint and run until we hit it.
 ;--- BX:(E)SI == address where a breakpoint is to be set.
 
-process1::		;<--- used by T if an INT is to be processed
-	@dprintf "process1: bx:esi=%X:%lX", bx, esi
+doproceed1::	;<--- used by T if an INT is to be processed
+	@dprintf "doproceed1: bx:esi=%X:%lX", bx, esi
 	mov di,offset line_out	;use the same breakpoint structure as in G
 	mov ax,1	;bp cnt
 	stosw
@@ -7542,6 +7548,8 @@ r_cmd proc
 	jne @F		;if there's an argument
 	jmp dumpregs
 @@:
+	cmp ah,'r'
+	jnz @F
 	and al,TOUPPER
 	cmp al,'X'
 	je rx_cmd
@@ -7551,6 +7559,7 @@ if MMXSUPP
 endif
 	cmp al,'N'
 	je rn_cmd
+@@:
 
 ;--- an additional register parameter was given
 
@@ -7779,9 +7788,7 @@ endif
 
 s_cmd proc
 if RING0
-	mov ah,[si-2]		;test for 2-letter cmds (SK)
-	and ah,TOUPPER
-	cmp ah,'S'
+	cmp ah,'s'
 	jnz @F
 	or al,TOLOWER
 	cmp al, 'k'
@@ -7948,18 +7955,19 @@ tm_cmd endp
 ;--- T command - Trace.
 
 t_cmd proc
-	mov ah,al
-	and ah,TOUPPER
-	cmp ah,'M'
-	jz tm_cmd		;jump if it's the TM command
+	cmp al, CR
+	jz tt0
+	and al,TOUPPER
+	cmp ax,'tM'
+	jz tm_cmd
 tt0:
 	mov [lastcmd], offset tt0
 	call parse_pt	;process arguments
-tt1:
+@@:
 	push cx
 	call trace1
 	pop cx
-	loop tt1
+	loop @B
 	ret
 
 t_cmd endp
@@ -7992,7 +8000,7 @@ if ?DPMI
 	mov si,[bx+0]
 	mov bx,[bx+2]
 	pop ds
-	call process1
+	call doproceed1
 	ret
 trace1_1:
 endif
@@ -8050,7 +8058,7 @@ if ?PM
 	db 66h	;add esi,2
 endif
 	add si,2
-	call process1		;set BP at BX:(E)SI and run debuggee
+	call doproceed1		;set BP at BX:(E)SI and run debuggee
 	ret
 
 ;--- current instruction is INT, TM is 1, single-step into the interrupt
@@ -8089,7 +8097,7 @@ if ?PM
 	mov bx, ds:[ebx*8+eax+2]
 	pop ds
  endif
-	call process1	; expects bp to be set at BX:(E)SI
+	call doproceed1	; expects bp to be set at BX:(E)SI
 	ret
 endif
 ife RING0
@@ -8110,7 +8118,7 @@ step_int_rm:
 	jz isrom
 	mov bx,ds
 	pop ds
-	call process1
+	call doproceed1
 	ret
 isrom:
 	mov  ax,ds
@@ -9315,12 +9323,12 @@ ife RING0
 	sti					;interrupts back on
 endif
 
-if ?PM
+;if ?PM
  if ?DPMI
 ;--- calling int 2Fh here is a problem, since breakpoints aren't reset yet.
 ;--- this makes it impossible to trace this interrupt.
-  if DPMIMSW
-	mov ax,1686h
+  if 0;DPMIMSW
+	mov ax,1686h	; actually, fn 1686h tells if int 31h API is available
 	int 2Fh
 	cmp ax,1
 	sbb ax,ax
@@ -9331,11 +9339,9 @@ if ?PM
 	cmc             ;NC=rm,C=pm
 	sbb ax,ax		;0=rm,-1=pm
   endif
- else
-	mov ax, -1
- endif
 	mov [regs.msw],ax	;0000=real-mode, FFFF=protected-mode
-endif
+ endif
+;endif
 
 ife (BOOTDBG or RING0)
 	call getpsp
@@ -9521,15 +9527,19 @@ if VXCHG
 
 v_cmd proc
  if VXCMD
-	mov ax,[si-2]
-	and ax, TOUPPER_W
-	cmp ax, 'CV'
+ 	cmp ah, 'v'
+	jnz @F
+	or al, TOLOWER
+	cmp al, 'c'
 	jz vc_cmd
-	cmp ax, 'LV'
+	cmp al, 'l'
 	jz vl_cmd
-	cmp ax, 'TV'
+	cmp al, 't'
 	jz vt_cmd
+@@:
  endif
+	cmp al,CR
+	jnz cmd_error
 	mov al,0
 	call swapscreen
  if 0;ndef VXCHGBIOS   ; v2.0: no longer needed, swapscreen has set cursor
@@ -9667,15 +9677,17 @@ swapscreen endp
 
 elseif VXCMD
 v_cmd proc
-	mov ax,[si-2]
-	and ax, TOUPPER_W
+	cmp ah, 'v'
+	jnz @F
+	or al, TOLOWER
 	@dprintf "v_cmd: ax=%X", ax
-	cmp ax, 'CV'
+	cmp al, 'c'
 	jz vc_cmd
-	cmp ax, 'LV'
+	cmp al, 'l'
 	jz vl_cmd
-	cmp ax, 'TV'
+	cmp al, 't'
 	jz vt_cmd
+@@:
 	jmp cmd_error
 v_cmd endp
 endif
