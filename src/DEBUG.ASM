@@ -1,5 +1,4 @@
 ;   DEBUG.ASM Masm/JWasm assembler source for Debug/X.
-;           Version 2.0, __.__.2022.
 
 ;   To assemble, use:
 ;       jwasm -bin -Fo debug.com debug.asm
@@ -49,6 +48,8 @@
 ;       - add MMX instructions for A and U
 ;       - support loading *.HEX files
 
+VERSION    textequ <2.0>
+
 	option casemap:none
 	option proc:private
 ;	option noljmp	;enable to see the short jump extensions
@@ -85,6 +86,7 @@ DICMD      = 0		; support DI cmd
 DLCMD      = 0		; support DL cmd
 DMCMD      = 1		; support DM cmd
 DPCMD      = 0		; support DP cmd
+DTCMD      = 0		; support DT cmd
 DXCMD      = 0		; support DX cmd
 QCMD       = 1		; support Q cmd
 LCMD       = 1		; support L cmd
@@ -103,11 +105,13 @@ DBGNAME2   equ <"Deb386">
 ?PM        equ 1
 VDD        equ 0
 NOEXTENDER equ 0
+DISPPL0STK equ 0	;1=display ring 0 stack in register dump
 CHKIOPL    equ 1	;1=don't stop if GPF cause of IOPL==0 and iosensitive instr
 DGCMD      = 1
 DICMD      = 1
 DLCMD      = 1
 DMCMD      = 0
+DTCMD      = 1
 VXCMD      = 1
 elseif ?DPMI
 DBGNAME    equ <"DEBUGX">
@@ -600,8 +604,12 @@ hakstat	db 0		;whether we have hacked vectors 23/24 or not
 endif
 machine	db 0		;cpu (0=8086,1,2,3=80386,...)
 
-rmode	db 0		;flags for R command
 RM_386REGS	equ 1	;bit 0: 1=386 register display
+if RING0
+rmode	db RM_386REGS
+else
+rmode	db 0		;flags for R command
+endif
 tmode	db 0		;bit 0: 1=ms-debug compatible trace mode
 
 has_87	db 0		;if there is a math coprocessor present
@@ -922,7 +930,7 @@ if ?DPMI
 prompt3	db '#'	;protected-mode prompt
 endif
 
-helpmsg db DOSNAME, ' ', DBGNAME2, ' v2.0 help screen',CR,LF
+helpmsg db DOSNAME, ' ', DBGNAME2, ' v',@CatStr(!',%VERSION,!'),' help screen',CR,LF
 	db 'assemble', TAB, 'A [address]',CR,LF
 	db 'compare', TAB, TAB, 'C range address',CR,LF
 	db 'dump', TAB, TAB, 'D [range]',CR,LF
@@ -944,6 +952,9 @@ if DMCMD
 endif
 if DPCMD
 	db 'dump partitions', TAB, 'DP physical_disk',CR,LF
+endif
+if DTCMD
+	db 'dump TSS', TAB, 'DT',CR,LF
 endif
 if DXCMD
 	db 'dump ext memory', TAB, 'DX [physical_address]',CR,LF
@@ -4242,7 +4253,7 @@ endif
 if RING0
 
 ;--- get base of descriptor table for selector in BX
-;--- eax=base, dx=limit
+;--- out: eax=base, dx=limit, C if error
 
 getlinearbase proc
 	push bp
@@ -4281,6 +4292,13 @@ endif
 
 if DGCMD or DLCMD
 
+ if RING0
+CONST segment
+szldtr db "LDTR=",0
+szgdtr db "GDTR=",0
+CONST ends
+ endif
+
 ;--- DG/DL commands
 ;--- al = 'l' or 'g'
 
@@ -4288,7 +4306,7 @@ CONST segment
 descbase db ' base=???????? limit=???????? attr=????',0
 CONST ends
 
-descout proc
+dgl_cmd proc
 
 	push ax
 	call skipwhite
@@ -4297,8 +4315,10 @@ descout proc
 	mov bx, dx
 
 	and bl, 0f8h
+ if DGCMD
 	cmp cl, 'g'
 	jz @F
+ endif
 	or bl, 4
 @@:
 	call skipcomm0
@@ -4311,18 +4331,39 @@ descout proc
 	jnz @F
 	inc dx
 @@:
-	mov si,dx		;save count
-
-	.286
+	mov si, dx		;save count
 	mov bp, sp
 if RING0
-	call getlinearbase
-	jc done
+	call getlinearbase		; get base,limit
 	.386
 	push eax
 	push dx
+	pushf
+	push si
+	test bl,4
+	jz @F
+	mov si, offset szldtr
+	call copystring
+	sldt ax
+	call hexword
+	jmp ldtrdone
+@@:
+	mov si, offset szgdtr
+	call copystring
+	mov ax,[bp-6]
+	call hexword
+	mov al,'.'
+	stosb
+	mov eax,[bp-4]
+	call hexdword
+ldtrdone:
+	call putsline
+	pop si
+	popf
+	jc done
 endif
 if ?DPMI
+	.286
 	call ispm_dbg
 	jnz nextdesc
 	mov si,offset nodesc	; error "not accessible in real-mode"
@@ -4331,8 +4372,6 @@ if ?DPMI
 endif
 
 nextdesc:
-	dec si
-	js done
 	mov di,offset line_out
 	mov ax,bx
 	call hexword
@@ -4397,23 +4436,28 @@ desc_o2:
 	call hexword; attr   
 desc_out:
 	mov di,offset line_out+25+14+4 ; position to end of line
-	push bx
 	call putsline	; add cr/lf, then print
-	pop bx
 	add bx,8
-	jmp nextdesc
+	dec si
+	jnz nextdesc
 done:
 	mov sp, bp
 	ret
-descout endp
+dgl_cmd endp
 
 endif
 
 if DICMD
 
+ if RING0
+CONST segment
+szidtr db "IDTR=",0
+CONST ends
+ endif
+
 ;--- DI command
 
-gateout proc
+di_cmd proc
 	call skipwhite
 	call getbyte	;get byte into DL
 	mov bx,dx
@@ -4427,8 +4471,26 @@ gateout proc
 	jnz @F
 	inc dx			;ensure that count is > 0
 @@:
-	call prephack
 	mov si,dx		;save count
+if RING0
+	push bp
+	mov bp, sp
+	sub sp, 6
+	sidt [bp-6]
+	push si
+	mov si, offset szidtr
+	call copystring
+	pop si
+	mov ax,[bp-6]
+	call hexword
+	mov al,'.'
+	stosb
+	.386
+	mov eax,[bp-4]
+	call hexdword
+	call putsline
+endif
+	call prephack
 gateout_00: 		;<--- next int/exc
 	call dohack		;set debuggee's int 23/24
 	mov di,offset line_out
@@ -4466,14 +4528,8 @@ gate16:
 	dec bh
 	jnz gateout_01
  else
-	push bp
-	mov bp, sp
-	sub sp, 6
 	.386
-	sidt [bp-6]
-	pop dx
-	pop edx
-	pop bp
+	mov edx, [bp-4]
 	push ds
 	mov ds, [wFlat]
 	movzx ebx, bl
@@ -4497,14 +4553,16 @@ else
 endif
 gate_exit:
 	call unhack	;set debugger's int 23/24
-	push bx
 	call putsline
-	pop bx
 	inc bl
 	jz @F
 	dec si
 	jnz gateout_00
 @@:
+if RING0
+	mov sp, bp
+	pop bp
+endif
 	ret
 if ?DPMI
 gatefailed:
@@ -4531,12 +4589,14 @@ gaterm:
 	mov ax,dx
 	call hexword
 	jmp gate_exit
-gateout endp
+di_cmd endp
+
 endif
 
 	.8086
 
 if DMCMD
+
 mcbout proc
 ;	mov di,offset line_out
 	mov ax,"SP"
@@ -4619,6 +4679,82 @@ endif
 	mov ds,bx
 	ret
 mcbout endp
+
+endif
+
+if DTCMD
+
+CONST segment
+szPL0Stk db " R0 SS:ESP=",0
+CONST ends
+
+ if 0
+TSSSTR struct
+dwLink	dd ?	;+00 selector
+_Esp0	dd ?	;+04
+_SS0    dd ?
+dqStk1	dq ?	;+0C
+dqStk2	dq ?	;+14
+_CR3	dd ?	;+1C
+_Eip	dd ?	;+20
+_Efl	dd ?	;+24
+_Eax	dd ?	;+28
+_Ecx	dd ?	;+2C
+_Edx	dd ?	;+30
+_Ebx	dd ?	;+34
+_Esp	dd ?	;+38
+_Ebp	dd ?	;+3C
+_Esi	dd ?	;+40
+_Edi	dd ?	;+44
+_ES		dd ?	;+48
+_CS		dd ?	;+4C
+_SS		dd ?	;+50
+_DS		dd ?	;+54
+_FS		dd ?	;+58
+_GS		dd ?	;+5C
+_LDT	dd ?	;+60
+wFlags  dw ?	;+64
+wOffs   dw 68h	;+66
+TSSSTR ends
+ endif
+ 
+dt_cmd proc
+	.386
+	mov ax,"RT"
+	stosw
+	mov al,'='
+	stosb
+	str ax
+	mov bx, ax
+	call hexword
+	cmp bx,0
+	jz @F
+	call getlinearbase
+	jc @F
+	movzx ebx, bx
+	add ebx, eax	; ebx=linear addr of TR in GDT
+	mov si, offset szPL0Stk
+	call copystring
+	push ds
+	mov ds, [wFlat]
+	mov ah, [ebx+7]
+	mov al, [ebx+4]
+	shl eax, 16
+	mov ax, [ebx+2]	; eax=linear addr TSS
+	@dprintf "dt: ebx=%lX eax=%lX", ebx, eax
+	mov ebx, eax
+	mov ax, [ebx+8]	; get PL0 SS
+	call hexword
+	mov al,':'
+	stosb
+	mov eax,[ebx+4]	; get PL0 ESP
+	call hexdword
+	pop ds
+@@:
+	call putsline
+	ret
+dt_cmd endp
+
 endif
 
 ;--- DX command. Display extended memory
@@ -4840,26 +4976,32 @@ lastddd:
 	jmp dd2
 
 dd1:
-if DGCMD or DICMD or DLCMD or DMCMD or DPCMD or DXCMD 
+if DGCMD or DICMD or DLCMD or DMCMD or DPCMD or DTCMD or DXCMD
 	cmp ah,'d'
 	jnz dd1_1
 	or al,TOLOWER
  if DGCMD
 	cmp al,'g'
 	jnz @F
-	jmp  descout
+	jmp dgl_cmd
 @@:
  endif
  if DLCMD
 	cmp al,'l'
 	jnz @F
-	jmp  descout
+	jmp dgl_cmd
 @@:
  endif
  if DICMD
 	cmp al,'i'
 	jnz @F
-	jmp  gateout
+	jmp di_cmd
+@@:
+ endif
+ if DTCMD
+	cmp al,'t'
+	jnz @F
+	jmp dt_cmd
 @@:
  endif
  if DXCMD
@@ -4905,6 +5047,7 @@ endif
 
 dd2:
 	mov [lastcmd],offset lastddd
+dd_loop:
 ;	mov ax,[d_addr+4]
 	mov ax,bx
 	call hexword
@@ -4921,32 +5064,30 @@ if ?PM
 	call hexword
 @@:
 endif
-	mov ax,si
+	mov ax, si
 	and al,0f0h
-	push ax
+	mov cx, si
+	sub cx, ax
 	call hexword
+
+;--- blank the line
 	mov ax,'  '
 	stosw
-	pop ax
-	lea bx,[di+3*16]
-;	mov byte ptr [bx-1],' '
-	call prephack		;set up for faking int vectors 23 and 24
+	lea bx, [di+3*16]
+	add bx, cx
+	push cx
+	push di
+	mov cx, bx
+	sub cx, di
+	rep stosb
+	pop di
+	pop cx
+	mov byte ptr [di+3*8-1],'-'
+	add di,cx
+	add cx,cx
+	add di,cx
 
-;--- blank the start of the line if offset isn't para aligned
-
-dd3:
-	cmp ax,si			;skip to position in line
-	je dd4				;if we're there yet
-	push ax
-	mov ax,'  '
-	stosw
-	stosb
-	mov es:[bx],al
-	inc bx
-	pop ax
-	inc ax
-	jmp dd3
-dd4:
+	call prephack	;set up for faking int vectors 23 and 24
 
 if ?PM
 	and bp,bp
@@ -4979,13 +5120,14 @@ dd6:
 if ?PM
 	and bp,bp
 	jz $+3
-	db 67h			;lods [esi] 
+	db 67h			;lodsb [esi] 
 endif
 	lodsb
 	push ax
 	call hexbyte
-	mov al,' '
-	stosb
+	inc di
+;	mov al, ' '
+;	stosb
 	pop ax
 	cmp al,' '
 	jb dd7		;if control character
@@ -4998,22 +5140,11 @@ dd8:
 	inc bx
 	loop dd6
 
-	push si
-dd9:
-	test si,0fh		;space out till end of line
-	jz dd10
-	mov ax,'  '
-	stosw
-	stosb
-	inc si
-	jmp dd9
-dd10:
-	pop si
 	push ss		;restore ds
 	pop ds
+
 	sizeprfX	;mov [d_addr],esi
 	mov [d_addr],si
-	mov byte ptr [di-25],'-'
 	call unhack	;set debugger's int 23/24
 	mov di,bx
 	push dx
@@ -5030,14 +5161,14 @@ if ?PM
 	jae dd11
 	inc esi
 	.8086
-	jmp dd2
+	jmp dd_loop
 @@:
 endif
 	dec si
 	cmp si,dx
 	jae dd11
 	inc si
-	jmp dd2
+	jmp dd_loop
 dd11:
 	ret
 d_cmd endp
@@ -5738,10 +5869,18 @@ LoadSDA:
 	ret
 
 ispm_dbg:	; debugger in protected-mode
-ispm_dbe:	; debuggee in protected-mode
+ispm_dbe:	; debuggee in protected-mode?
 	cmp cs:[regs.msw],0 	;returns: Z=real-mode, NZ=prot-mode
 	ret
 
+elseif 0;RING0
+ispm_dbe:	; debuggee in protected-mode?
+	push ax
+	mov ax, cs:[regs.efl+2]
+	and al, 2	; VM bit  
+	xor al, 2
+	pop ax
+	ret
 endif
 
 if LCMDFILE
@@ -7825,7 +7964,7 @@ endif
 	sub cx,di		;number of possible positions of string minus 1
 	jb errorj9		;if none
 s_cont:
-	call prephack	;set up for the interrupt vector hack
+	call prephack
 ;	inc cx			;cx = number of possible positions of string
 	sizeprfX		;xchg edx, edi
 	xchg dx,di		;set (E)DI to offset
@@ -7957,8 +8096,8 @@ tm_cmd endp
 t_cmd proc
 	cmp al, CR
 	jz tt0
-	and al,TOUPPER
-	cmp ax,'tM'
+	or al,TOLOWER
+	cmp ax,'tm'
 	jz tm_cmd
 tt0:
 	mov [lastcmd], offset tt0
@@ -8639,7 +8778,7 @@ xa proc
 @@:
 	call emscall
 	push dx
-	mov si,offset xaans
+	mov si,offset xaans	; "Handle created: "
 	call copystring
 	pop ax
 	call hexword
@@ -8657,7 +8796,7 @@ xd proc
 	mov ah,45h		;deallocate handle
 	call emscall
 	push dx
-	mov si,offset xdans
+	mov si,offset xdans	; "Handle deallocated: "
 	call copystring
 	pop ax
 	call hexword
@@ -8702,7 +8841,7 @@ xr proc
 	xchg bx,dx
 	mov ah,51h			;reallocate handle
 	call emscall
-	mov si,offset xrans
+	mov si,offset xrans	; "Handle reallocated: "
 	call copystring
 	jmp putsline		;print string and return
 
@@ -8969,16 +9108,16 @@ hndlshow endp
 
 sumshow proc
 	mov di,offset line_out
+	call trimhex			; ax ( skip leading zeros )
+	mov si,offset xsstr3	; " of a total "
+	call copystring
+	xchg ax,dx				; mov ax,dx
 	call trimhex
-	mov si,offset xsstr3
+	mov si,offset xsstr3a	; " EMS "
 	call copystring
-	xchg ax,dx		;mov ax,dx
-	call trimhex
-	mov si,offset xsstr3a
+	mov si,bx				; "pag"/"handl"
 	call copystring
-	mov si,bx
-	call copystring
-	mov si,offset xsstr3b
+	mov si,offset xsstr3b	; "es have been allocated"
 	call copystring
 	jmp putsline
 
@@ -9738,10 +9877,10 @@ if INT2324
 
 getint2324 proc
 	mov di,offset run2324
-if ?DPMI
+ if ?DPMI
 	call ispm_dbg
 	jnz getint2324pm
-endif
+ endif
 
 	push ds
 	pop es
@@ -9764,7 +9903,7 @@ endif
 	movsw
 	movsw
 	ret
-if ?DPMI
+ if ?DPMI
 getint2324pm:
 
 	.286
@@ -9801,7 +9940,7 @@ setdbgI2324::		;<--- entry
 	ret
 	.8086
 
-endif
+ endif
 
 getint2324 endp
 
@@ -9840,6 +9979,7 @@ if INT2324
 	pop ax
 endif
 	ret
+
 prephack endp
 
 ;--- get current int 23/24, store them at ES:DI
@@ -9847,7 +9987,11 @@ prephack endp
 
 if INT2324
 
-prehak1:
+CONST segment
+ph_msg	db 'Error in sequence of calls to hack.',CR,LF,'$'
+CONST ends
+
+prehak1 proc
  if ?DPMI
 	call ispm_dbg
 	jnz prehak_pm	;nothing to do
@@ -9865,10 +10009,7 @@ prehak1:
 	pop ds
 prehak_pm:
 	ret
-
-CONST segment
-ph_msg	db 'Error in sequence of calls to hack.',CR,LF,'$'
-CONST ends
+prehak1 endp
 
 endif
 
@@ -12401,8 +12542,8 @@ if ?PM
 endif
 	push si
 	mov si,[u_addr]
+	add si,[dis_n]		;index to the right byte
 	mov ds,[u_addr+4]
-	add si,cs:[dis_n]	;index to the right byte
 	lodsb 				;get the byte
 	pop si
 	pop ds
@@ -12613,6 +12754,26 @@ dumpregs proc
 	mov di,offset line_out
 	mov cl,6		;print ds, es, ss, cs, fs, gs
 	call dmpr1w
+if RING0
+ if DISPPL0STK
+	.386
+	lar ax, [regs.rCS]
+	and ah,60h
+	jz @F
+	mov si, offset pl0esp
+	mov cl, sizeof pl0esp
+	rep movsb
+	mov ax, [regs.r0SS]
+	call hexword
+	mov al,':'
+	stosb
+	mov eax, [regs.r0Esp]
+	call hexdword
+	mov al,']'
+	stosb
+@@:
+ endif
+endif
 no386_31:
 	call trimputs
 
@@ -12634,7 +12795,12 @@ no386_31:
 	sizeprf
 	mov [u_addr],ax
 	ret
-dumpregs endp
+
+if RING0 
+ if DISPPL0STK
+pl0esp db "[PL0 SS:ESP="
+ endif
+endif
 
 ;--- Function to print multiple WORD/DWORD register entries.
 ;--- SI->register names (2 bytes)
@@ -12679,6 +12845,8 @@ dmpr1d:
 	stosb
 	loop dmpr1d
 	ret
+
+dumpregs endp
 
 if USEFP2STR
 	include <fptostr.inc>
@@ -13497,10 +13665,8 @@ start:
 	mov ah,4ch
 	int 21h
 cantrun:
-	db "This is a device driver version of DEBUG.",13,10
-	db "It is supposed to be installed via",13,10
-	db "DEVICE=<name_of_executable>",13,10
-	db "in CONFIG.SYS.",13,10
+	db DBGNAME2, "g v",@CatStr(!',%VERSION,!')," is a device driver variant of Debug/X.",13,10
+	db "It's supposed to be loaded in CONFIG.SYS via 'DEVICE=",DBGNAME2,"g.exe'.",13,10
 	db "$"
 
 endif

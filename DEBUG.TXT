@@ -861,6 +861,7 @@
  DG start [count]: display GDT ( Global Descriptor Table )
  DI start [count]: display IDT ( Interrupt Descriptor Table )
  DL start [count]: display LDT ( Local Descriptor Table )
+ DT: display TR and PL0 SS:ESP
  SK: Skip handling of current exception, hand it over to previous handler.
  VC vector: untrap vector
  VL: list (un)trapped vectors ( vectors marked with '*' are untrapped )
