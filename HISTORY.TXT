@@ -261,7 +261,7 @@
          intercepted protected-mode int 21h and refuses to quit.
        - another variant - DEBUGXV - may be created. It allows to flip video
          screen between debugger and debuggee.
-    2.00 [30 November 2022]
+    2.00 [3 December 2022]
        - ensure the correct video page is used when debugger has to display
          something if the InDOS flag is set AND page swapping is active.
        - DEBUGX: hook into protected-mode debug interface Int 41h and make
@@ -292,3 +292,4 @@
          converted to selectors during initial switch to protected-mode.
        - DEBUGX fix, m cmd: '$' qualifier for the source address segment was
          rejected.
+       - DEBUGX: exceptions 0dh/0eh are set/reset on debugger entry/exit.

@@ -248,6 +248,7 @@ endif
 
 if ?PM or CATCHINT07
 EXCCSIP    equ 1	;display CS:IP where exception occured
+EXCCSEIP   equ 0	;may be activated if unknown exceptions occur in debugger
 else
 EXCCSIP    equ 0
 endif
@@ -395,6 +396,11 @@ endm
 endif
 
 	.8086
+
+;--- define segments. Actually, the debugger runs in the tiny memory model,
+;--- that is, all segments are grouped into "physical segment" DGROUP, and
+;--- CS=SS=DS=ES=DGROUP. When other memory regions are to be accessed,
+;--- preferably ES is temporary used then, in a few cases ( m/c cmds ) also DS.
 
 _TEXT segment dword public 'CODE'
 _TEXT ends
@@ -1384,7 +1390,13 @@ endif
 
 if EXCCSIP
 _DATA segment
+ if EXCCSEIP
+intexceip label dword
+ endif
 intexcip  dw 0	;IP if internal exception
+ if EXCCSEIP
+		dw 0
+ endif
 intexccs  dw 0	;CS if internal exception
 _DATA ends
 endif
@@ -1511,6 +1523,11 @@ endif
 endexctab label byte
 
 CONST ends
+
+_DATA segment
+dbeexc0d0e label word	; saved debuggee's exc 0d/0e when debugger is entered
+	dw 2 dup (0,0,0)
+_DATA ends
 
 ;--- client entered protected mode.
 ;--- inp: [sp+4] = client real-mode CS
@@ -1699,6 +1716,67 @@ int2fnotours:
 
 installdpmi endp
 
+;--- v2.0: set/reset debugger's exception vectors for 0D/0E. Since the
+;--- debugger very easily causes those exceptions, and the debuggee might
+;--- have set the vectors to its own routines, it's a must to restore them
+;--- to debugger code while the debugger is active.
+
+;--- setdbeexc0d0e: set debuggee's exception 0d/0e when running it
+
+setdbeexc0d0e proc
+	call ispm_dbe
+	jz done
+	mov si, offset dbeexc0d0e
+	mov bl, 0dh
+nextexc:
+	sizeprf	; lodsd
+	lodsw
+	sizeprf	; mov edx, eax
+	mov dx, ax
+	lodsw
+	mov cx, ax
+	jcxz @F
+	mov ax, 0203h
+	int 31h
+@@:
+	inc bl
+	cmp bl, 0eh
+	jbe nextexc
+done:
+	ret
+setdbeexc0d0e endp
+
+;--- set debugger's exception 0d/0e when reentering it
+;--- for int 31h, ax=203h, flag [bInDbg] must be 1 if CATCHINT31 is active.
+
+setdbgexc0d0e proc
+	call ispm_dbe
+	jz done
+	mov di, offset dbeexc0d0e
+	mov si, offset exc0d
+	mov bl, 0dh
+@@:
+	mov ax, 0202h
+	int 31h
+	sizeprf
+	mov ax, dx
+	sizeprf
+	stosw
+	mov ax, cx
+	stosw
+	sizeprf			; movzx edx, si
+	lea dx, [si]
+	mov cx, cs
+	mov ax, 0203h
+	int 31h
+	add si, exc01-exc00
+	inc bl
+	cmp bl, 0eh
+	jbe @B
+done:
+	ret
+setdbgexc0d0e endp
+
 	include trapd.inc
 
 if CATCHINT21
@@ -1722,8 +1800,12 @@ endif
 
 if CATCHINT31
 intr31pm proc
-	cmp ax,0203h	;set exception vector?
+	cmp cs:[bInDbg],0; v2.0 do nothing if debugger is active
+	jnz notinterested
+	cmp ax,0203h	; set exception vector?
 	jz is203
+	cmp ax,0212h	; v2.0: set exception vector v1.0?
+	jz is212
 notinterested:
 	cmp cs:[dpmi32], 0
 	jz @F
@@ -1731,6 +1813,7 @@ notinterested:
 @@:
 	jmp cs:[oldint31]
 is203:
+is212:
 	cmp bl,1
 	jz @F
 	cmp bl,3
@@ -1755,10 +1838,9 @@ execiret:
 
 i23pm:
 i24pm:
-	cmp cs:[dpmi32],0
+	cmp cs:[dpmi32],0	; clears C
 	jz @F
-	db 66h		; retd
-	retf 4
+	retd 4
 @@:
 	retf 2
 
@@ -4064,11 +4146,9 @@ endif
 cc1:			;<--- continue compare
 if INT2324
 	push ds
-	push es
 	push ss		;ds=DGROUP
 	pop ds
 	call dohack	;set debuggee's int 23/24
-	pop es
 	pop ds
 endif
 if ?PM
@@ -4098,11 +4178,9 @@ endif
 c_cont:
 if INT2324
 	push ds
-	push es
 	push ss
 	pop ds
 	call unhack	;set debugger's int 23/24
-	pop es
 	pop ds
 endif
 	sahf
@@ -4492,7 +4570,6 @@ if RING0
 endif
 	call prephack
 gateout_00: 		;<--- next int/exc
-	call dohack		;set debuggee's int 23/24
 	mov di,offset line_out
 	mov al,bl
 	call hexbyte
@@ -4529,36 +4606,40 @@ gate16:
 	jnz gateout_01
  else
 	.386
-	mov edx, [bp-4]
+	push bx
+	movzx ebx, bl
+	shl bx, 3
+	cmp bx, [bp-6]
+	ja di_done
+	add ebx, [bp-4]
 	push ds
 	mov ds, [wFlat]
-	movzx ebx, bl
-	mov ax, [edx+ebx*8+2]
+	mov ax, [ebx+2]
 	call hexword
 	mov al, ':'
 	stosb
-	mov ax, [edx+ebx*8+6]
+	mov ax, [ebx+6]
 	call hexword
-	mov ax, [edx+ebx*8+0]
+	mov ax, [ebx+0]
 	call hexword
 	mov eax, '=ta '
 	stosd
-	mov ax, [edx+ebx*8+4]
+	mov ax, [ebx+4]
 	call hexword
 	.8086
 	pop ds
+	pop bx
  endif
 else
 	jmp gaterm
 endif
 gate_exit:
-	call unhack	;set debugger's int 23/24
 	call putsline
 	inc bl
-	jz @F
+	jz di_done
 	dec si
 	jnz gateout_00
-@@:
+di_done:
 if RING0
 	mov sp, bp
 	pop bp
@@ -4573,6 +4654,7 @@ gatefailed:
 	jmp gate_exit
 endif
 gaterm:
+	call dohack		;set debuggee's int 23/24
 	mov cl,2
 	push bx
 	shl bx,cl
@@ -4583,6 +4665,7 @@ gaterm:
 	mov dx,[bx+0]
 	pop ds
 	pop bx
+	call unhack		;set debugger's int 23/24
 	call hexword
 	mov al,':'
 	stosb
@@ -5047,6 +5130,7 @@ endif
 
 dd2:
 	mov [lastcmd],offset lastddd
+	call prephack	;set up for faking int vectors 23 and 24
 dd_loop:
 ;	mov ax,[d_addr+4]
 	mov ax,bx
@@ -5086,8 +5170,6 @@ endif
 	add di,cx
 	add cx,cx
 	add di,cx
-
-	call prephack	;set up for faking int vectors 23 and 24
 
 if ?PM
 	and bp,bp
@@ -5205,7 +5287,7 @@ endif
 if ?PM
 	call IsWriteableBX
 endif
-	mov es,bx
+	mov es, bx
 if ?PM
 	cmp [bAddr32],0
 	jz @F
@@ -5229,8 +5311,9 @@ ee0a::
 	push ss			;restore es
 	pop es
 if INT2324
+;--- prehak1 is called after debuggee memory has been written (just e cmd)
 	mov di,offset run2324	;debuggee's int 23/24 values
-	call prehak1	;copy things back
+	call prehak1	;copy IVT 23/24 to di ( real-mode only )
 	call unhack		;set debugger's int 23/24
 endif
 	ret
@@ -5372,7 +5455,7 @@ ee13:
 	pop ax
 if INT2324
 	mov di,offset run2324	;debuggee's int 23/24
-	call prehak1	;copy things back
+	call prehak1	;copy IVT 23/24 to di ( real-mode only )
 	call unhack		;set debugger's int 23/24
 endif
 ;--- End the loop over bytes.
@@ -5437,7 +5520,7 @@ ff_01:
 if ?PM
 	call IsWriteableBX	; ensure BX is writeable
 endif
-	mov es,bx
+	mov es, bx
 if ?PM
 	cmp [bAddr32],0
 	jz fill_16
@@ -5689,6 +5772,7 @@ g_cmd proc
 gg_1::				; <--- called by p ( run an int/call/... - set 1 bp )
 	mov di,offset setbp1
 	call setbps
+	@dprintf "g_cmd: calling run"
 
 if ?DPMI
 	push [regs.msw]	;save old MSW
@@ -5698,7 +5782,7 @@ if ?DPMI
 	pop dx			;get old MSW
 endif
 
-;	@dprintf "g_cmd: run returned, [spadjust]=%X, [spsav]=%lX", [spadjust], dword ptr ds:[SPSAV]
+	@dprintf "g_cmd: run returned, [spadjust]=%X, [spsav]=%lX", [spadjust], dword ptr ds:[SPSAV]
 
 if ?PM
 	call getcsattr
@@ -5720,6 +5804,7 @@ if ?DPMI
 else
 	call resetbps
 endif
+	@dprintf "g_cmd: resetbps done"
 
 ;--- Finish up.  Check if it was one of _our_ breakpoints.
 ;--- if yes, decrement (E)IP 
@@ -6347,7 +6432,7 @@ loadfile proc
 ;--- number of bytes read.
 
 	call ensuredebuggeeloaded	;make sure a debuggee is loaded
-	mov es,[pspdbe]
+	mov es, [pspdbe]
 
 ;--- Check the size against available space.
 
@@ -6702,11 +6787,9 @@ m3:
 	lahf
 if INT2324
 	push ds
-	push es
 	push ss		;ds = dgroup
 	pop ds
 	call dohack	;set debuggee's int 23/24
-	pop es
 	pop ds
 endif
 if ?PM
@@ -7175,7 +7258,7 @@ endif ; ?PM
 
 getcseipbyte proc
 	push es
-	mov es,[regs.rCS]
+	mov es, [regs.rCS]
 	sizeprfX		;mov ebx,[regs.rIP]
 	mov bx,[regs.rIP]
 if ?PM
@@ -7210,7 +7293,7 @@ if ?PM
 	call IsWriteableBX	; checks descriptor only, can't detect r/o pages
 	jc scib_1
 endif
-	mov es,bx
+	mov es, bx
 	sizeprfX
 	mov bx, [regs.rIP]
 if ?PM
@@ -7971,7 +8054,7 @@ s_cont:
 	call dohack		;set debuggee's int 23/24
 
 sss1:				;<---- search next occurance
-	mov es,bx		;set the segment
+	mov es, bx		;set the segment
 	mov si,offset line_out	;si = address of search string
 	lodsb			;first character in al
 if ?PM
@@ -8308,7 +8391,7 @@ iswriteablecseip endp
 
 clear_tf_onstack proc
 	push es
-	mov es,[regs.rSS]
+	mov es, [regs.rSS]
 if ?DPMI
 	mov bx,es
 ;	call getseglimit      ; v1.29: segment limit doesn't matter,
@@ -8393,8 +8476,13 @@ if EXCCSIP
 	call hexword
 	mov al,':'
 	stosb
+ if EXCCSEIP
+	mov eax, [intexceip]
+	call hexdword
+ else
 	mov ax, [intexcip]
 	call hexword
+ endif
 	call putsline
 endif
 	jmp cmdloop
@@ -8567,7 +8655,7 @@ disp_diskresult proc
 	mov bx,ss		;restore segment registers
 	mov ds,bx
 	mov sp,[top_sp]
-	mov es,bx
+	mov es, bx
 	jnc ww3		;if no error
 	mov word ptr [szDrive+1], cx
 	mov word ptr [szDrive+3], dx
@@ -9199,39 +9287,39 @@ fmem2:
 	int 21h
 freemem endp
 
-if INT2324
+ if INT2324
 
-;--- this is called by "run"
-;--- set debuggee's INT 23/24.
-;--- don't use INT 21h here, DOS might be "in use".
-;--- registers may be modified - will soon be set to debuggee's
+;--- setint2324 is called by "run", to set debuggee's INT 23/24.
+;--- Don't use INT 21h here, DOS might be "in use".
+;--- Registers may be modified - will soon be set to debuggee's...
+;--- counterpart is getint2324().
 
 setint2324 proc
 	mov si,offset run2324
-if ?DPMI
+  if ?DPMI
 	call ispm_dbg
 	jnz si2324pm
-endif
+  endif
 	push es
 
 	xor di,di
-	mov es,di
+	mov es, di
 	mov di,23h*4
 	movsw
 	movsw
 	movsw
 	movsw
 
-if ?DPMI
+  if ?DPMI
 	call InDos
 	jnz @F
 	call hook2f
 @@:
-endif
+  endif
 
 	pop es
 	ret
-if ?DPMI
+  if ?DPMI
 si2324pm:
 	mov bx,0223h
 @@:
@@ -9245,11 +9333,12 @@ si2324pm:
 	dec bh
 	jnz @B
 	ret
-endif
+  endif
 setint2324 endp
 
-endif
-endif
+ endif	; INT2324
+
+endif	; LCMDFILE
 
 if RING0
 	.386
@@ -9292,6 +9381,9 @@ if RING0
 	mov al, 0
 	call srscratch	; restore scratch GDT entry
 endif
+	call seteq		;set CS:E/IP to '=' address
+
+;--- set debuggee context
 if VXCHG
 	mov al, 0       ;restore debuggee screen
 	call swapscreen
@@ -9299,14 +9391,15 @@ endif
 if ALTVID
 	call setscreen
 endif
-
-	call seteq		;set CS:E/IP to '=' address
 if LCMDFILE
 	mov bx,[pspdbe]
 	call setpsp		;set debuggee's PSP
  if INT2324
 	call setint2324	;set debuggee's int 23/24
  endif
+endif
+if ?DPMI
+	call setdbeexc0d0e
 endif
 
 	mov [run_sp],sp	;save stack position
@@ -9486,12 +9579,19 @@ ife (BOOTDBG or RING0)
 	call getpsp
 	mov  [pspdbe],bx
 endif
+
+	push ds
+	pop es
+	mov [bInDbg],1		; v2.0: must be set before setdbgexc0d0e
+
+;--- set debugger context
+
 if INT2324
 	call getint2324		;save debuggee's int 23/24, set debugger's int 23/24
 endif
-	push ds
-	pop es
-
+if ?DPMI
+	call setdbgexc0d0e
+endif
 if RING0
 	cmp [run_int], EXC0EMSG
 	jnz @F
@@ -9506,7 +9606,7 @@ if LCMDFILE
 endif
 	and byte ptr [regs.rFL+1],not 1	;clear single-step interrupt
 
-	mov [bInDbg],1
+;	mov [bInDbg],1		; v2.0: do this earlier ( see above )
 if INT22
 	cmp [run_int], INT22MSG
 	jnz @F
@@ -9871,8 +9971,7 @@ if INT2324
 ;--- the debuggee's registers have already been saved here.
 ;--- 1. get debuggee's interrupt vectors 23/24
 ;--- 2. set debugger's interrupt vectors 23/24
-;--- DS=debugger's segment
-;--- ES=undefined, will be modified
+;--- DS, ES = DGROUP
 ;--- Int 21h should not be used here!
 
 getint2324 proc
@@ -9882,8 +9981,6 @@ getint2324 proc
 	jnz getint2324pm
  endif
 
-	push ds
-	pop es
 	xor si,si
 	mov ds,si
 	mov si,23h*4
@@ -9896,47 +9993,38 @@ getint2324 proc
 	push es
 	pop ds
 	xor si,si
-	mov es,si
+	mov es, si
 	mov si,CCIV	;move from debugger's PSP to IVT
 	movsw
 	movsw
 	movsw
 	movsw
+	push ds
+	pop es
 	ret
  if ?DPMI
 getint2324pm:
-
-	.286
-	mov bx,0223h
+	mov bx, 0223h
+	mov si, offset dbg2324
 @@:
-	mov ax,204h
+	mov ax, 204h
 	int 31h
-	sizeprf	;mov [di+0],edx
-	mov [di+0],dx
-	mov [di+4],cx
-	add di,6
-	inc bl
-	dec bh
-	jnz @B
+	sizeprf		;mov [di+0],edx
+	mov [di+0], dx
+	mov [di+4], cx
 
-setdbgI2324::		;<--- entry
-	sizeprf		;pushad
-	pusha
 	sizeprf		;xor edx, edx
-	xor dx,dx
-	mov si,offset dbg2324
-	mov bx,0223h
-@@:
+	xor dx, dx
 	lodsw
-	mov dx,ax
-	mov cx,cs
-	mov ax,205h
+	mov dx, ax
+	mov cx, cs
+	mov ax, 205h
 	int 31h
+
+	add di, 6
 	inc bl
 	dec bh
 	jnz @B
-	sizeprf		;popad
-	popa
 	ret
 	.8086
 
@@ -9957,8 +10045,13 @@ endif
 ;   so that there is no possibility of these vectors being used when
 ;   the child process is not running.
 
+;--- for protected-mode, this whole procedure with prepare-do-undo is
+;--- pretty useless - hence all three procs are dummies while in pm. 
+;--- OTOH, it might be useful, to adjust the DI cmd in protected-mode
+;--- to return the debuggee's vectors for 23h/24h.
+
 ;   PREPHACK - Set up for interrupt vector substitution.
-;   save current value of Int 23/24 (debugger's) to save2324
+;   save current value of Int 23/24 (debugger's) to sav2324
 ;   Entry   es = cs
 
 prephack proc
@@ -9967,7 +10060,7 @@ if INT2324
 	jnz @F					;if hack status error
 	push di
 	mov di,offset sav2324	;debugger's Int2324
-	call prehak1
+	call prehak1			;copy IVT 23/24 to di (real-mode only)
 	pop di
 	ret
 @@:
@@ -9982,19 +10075,19 @@ endif
 
 prephack endp
 
-;--- get current int 23/24, store them at ES:DI
-;--- DI is either sav2324 (debugger's) or run2324 (debuggee's)
-
 if INT2324
 
 CONST segment
 ph_msg	db 'Error in sequence of calls to hack.',CR,LF,'$'
 CONST ends
 
+;--- get current int 23/24, store them at ES:DI
+;--- DI is either sav2324 (debugger's) or run2324 (debuggee's)
+
 prehak1 proc
  if ?DPMI
 	call ispm_dbg
-	jnz prehak_pm	;nothing to do
+	jnz _ret		;nothing to do
  endif
 	push ds
 	push si
@@ -10007,99 +10100,60 @@ prehak1 proc
 	movsw
 	pop si
 	pop ds
-prehak_pm:
+_ret:
 	ret
 prehak1 endp
 
 endif
 
 ;   DOHACK - set debuggee's int 23/24
-;   UNHACK - set debugger's int 23/24
-;       It's OK to do either of these twice in a row.
-;       In particular, the 's' command may do unhack twice in a row.
-;   Entry   ds = debugger's segment
-;   Exit    es = debugger's segment
+;   Entry   ds = dgroup
+
+;   DOHACK/UNHACK: It's OK to do either of these twice in a row.
+;   In particular, the 's' command may do unhack twice in a row.
 
 dohack proc
-ife INT2324
-	ret
-else
-	push si
+if INT2324
 	mov [hakstat],1
-	mov si,offset run2324	;debuggee's interrupt vectors
  if ?DPMI
-	call ispm_dbg
-	jnz dohack_pm
+	call ispm_dbg	; v2.0: dohack is dummy in protected-mode
+	jnz _ret
  endif
+	push si
+	mov si,offset run2324	;debuggee's interrupt vectors
 	jmp hak1
 
- if ?DPMI
-restdbgi2324:			;set debugger's int 23/24 in PM
-	call setdbgI2324
-	push ss
-	pop es
-	ret
- endif
 endif
 
-;--- set debugger's int 23/24, set ES to debugger segment
+;--- UNHACK - set debugger's int 23/24
+;--- Entry   ds = dgroup
 
 unhack::
-ife INT2324
-	push ss
-	pop es
-	ret
-else
+if INT2324
 	mov [hakstat],0
  if ?DPMI
 	call ispm_dbg
-	jnz restdbgi2324
+	jnz _ret		; v2.0: unhack is dummy now
  endif
 	push si
 	mov si,offset sav2324	;debugger's interrupt vectors
 hak1:
 	push di
+	push es
 	xor di,di
-	mov es,di
+	mov es, di
 	mov di,4*23h
 	movsw
 	movsw
 	movsw
 	movsw
+	pop es
 	pop di
 	pop si
-	push cs
-	pop es
-	ret
-
- if ?DPMI
-
-;--- set debuggee's int 23/24 pmode
-
-dohack_pm:
-	.286
-	push ss
-	pop es
-	sizeprf
-	pusha
-	mov bx,0223h
-@@:
-	sizeprf		;mov edx,[si+0+0]
-	mov dx,[si+0+0]
-	mov cx,[si+0+4]
-	mov ax,205h
-	int 31h
-	add si,6
-	inc bl
-	dec bh
-	jnz @B
-	sizeprf
-	popa
-	pop si
-	ret
-	.8086
- endif
+_ret:
 endif
+	ret
+
 dohack endp
 
 ;--- InDos: return NZ if DOS cannot be used
@@ -10357,7 +10411,7 @@ if ?PM
 	jc errorj7
 	call chkeol
 	mov edi,edx
-	mov es,bx
+	mov es, bx
 	pop esi
 	pop ds
 	ret
@@ -10371,7 +10425,7 @@ endif
 	jc errorj7		;if it wrapped around
 	call chkeol		;expect end of line
 	mov di,dx
-	mov es,bx
+	mov es, bx
 	pop si
 	pop ds
 	ret
@@ -13380,7 +13434,7 @@ createdummytask proc
 	stosw
 	call setup_adu			; setup default for a/d/u cmds
 	mov bx,[regs.rCS]	;bx:dx = where to load program
-	mov es,bx
+	mov es, bx
 	pop ax			;get size of memory block
 	mov dx,ax
 	add dx,bx
@@ -13413,14 +13467,18 @@ createdummytask proc
 	mov byte ptr es:[100h],0C3h	;place opcode for 'RET' at CS:IP
 @@:
 	mov [pspdbe],es
+
 	mov ax,es
 	dec ax
-	mov es,ax
+	mov es, ax
 	inc ax
 	mov es:[0001],ax
 	mov byte ptr es:[0008],0
 	push ds			;restore ES
 	pop es
+
+	call getint2324	; v2.0 init [run2324]
+
 	call setpspdbg	;set debugger's PSP
 ct_done:
 	ret
@@ -14193,7 +14251,7 @@ if ?DPMI
  endif
  if DOSEMU
 	mov ax,0F000h
-	mov es,ax
+	mov es, ax
 	mov di,0FFF5h
 	mov si,offset dDosEmuDate
 	mov cx,4

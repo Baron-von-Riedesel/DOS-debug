@@ -794,9 +794,14 @@
  Sometimes Q may not work to exit protected-mode, then one can try
  to forcably terminate the debuggee with the command variant QQ.
 
- If a second video adapter is available, DEBUGX may be told to display
+  If a second video adapter is available, DEBUGX may be told to display
  its output to that device via the /2 cmdline option. This gives DEBUGX
  the ability to debug graphics applications.
+
+  The HX PE loader DPMILD32 may set pages of code sections to readonly
+ if certain conditions are met. This reliably prevents DEBUGX from setting
+ its breakpoints. There should exist an option to make DPMILD32 not modify
+ those page attributes - see the docs supplied with DPMILD32 for details.
 
 
  9. Installing and Initializing DebugB

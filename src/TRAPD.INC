@@ -126,7 +126,15 @@ exc_xx:
 	cmp [bInDbg],0	;did the exception occur inside DEBUG?
 	jz isdebuggee32
 if EXCCSIP
+;--- it's assumed that an exception in DEBUG is always in 16-bit code,
+;--- but this isn't necessarily true, since the debuggee may have hooked
+;--- exceptions. Since v2.0, this is less probably, because DebugX will
+;--- always restore exception handlers 0D/0E on entry.
+ if EXCCSEIP
+	mov [intexceip], eax
+ else
 	mov [intexcip], ax
+ endif
 	mov [intexccs], bx
 endif
 	mov [ebp].EXFR32.rEIP,offset ue_intx
