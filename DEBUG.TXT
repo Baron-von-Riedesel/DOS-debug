@@ -858,7 +858,7 @@
  its tty i/o it calls out to the "loader" program, which is responsible to
  route those calls to the OS or handle them on its own.
  
- Once loaded, DebugR can debug programs running in both ring-0 and ring-3
+  Once loaded, DebugR can debug programs running in both ring-0 and ring-3
  protected-mode. Since it doesn't use DOS or BIOS, a few commands implemented
  in the standard Debug/X aren't available: DM, DX, L, N, Q, W, Xx. OTOH, DebugR
  has a few special commands:
@@ -874,14 +874,17 @@
 
  Vectors that can be trapped are vectors 0, 1, 3, 6, 0Dh and 0Eh.
 
- At the debugger prompt, when an address is to be parsed, the prefix '%' will
+  At the debugger prompt, when an address is to be parsed, the prefix '%' will
  tell the debugger to interpret the following offset as linear address.
+  For the a(ssemble and u(nassemble) commands, one may precede the segment part
+ of the range argument with a '$' to make DebugR interpret it as real-mode
+ address and translate the segment to a selector.
 
- Some GPFs occuring in non-privileged code are not handled by DebugR: CLI/STI
+  Some GPFs occuring in non-privileged code are not handled by DebugR: CLI/STI
  executed by programs with IOPL 0; trapped IN/INS/OUT/OUTS instructions; INT XX
  with DPL==0 in the IDT.
  
- DebugR understand commandline option -m, that will instruct it to assume that
+  DebugR understand commandline option -m, that will instruct it to assume that
  exception and IRQ vectors ( interrupts 08-0Fh ) do not overlap.
 
 

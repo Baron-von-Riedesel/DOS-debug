@@ -249,17 +249,21 @@ novm86:
 	pop ax		; get msg
 	pop ecx		; skip error code
   if EXCCSIP
-	pop ecx
-	pop edx
+	pop ecx		; eip
+	pop edx		; cs
   endif
 	mov ss, cs:[pspdbg]
 	mov sp, cs:[top_sp]
   if EXCCSIP
-	mov ss:[intexcip], cx 
-	mov ss:[intexccs], dx 
+   if EXCCSEIP
+	push ecx	; eip
+   else
+	push cx		; ip
+   endif
+	push dx		; cs
   endif
 	mov ah, 0
-	push ax
+	push ax		; msg
 	cmp al, EXC0EMSG
 	jnz ue_intx
 	call rendercr2

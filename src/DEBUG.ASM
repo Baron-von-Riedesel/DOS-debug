@@ -930,9 +930,13 @@ prompt1	db @CatStr(!',%PROMPT,!')
 else
 prompt1	db '-'	;main prompt
 endif
+
 prompt2	db ':'	;prompt for register value
-if ?DPMI
+
+if ?PM
+ if ?DPMI
 	db '!'
+ endif
 prompt3	db '#'	;protected-mode prompt
 endif
 
@@ -1386,19 +1390,6 @@ _DATA segment
 sdescsave dd 0,0
 _DATA ends
 
-endif
-
-if EXCCSIP
-_DATA segment
- if EXCCSEIP
-intexceip label dword
- endif
-intexcip  dw 0	;IP if internal exception
- if EXCCSEIP
-		dw 0
- endif
-intexccs  dw 0	;CS if internal exception
-_DATA ends
 endif
 
 if ?DPMI
@@ -1911,10 +1902,14 @@ if LCMDFILE
 @@:
 endif
 	mov cx,1
+ife ?PM
 	mov dx,offset prompt1
-if ?DPMI
+else
+ if ?DPMI
+	mov dx,offset prompt1
 	call ispm_dbe			; debuggee in rm/pm?
 	jz @F
+ endif
 	mov dx,offset prompt3
 @@:
 endif
@@ -5129,7 +5124,8 @@ endif
 ;--- E/SI=src offset, E/DX=end src
 
 dd2:
-	mov [lastcmd],offset lastddd
+;	mov [lastcmd],offset lastddd
+	mov [lastcmd],offset d_cmd
 	call prephack	;set up for faking int vectors 23 and 24
 dd_loop:
 ;	mov ax,[d_addr+4]
@@ -5782,7 +5778,9 @@ if ?DPMI
 	pop dx			;get old MSW
 endif
 
+ife RING0
 	@dprintf "g_cmd: run returned, [spadjust]=%X, [spsav]=%lX", [spadjust], dword ptr ds:[SPSAV]
+endif
 
 if ?PM
 	call getcsattr
@@ -7178,6 +7176,36 @@ error:
 
 IsWriteableBX endp
 
+ if RING0
+
+;--- hack to make 'u' work with a real-mode segment
+
+setscratchsel proc
+	pushad
+	mov bp, sp
+	sub sp, 6
+	sgdt [bp-6]
+	pop ax
+	pop eax
+	movzx ebx, [scratchsel]
+	add ebx, eax
+	movzx eax, word ptr [bp+5*4]	;get DX
+	shl eax, 4
+	push ds
+	mov ds, [wFlat]
+	mov word ptr [ebx+0], -1
+	mov word ptr [ebx+2], ax
+	shr eax, 16
+	mov byte ptr [ebx+4], al
+	mov word ptr [ebx+5], 9Bh
+	mov byte ptr [ebx+7], ah
+	pop ds
+	popad
+	mov bx, [scratchsel]
+	ret
+setscratchsel endp
+ endif
+
  if ?DPMI
 setrmsegm:
 	.286
@@ -8183,7 +8211,8 @@ t_cmd proc
 	cmp ax,'tm'
 	jz tm_cmd
 tt0:
-	mov [lastcmd], offset tt0
+;	mov [lastcmd], offset tt0
+	mov [lastcmd], offset t_cmd
 	call parse_pt	;process arguments
 @@:
 	push cx
@@ -8365,8 +8394,9 @@ endif
 
 trace1 endp
 
-;--- test if memory at CS:E/IP can be written to
+;--- test if memory at CS:E/IP can be written to.
 ;--- return C if not
+;--- used by T cmd.
 ;--- IN: CX=offset for (E)IP
 
 iswriteablecseip proc
@@ -8412,7 +8442,7 @@ ctos_1:
 clear_tf_onstack endp
 
 ;--- Print message about unexpected interrupt, dump registers, and end
-;--- command.  This code is also used by the G and P commands.
+;--- command.  This code is used by G, P and T cmds.
 
 ue_int:
 	mov dl, [run_int]
@@ -8427,17 +8457,21 @@ endif
 @@:
 	jmp cmdloop		;back to the start
 
+;--- "unexpected" exception in real-mode inside debugger
+
 ife RING0
  if CATCHINT07 or CATCHINT0C or CATCHINT0D
 ue_intxx:
   if EXCCSIP
-	pop cs:[intexcip]
-	pop cs:[intexccs]
+	pop cx
+	pop dx
   endif
 	push cs
 	pop ss
 	mov sp,cs:[top_sp]
-	push ax
+	push cx	; ip
+	push dx	; cs
+	push ax	; msg
 
 ;--- fall thru
 
@@ -8447,8 +8481,8 @@ endif
 
 if ?PM or CATCHINT07 or CATCHINT0C or CATCHINT0D
 
-;--- unexpected exception occured inside debugger
-;--- [SP] = msg
+;--- "unexpected" exception occured inside debugger
+;--- [SP] = msg, cs, [e]ip
 
 ue_intx proc
 	cld
@@ -8472,15 +8506,15 @@ if EXCCSIP
 	mov di,offset line_out
 	mov si,offset excloc	; "CS:IP="
 	call copystring
-	mov ax, [intexccs]
+	pop ax
 	call hexword
 	mov al,':'
 	stosb
  if EXCCSEIP
-	mov eax, [intexceip]
+	pop eax
 	call hexdword
  else
-	mov ax, [intexcip]
+	pop ax
 	call hexword
  endif
 	call putsline
@@ -8493,7 +8527,8 @@ endif
 ;--- U command - disassemble.
 
 u_cmd proc
-	mov [lastcmd],offset lastuu
+;	mov [lastcmd],offset lastuu
+	mov [lastcmd],offset u_cmd
 	cmp al,CR
 	je lastuu		;if no address was given
 	sizeprfX		;xor ecx, ecx
@@ -10685,8 +10720,9 @@ glfbx_2:
 getlenforbx endp
 
 ;   getrange - Get address range from input line.
-;    a range consists of either start and end address
-;    or a start address, a 'L' and a length.
+;    a range consists of:
+;       1. a start address: [segment:]start-offset
+;       2. an end-offset or a 'L' followed by a length.
 ;   Entry   AL  First character of range
 ;       SI  Address of next character
 ;       BX  Default segment to use
@@ -10801,6 +10837,23 @@ if ?PM
 	mov bx, cs:[wFlat]
 	jmp ga3
 @@:
+;--- hack for a/u cmds: allow to enter a real-mode address.
+;--- since the debugger cannot handle v86-mode exceptions yet,
+;--- this hack allows to at least (dis)assemble real-mode code parts.
+	cmp al, '$'
+	jnz normseg
+	cmp [lastcmd], offset u_cmd	; u cmd?
+	jz @F
+	cmp [errret], offset cmdloop; a cmd?
+	jz normseg
+@@:
+	lodsb
+	call getword
+	cmp al,':'
+	jnz errorj2
+	call setscratchsel	; set BX to scratchsel
+	jmp ga3
+normseg:
  endif
 endif
 	call getofsforbx

@@ -46,13 +46,16 @@ excxx_16:
 	cmp [bInDbg],0				;did the exception occur inside DEBUG?
 	jz isdebuggee16
 if EXCCSIP
-	mov [intexcip], ax
-	mov [intexccs], bx
+	mov si, bx
 endif
 	mov [bp].EXFR16.rIP,offset ue_intx
 	mov bx, [top_sp]
-	sub bx, 2
-	mov [bx], di
+	sub bx, 3*2
+	mov [bx+0], di
+if EXCCSIP
+	mov [bx+2], si
+	mov [bx+4], ax
+endif
 	mov [bp].EXFR16.rSP, bx
 	and byte ptr [bp].EXFR16.rFL+1, not 1	;reset TF
 	pop ax
@@ -128,19 +131,30 @@ exc_xx:
 if EXCCSIP
 ;--- it's assumed that an exception in DEBUG is always in 16-bit code,
 ;--- but this isn't necessarily true, since the debuggee may have hooked
-;--- exceptions. Since v2.0, this is less probably, because DebugX will
+;--- exceptions. Since v2.0, this is less probable, because DebugX will
 ;--- always restore exception handlers 0D/0E on entry.
- if EXCCSEIP
-	mov [intexceip], eax
- else
-	mov [intexcip], ax
- endif
-	mov [intexccs], bx
+	mov si, bx
 endif
 	mov [ebp].EXFR32.rEIP,offset ue_intx
 	movzx ebx,[top_sp]
+if EXCCSIP
+ if EXCCSEIP
+	sub bx, 2*2+4
+ else
+	sub bx, 3*2
+ endif
+else
 	sub bx, 2
-	mov [bx], di
+endif
+	mov [bx+0], di	; msg
+ if EXCCSIP
+	mov [bx+2], si	; cs
+  if EXCCSEIP
+	mov [bx+4], eax
+  else
+	mov [bx+4], ax
+  endif
+ endif
 	mov [ebp].EXFR32.rESP, ebx
 	and byte ptr [ebp].EXFR32.rEFL+1, not 1	;reset TF
 	pop ax

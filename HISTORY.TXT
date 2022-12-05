@@ -261,35 +261,37 @@
          intercepted protected-mode int 21h and refuses to quit.
        - another variant - DEBUGXV - may be created. It allows to flip video
          screen between debugger and debuggee.
-    2.00 [3 December 2022]
-       - ensure the correct video page is used when debugger has to display
-         something if the InDOS flag is set AND page swapping is active.
-       - DEBUGX: hook into protected-mode debug interface Int 41h and make
-         debugger visible there.
-       - DEBUGX: restore hooked protected-mode interrupts when client
-         terminates.
-       - DEBUGXV: break if SYSREQ is pressed.
+    2.00 [5 December 2022]
        - fixed: routine int21ah9 did use DOS, even if InDos flag was set.
-       - DEBUGX: added cmdline option /2.
-       - mktables.c: fixed, didn't generate a valid debugtbl.inc.
        - fixed: reading stdin from file wasn't fully MS Debug compatible.
-       - DI cmd may be activated for standard DEBUG.COM.
-       - added a "boot" variant of the debugger - it's supposed to be loaded
-         before DOS by boot loader code.
        - fixed: correctly handle tabs if output is via BIOS.
-       - added a ring0 variant of the debugger - DebugR.bin.
+       - fixed L/W cmds: error msg for read/write drive was crumbled since
+         v1.18.
+       - ensured the correct video page is used when debugger has to display
+         something if the InDOS flag is set AND page swapping is active.
+       - mktables.c fix: didn't generate a valid debugtbl.inc.
+       - added a "boot" variant of the debugger - DebugB.bin.
+       - added a ring0 (PL0) variant of the debugger - DebugR.bin.
+       - DI cmd may be activated for standard DEBUG.COM.
+       - DEBUGX fix: restore hooked protected-mode interrupts when client
+         terminates.
        - DEBUGX fix: c & s cmds finally work with 32-bit offsets.
        - DEBUGX fix, e cmd: generate a GPF if no data alias can be found for
          a code segment ( instead of silently skip the write ).
        - DEBUGX fix: disassembly of [CS:IP] in register dump may have caused
          a GPF in debugger if the memory address was beyond seg limit - 3.
-       - fix L/W cmds: error msg for read/write drive was crumbled since v1.18.
-       - DEBUGX fix, g cmd: if multiple breakpoints with different segment parts
-         were set in protected-mode, hazardous writes may have happened.
+       - DEBUGX fix, g cmd: if multiple breakpoints with different segment
+         parts were set in protected-mode, hazardous writes may have happened.
+       - DEBUGX fix, m cmd: '$' qualifier for the source address segment was
+         rejected.
+       - DEBUGX fix, c & m cmds: if both source and destination segment parts
+         were readonly, the scratch selector was used twice.
+       - DEBUGX: added cmdline option /2.
+       - DEBUGX: hook into protected-mode debug interface Int 41h and make
+         debugger visible there.
        - DEBUGX, a & e cmd: usage of scratch descriptor for readonly segments
          now hidden, so the displayed address' segment part isn't changed.
        - DEBUGX, a & d cmd: default segments are no longer automatically
          converted to selectors during initial switch to protected-mode.
-       - DEBUGX fix, m cmd: '$' qualifier for the source address segment was
-         rejected.
        - DEBUGX: exceptions 0dh/0eh are set/reset on debugger entry/exit.
+       - DEBUGXV: stop in debugger if SYSREQ is pressed.
