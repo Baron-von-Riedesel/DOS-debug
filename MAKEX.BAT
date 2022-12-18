@@ -24,3 +24,6 @@ jwasm -nologo -bin  -Fo build\DEBUGB.BIN -Fl=build\DEBUGB.LST -DBOOTDBG=1 src\de
 
 echo creating debugR.bin - a protected-mode "ring 0"  version
 jwasm -nologo -bin  -Fo build\DEBUGR.BIN -Fl=build\DEBUGR.LST -DRING0=1 src\debug.asm
+
+echo creating debugRL.bin - a protected-mode "ring 0"  version for long mode
+jwasm -nologo -bin  -Fo build\DEBUGRL.BIN -Fl=build\DEBUGRL.LST -DRING0=1 -DLMODE=1 src\debug.asm

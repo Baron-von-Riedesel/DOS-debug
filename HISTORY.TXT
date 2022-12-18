@@ -295,3 +295,5 @@
          converted to selectors during initial switch to protected-mode.
        - DEBUGX: exceptions 0dh/0eh are set/reset on debugger entry/exit.
        - DEBUGXV: stop in debugger if SYSREQ is pressed.
+    2.1 []
+       - added a ring0 (PL0) variant for long mode - DebugRL.bin.

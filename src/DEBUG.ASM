@@ -48,7 +48,7 @@
 ;       - add MMX instructions for A and U
 ;       - support loading *.HEX files
 
-VERSION    textequ <2.0>
+VERSION    textequ <2.1>
 
 	option casemap:none
 	option proc:private
@@ -98,10 +98,29 @@ USESDA     = 1		; use SDA to get/set PSP in real-mode
 INT22      = 1		; handle int 22h ( DOS program termination )
 INT2324    = 1		; switch int 23h & 24h for debugger/debuggee
 USEFP2STR  = 0		; 1=use FloatToStr()
+STK32      = 0		; always 0 (1 is for a flat stack if RING0==1)
+
+@VecAttr textequ <>
 
 if RING0
+ ifndef LMODE
+LMODE      equ 0	; 1=long mode version
+ endif
+
+ if LMODE
+DBGNAME    equ <"DEBUG64">
+DBGNAME2   equ <"Debug64">
+@VecAttr   textequ <lowword>
+;--- long mode needs a flat 32-bit stack inside debug!
+;--- that's because otherwise an exception inside the PL0 debugger 
+;--- would switch to 64-bit code with a 16-bit "flat" stack pointer.
+;--- todo: generally use a 32-bit flat stack for RING0
+STK32      = 1	; 1=32-bit flat stack
+ else
 DBGNAME    equ <"DEB386">
 DBGNAME2   equ <"Deb386">
+ endif
+
 ?PM        equ 1
 VDD        equ 0
 NOEXTENDER equ 0
@@ -275,24 +294,36 @@ endif
 AT_DEVICE  equ 80h  ; is device (not file)
 
 ifdef _DEBUG
-dprintf proto c text:ptr, args:vararg
-@dprintf macro text:req,args:vararg
+@dprintf macro text:req,a1,a2,a3,a4,a5,a6,a7,a8
 local sym
 CONST segment
-sym	db text,10,0
+sym db text,10,0
 CONST ends
 	pushcontext cpu
 	.386
-ifb <args>
-	invoke dprintf, offset sym
-else
-	invoke dprintf, offset sym, args
-endif
+	for x,<a8,a7,a6,a5,a4,a3,a2,a1>
+	 ifnb <x>
+	  push x
+	 endif
+	endm
+	push offset sym
+	call dprintf
 	popcontext cpu
 endm
 else
 @dprintf textequ <;>
 endif
+
+;--- restore segment register (DS/ES) to DGROUP
+
+@RestoreSeg macro segm
+if STK32
+	mov segm, cs:[pspdbg]
+else
+	push ss
+	pop segm
+endif
+endm
 
 ;--- mne macro, used for the assembler mnemonics table
 
@@ -404,6 +435,15 @@ endif
 
 _TEXT segment dword public 'CODE'
 _TEXT ends
+
+if RING0
+ if LMODE
+	.x64
+_TEXT64 segment use64 para public 'CODE'	; alignment para is needed for correct offsets
+_TEXT64 ends
+	.8086
+ endif
+endif
 
 CONST segment readonly word public 'DATA'
 CONST ends
@@ -539,9 +579,14 @@ CONST ends
 
 _DATA segment
 
+if STK32
+top_sp	dd 0		;debugger's SP top ( also end of debug's MCB )
+run_sp	dd 0		;debugger's SP when run() is executed
+else
 top_sp	dw 0		;debugger's SP top ( also end of debug's MCB )
-errret	dw 0		;return here if error
 run_sp	dw 0		;debugger's SP when run() is executed
+endif
+errret	dw 0		;return here if error
 ife (BOOTDBG or RING0)
 spadjust dw 40h 	;adjust sp by this amount for save
 pspdbe	dw 0		;debuggee's program segment prefix
@@ -658,10 +703,14 @@ if ?PM
 scratchsel dw 0		;scratch selector ( used by cmds a,c,e,f,g,m,p,t )
 bCSAttr db 0		;current code attribute (D bit).
 bAddr32 db 0		;Address attribute. if 1, hiword(edx) is valid
+bFlagsPM db 0		;bit 0: 0=no default set for A cmd 
  if RING0
 ;--- exceptions trapped ( modified by VC/VT )
 wTrappedExc dw (1 shl 0) or (1 shl 1) or (1 shl 3) or (CATCHINT06 shl 6) (CATCHINT07 shl 7) or \
 		(CATCHINT0C shl 12 ) or (CATCHINT0D shl 13) or (1 shl 14)
+  if STK32
+bChar   db 0
+  endif
  endif
 endif
 if LCMDFILE or WCMDFILE
@@ -753,6 +802,19 @@ endif
 if RING0
 int10vec df 0	; (int 10h) output routine
 int16vec df 0	; (int 16h) input routine
+ if LMODE
+jmpv64  label fword
+		dd 0
+		dw 8	; selector 8 is 64-bit ( Dos32cm )
+jmpv161 label fword
+		dw offset intrtnp1,0
+jmpv161s dw 0	; debugger cs
+jmpv162 label fword
+	o	dw offset intrtnp2,0
+jmpv162s dw 0	; debugger cs
+dwBase   dd 0	; linear address start _TEXT
+dwBase64 dd 0	; linear address start _TEXT64
+ endif
 endif
 
 ;--- Parameter block for exec call.
@@ -828,27 +890,27 @@ INTITEM ends
 ;--- must match order in intsave
 
 inttab label INTITEM
-	INTITEM <00h, intr00>
+	INTITEM <00h, @VecAttr intr00>
 if CATCHINT01
-	INTITEM <01h, intr01>
+	INTITEM <01h, @VecAttr intr01>
 endif
 if CATCHINT03
-	INTITEM <03h, intr03>
+	INTITEM <03h, @VecAttr intr03>
 endif
 if CATCHINT06
-	INTITEM <06h, intr06>
+	INTITEM <06h, @VecAttr intr06>
 endif
 if CATCHINT07
-	INTITEM <07h, intr07>
+	INTITEM <07h, @VecAttr intr07>
 endif
 if CATCHINT0C
-	INTITEM <0Ch, intr0C>
+	INTITEM <0Ch, @VecAttr intr0C>
 endif
 if CATCHINT0D
-	INTITEM <0Dh, intr0D>
+	INTITEM <0Dh, @VecAttr intr0D>
 endif
 if RING0
-	INTITEM <0Eh, intr0E>
+	INTITEM <0Eh, @VecAttr intr0E>
 endif
 if CATCHSYSREQ
 	INTITEM <SYSRQINT, intrsrq>
@@ -1349,7 +1411,12 @@ getr0stk proc
 	.386
 	mov eax, cs:[regs.r0Esp]
 	mov dx, cs:[regs.r0SS]
+ if LMODE
+	sub eax, 6*8
+	and al, 0F0h	; aligned to 16-byte
+ else
 	sub eax, 6*4	; adjust ESP ( ERRC, EIP, CS, EFL, ESP, SS )
+ endif
 	retd
 	.8086
 getr0stk endp
@@ -1359,10 +1426,15 @@ getr0stk endp
 ;--- ds=dgroup
 
 srscratch:
+	.386
+if STK32
+	sub esp, 6
+	sgdt [esp]
+else
 	mov bp, sp
 	sub sp, 6
-	.386
 	sgdt [bp-6]
+endif
 	movzx esi, [scratchsel]
 	pop ax
 	pop eax
@@ -1374,13 +1446,13 @@ srscratch:
 	jz @F
 	mov eax, [esi+0]
 	mov edx, [esi+4]
-	mov ss:[di+0], eax
-	mov ss:[di+4], edx
 	pop ds
+	mov [di+0], eax
+	mov [di+4], edx
 	ret
 @@:
-	mov eax,ss:[di+0]
-	mov edx,ss:[di+4]
+	mov eax,cs:[di+0]
+	mov edx,cs:[di+4]
 	mov [esi+0], eax
 	mov [esi+4], edx
 	pop ds
@@ -1409,7 +1481,6 @@ dpmi_size  dw 0	;size of raw mode save state buffer
 dpmi_rmsav dd 0	;raw mode save state real-mode
 dpmi_pmsav df 0	;raw mode save state protected-mode
 dpmi32     db 0	;bit 0: 0=16-bit client, 1=32-bit client
-bFlagsPM   db 0	;bit 0: 0=no default set for A cmd 
 bNoHook2F db 0	;1=int 2F, ax=1687h cannot be hooked (win3x/9x dos box, DosEmu?)
 
 ;--- pmints and pmvectors must match!
@@ -1891,7 +1962,11 @@ endif
 ;--- Begin main command loop.
 
 cmdloop proc
-	mov sp,[top_sp]	;restore stack (this must be first)
+if STK32
+	mov esp,[top_sp]	;restore stack (this must be first)
+else
+	mov sp,[top_sp]		;restore stack (this must be first)
+endif
 	mov [errret],offset cmdloop
 	push ds
 	pop es
@@ -1980,9 +2055,14 @@ if REDIRECT
 	jz nowait
 endif
 	push ds
+ife RING0
 	mov ax,40h		;0040h is a bimodal segment/selector
 	mov ds,ax
-	cmp byte ptr ds:[84h],30  ;rows >= 30?
+	cmp byte ptr ds:[84h],30	;rows >= 30?
+else
+	mov ds, [wFlat]
+	cmp byte ptr ds:[484h], 30
+endif
 	pop ds
 	jnc nowait
 	mov dx,offset presskey
@@ -2208,14 +2288,16 @@ aa00a:
 	sizeprfX		;mov [a_addr+0],edx
 	mov [a_addr+0],dx	;save the address
 	mov word ptr [a_addr+4],bx
-if ?DPMI
+if ?PM
 	jmp aa01
 aa01x:
+ if ?DPMI
 	call ispm_dbe
 	jz aa01
 ;--- v2.0: def seg for a is no longer automatically converted
 ;--- when pm is entered.
-	test [bFlagsPM], 1	; default for a cmd already set?
+ endif
+	test [bFlagsPM], 1	; default for a-cmd already set?
 	jnz aa01
 	mov ax, [regs.rCS]	; use current CS:IP as default
 	mov [a_addr+4], ax
@@ -2230,11 +2312,16 @@ endif
 ;--- Begin loop over input lines.
 
 aa01:
-if ?DPMI
+if ?PM
 	or [bFlagsPM], 1
 endif
 	@dprintf "a: a_addr=%X:%lX", word ptr [a_addr+4], dword ptr [a_addr+0]
-	mov sp,[top_sp]	;restore the stack (this implies no "ret")
+if STK32
+	.386
+	mov esp,[top_sp]	;restore the stack (this implies no "ret")
+else
+	mov sp,[top_sp]		;restore the stack (this implies no "ret")
+endif
 	mov di,offset line_out
 	mov ax,[a_addr+4]
 	call hexword
@@ -4186,8 +4273,7 @@ endif
 	push es
 
 ;--- set ES to dgroup ( needed for output routines )
-	push ss
-	pop es
+	@RestoreSeg es
 	sizeprfX	;mov ebx,edi
 	mov bx,di	;save [E]DI
 	mov di,offset line_out
@@ -4242,8 +4328,7 @@ endif
 
 	push ds
 ;--- set DS to dgroup
-	push ss
-	pop ds
+	@RestoreSeg ds
 	push bx
 	call putsline
 	pop di
@@ -4259,9 +4344,8 @@ endif
 	jcxz cc2
 	jmp cc1		;if not done yet
 cc2:
-	push ss		;restore segment registers
-	pop ds
-	push ss
+	@RestoreSeg ds
+	push ds
 	pop es
 	ret
 c_cmd endp
@@ -4329,13 +4413,20 @@ if RING0
 ;--- out: eax=base, dx=limit, C if error
 
 getlinearbase proc
+	.386
+if STK32
+	sub esp, 6
+	sgdt [esp]
+else
 	push bp
 	mov bp, sp
 	sub sp, 6
-	.386
 	sgdt [bp-6]
-	mov dx, [bp-6]
-	mov eax, [bp-4]	; get linear address GDT
+endif
+;	mov dx, [bp-6]
+;	mov eax, [bp-4]	; get linear address GDT
+	pop dx
+	pop eax
 	test bl, 4
 	jz exit
 	sldt dx
@@ -4356,8 +4447,9 @@ getlinearbase proc
 	pop ds
 	clc
 exit:
-	mov sp, bp
+ife STK32
 	pop bp
+endif
 	ret
 getlinearbase endp
 
@@ -4405,8 +4497,12 @@ dgl_cmd proc
 	inc dx
 @@:
 	mov si, dx		;save count
-	mov bp, sp
 if RING0
+ if STK32
+	mov ebp, esp
+ else
+	mov bp, sp
+ endif
 	call getlinearbase		; get base,limit
 	.386
 	push eax
@@ -4423,11 +4519,19 @@ if RING0
 @@:
 	mov si, offset szgdtr
 	call copystring
+ if STK32
+	mov ax,[ebp-6]
+ else
 	mov ax,[bp-6]
+ endif
 	call hexword
 	mov al,'.'
 	stosb
+ if STK32
+	mov eax,[ebp-4]
+ else
 	mov eax,[bp-4]
+ endif
 	call hexdword
 ldtrdone:
 	call putsline
@@ -4462,12 +4566,20 @@ nextdesc:
 	jc @F
  elseif RING0
 	.386
+  if STK32
+	cmp bx, [ebp-6]	;beyond limit?
+  else
 	cmp bx, [bp-6]	;beyond limit?
+  endif
 	jae nogdt
 	push ds
 	movzx eax, bx
 	and al, 0F8h
+  if STK32
+	add eax, [ebp-4]
+  else
 	add eax, [bp-4]
+  endif
 	mov ds, [wFlat]
 	mov dx, [eax+2]
 	mov cl, [eax+4]
@@ -4514,7 +4626,14 @@ desc_out:
 	dec si
 	jnz nextdesc
 done:
+if RING0
+ if STK32
+	.386
+	mov esp, ebp
+ else
 	mov sp, bp
+ endif
+endif
 	ret
 dgl_cmd endp
 
@@ -4546,20 +4665,35 @@ di_cmd proc
 @@:
 	mov si,dx		;save count
 if RING0
+ if STK32
+	push ebp
+	mov ebp, esp
+	sub esp, 6
+	sidt [ebp-6]
+ else
 	push bp
 	mov bp, sp
 	sub sp, 6
 	sidt [bp-6]
+ endif
 	push si
 	mov si, offset szidtr
 	call copystring
 	pop si
+ if STK32
+	mov ax,[ebp-6]
+ else
 	mov ax,[bp-6]
+ endif
 	call hexword
 	mov al,'.'
 	stosb
 	.386
+ if STK32
+	mov eax,[ebp-4]
+ else
 	mov eax,[bp-4]
+ endif
 	call hexdword
 	call putsline
 endif
@@ -4603,10 +4737,22 @@ gate16:
 	.386
 	push bx
 	movzx ebx, bl
+ if LMODE
+	shl bx, 4
+ else
 	shl bx, 3
+ endif
+ if STK32
+	cmp bx, [ebp-6]
+ else
 	cmp bx, [bp-6]
+ endif
 	ja di_done
+ if STK32
+	add ebx, [ebp-4]
+ else
 	add ebx, [bp-4]
+ endif
 	push ds
 	mov ds, [wFlat]
 	mov ax, [ebx+2]
@@ -4636,8 +4782,14 @@ gate_exit:
 	jnz gateout_00
 di_done:
 if RING0
+ if STK32
+	.386
+	mov esp, ebp
+	pop ebp
+ else
 	mov sp, bp
 	pop bp
+ endif
 endif
 	ret
 if ?DPMI
@@ -5041,16 +5193,26 @@ endif
 
 d_cmd proc
 	cmp al,CR
-	jne dd1		;if an argument was given
-lastddd:
-	mov bx,[d_addr+4]
-	sizeprfX	;mov edx,[d_addr]
-	mov dx,[d_addr]	;compute range of 80h or until end of segment
-	sizeprfX	;mov esi,edx
+	jne dd1		; if an argument was given
+	sizeprfX	; mov edx,[d_addr]
+	mov dx,[d_addr]
+	mov bx, [d_addr+4]
+if RING0
+	verr bx
+	jz @F
+	mov bx, [regs.rDS]
+	xor edx, edx
+@@:
+endif
+	sizeprfX	; mov esi,edx
 	mov si,dx
-	add dx,7fh
-	jnc dd2		;if no overflow
-	mov dx,0ffffh
+
+;--- ?PM: we don't know yet if limit is > 64kB
+;--- so we stop at 64 kB in any case
+
+	add dx,80h-1; compute range of 80h or until end of segment
+	jnc dd2
+	or dx, -1
 	jmp dd2
 
 dd1:
@@ -5111,33 +5273,35 @@ endif
 	call getrange	;get address range into bx:(e)dx ... bx:(e)cx
 	call chkeol		;expect end of line here
 
-	mov [d_addr+4],bx	;save segment (offset is saved later)
-	sizeprfX	;mov esi,edx
+	sizeprfX	; mov esi,edx
 	mov si,dx
-	sizeprfX	;mov edx,ecx (14.2.2021)
-	mov dx,cx		;dx = end address
+	sizeprfX	; mov edx,ecx (14.2.2021)
+	mov dx,cx	; dx = end address
     
-;	jmp dd2_1
-
 ;--- Parsing is done.  Print first/next line.
 ;--- DI=output pos, BX=segment/selector
 ;--- E/SI=src offset, E/DX=end src
 
 dd2:
-;	mov [lastcmd],offset lastddd
-	mov [lastcmd],offset d_cmd
-	call prephack	;set up for faking int vectors 23 and 24
-dd_loop:
-;	mov ax,[d_addr+4]
-	mov ax,bx
-	call hexword
-	mov al,':'
-	stosb
+	mov [lastcmd], offset d_cmd
+	mov [d_addr+4], bx	;save segment (offset is saved later)
 if ?PM
 	xor bp,bp
 	call getseglimit	;Z flag set if segment limit is <= 64 kB
 	jz @F
 	inc bp
+@@:
+endif
+	@dprintf "d: bx:esi=%X:%lX edx=%lx", bx, esi, edx
+	call prephack	;set up for faking int vectors 23 and 24
+dd_loop:
+	mov ax,[d_addr+4]
+	call hexword
+	mov al,':'
+	stosb
+if ?PM
+	and bp, bp
+	jz @F
 	.386
 	shld eax,esi,16		;AX=HiWord(esi)
 	.8086
@@ -5218,7 +5382,7 @@ dd8:
 	inc bx
 	loop dd6
 
-	push ss		;restore ds
+	push es		;restore ds
 	pop ds
 
 	sizeprfX	;mov [d_addr],esi
@@ -5229,7 +5393,6 @@ dd8:
 	call putsline
 	pop dx
 	mov di,offset line_out	;set up for next time
-	mov bx,[d_addr+4]
 if ?PM
 	and bp,bp
 	jz @F
@@ -5302,9 +5465,8 @@ endif
 ;--- This code is also used by the 'm' command.
 
 ee0a::
-	push ss			;restore ds
-	pop ds
-	push ss			;restore es
+	@RestoreSeg ds
+	push ds			;restore es
 	pop es
 if INT2324
 ;--- prehak1 is called after debuggee memory has been written (just e cmd)
@@ -5584,7 +5746,7 @@ onebyte16:
 	dec cx
 	rep stosb
 exit:
-	push ss		;restore es
+	push ds
 	pop es
 	ret
 f_cmd endp
@@ -6794,10 +6956,9 @@ if ?PM
 ;--- v2.0: ensure ES is writeable ( parsecm does that no longer )
 	mov bx, es
 	push ds
-	push ss
-	pop ds
+	@RestoreSeg ds
  if ?DPMI
-	push ss
+	push ds
 	pop es
  endif
 	call IsWriteableBX	; expects DS(,ES)=dgroup
@@ -7139,9 +7300,14 @@ is_rm:
 	cmp bx, dx
 	ja error
 	mov esi, eax
+  if STK32
+	sub esp, 6
+	sgdt [esp]
+  else
 	mov bp, sp
 	sub sp, 6
 	sgdt [bp-6]
+  endif
 	pop di
 	pop edi
 	and bl, 0F8h
@@ -7182,14 +7348,23 @@ IsWriteableBX endp
 
 setscratchsel proc
 	pushad
+  if STK32
+	sub esp, 6
+	sgdt [esp]
+  else
 	mov bp, sp
 	sub sp, 6
 	sgdt [bp-6]
+  endif
 	pop ax
 	pop eax
 	movzx ebx, [scratchsel]
 	add ebx, eax
+  if STK32
+	movzx eax, word ptr [ebp+5*4]	;get DX
+  else
 	movzx eax, word ptr [bp+5*4]	;get DX
+  endif
 	shl eax, 4
 	push ds
 	mov ds, [wFlat]
@@ -8331,21 +8506,33 @@ if ?PM
 	sizeprf		;mov  esi,edx
 	mov  si,dx
  elseif RING0
+	.386
+  if STK32
+	sub esp, 6
+	sidt [esp]
+  else
 	push bp
 	mov bp, sp
 	sub sp, 6
-	.386
 	sidt [bp-6]
+  endif
 	pop ax
 	pop eax
+  ife STK32
 	pop bp
+  endif
 	push ds
 	mov ds, [wFlat]
 	movzx ebx, bl
-	mov si, ds:[ebx*8+eax+6]
+  if LMODE
+	shl bx, 4
+  else
+	shl bx, 3
+  endif
+	mov si, ds:[ebx+eax+6]
 	shl esi, 16
-	mov si, ds:[ebx*8+eax+0]
-	mov bx, ds:[ebx*8+eax+2]
+	mov si, ds:[ebx+eax+0]
+	mov bx, ds:[ebx+eax+2]
 	pop ds
  endif
 	call doproceed1	; expects bp to be set at BX:(E)SI
@@ -8486,8 +8673,7 @@ if ?PM or CATCHINT07 or CATCHINT0C or CATCHINT0D
 
 ue_intx proc
 	cld
-	push ss
-	pop ds
+	@RestoreSeg ds
 	call unhack		;set debugger's int 23/24
 if ?PM
 	test [disflags], DIS_I_MEMACC
@@ -8501,7 +8687,7 @@ endif
 	add dx, offset int0msg
 	call int21ah9	;print string
 if EXCCSIP
-	push ss
+	push ds
 	pop es
 	mov di,offset line_out
 	mov si,offset excloc	; "CS:IP="
@@ -9437,7 +9623,11 @@ if ?DPMI
 	call setdbeexc0d0e
 endif
 
-	mov [run_sp],sp	;save stack position
+if STK32
+	mov [run_sp],esp	;save stack position
+else
+	mov [run_sp],sp		;save stack position
+endif
 ife (DRIVER or BOOTDBG or RING0)
  if 1
 	; 16.2.2021: check if saved SS is debugger's SS. If no, don't adjust saved SP.
@@ -9453,6 +9643,10 @@ ife (DRIVER or BOOTDBG or RING0)
 endif
 ife RING0
 	cli
+endif
+if STK32
+	push ds
+	pop ss
 endif
 	mov sp,offset regs
 ife RING0
@@ -9486,13 +9680,31 @@ ife RING0
 	add sp,2*2	; skip places for FS,GS
 else
 	.386
+if 0;LMODE
+;--- FS and GS might be "unset" ( still containing real-mode values )
+;--- so check if value has changed and if not, don't write the regs
+	mov ax, fs
+	cmp ax, [regs.rFS]
+	jz @F
+	mov fs, [regs.rFS]
+@@:
+	mov ax, gs
+	cmp ax, [regs.rGS]
+	jz @F
+	mov gs, [regs.rGS]
+@@:
+endif
 	lar ax, [regs.rCS]
 	and ah, 60h
 	popad
 	pop es
 	pop es
+if 0;LMODE
+	lea sp,[esp+2+2]
+else
 	pop fs
 	pop gs
+endif
 	jz @F
 	lss esp, [regs.r0SSEsp]		; debuggee runs in non-privileged mode, so
 	push dword ptr [regs.rSS]	; create a full IRETD stack frame with SS:ESP
@@ -9531,7 +9743,11 @@ run endp
 ;--- debugger entries
 
 if RING0
+ if LMODE
+	include trappl.inc
+ else
 	include trapp.inc
+ endif
 else
 	include trapr.inc
 endif
@@ -9581,11 +9797,19 @@ endif
 	push di
 	push di
 intrtn1::		;<--- entry for int 22
+if RING0
+	.386
+ if STK32
+	mov ss, cs:[wFlat]
+	mov esp, cs:[run_sp]	;restore running stack
+ else
+	movzx esp,cs:[run_sp]	;restore running stack
+ endif
+else
 	mov sp,cs:[run_sp]	;restore running stack
+endif
 	cld
-	push ss
-	pop ds
-
+	@RestoreSeg ds
 ife RING0
 	sti					;interrupts back on
 endif
@@ -10222,7 +10446,12 @@ stdoutal:
 	push dx
 	push ax
 	mov cx,1
+if STK32
+	mov [bChar], al
+	mov dx, offset bChar
+else
 	mov dx,sp
+endif
 	call stdout
 	pop ax
 	pop dx
@@ -12723,8 +12952,7 @@ endif
 	call hexbyte
 	dec bx
 	jnz @B
-	push ss
-	pop ds
+	@RestoreSeg ds
 	mov [u_addr],si
 	ret
 if ?PM
@@ -12736,8 +12964,7 @@ dissb_1:
 	call hexbyte
 	dec bx
 	jnz @B
-	push ss
-	pop ds
+	@RestoreSeg ds
 	mov dword ptr [u_addr],esi
 	ret
     .8086
@@ -13606,6 +13833,8 @@ hook2f endp
 
 endif
 
+endoftext16 label byte
+
 _TEXT ends
 
 _DATA segment
@@ -13634,19 +13863,20 @@ initcont:
 if DRIVER or RING0 or BOOTDBG
 	sub bx, 2
 	mov [bx], offset ue_int	; make debug display "unexpected interrupt"
+ if STK32
+	.386
+	movzx ebx, bx
+	add ebx, [dwBase]
+	mov [run_sp], ebx
+ else
 	mov [run_sp], bx
+ endif
  if BOOTDBG
 	mov cx, ax
 	mov es, [pspdbg]		; copy debugger beyond conv. memory
 	xor di, di
 	xor si, si
 	rep movsb
-  ifdef _DEBUG
-	push bp
-	mov bp, sp
-;	@dprintf "[sp]=%X %X %X %X", [bp+2], [bp+4], [bp+6], [bp+8]
-	pop bp
-  endif
 	pop es
 	pop ds
 	retf
@@ -13808,8 +14038,10 @@ if RING0
 	mov [wFlat], cx
 	shr eax, 16
 	mov [scratchsel], ax
-	mov word ptr [d_addr+4], cx
-	mov word ptr [a_addr+4], cx
+ if LMODE
+	mov [jmpv161s], cs
+	mov [jmpv162s], cs
+ endif
 	.386
 	mov ax, [esp+2*2+4]	; get caller's CS
 	mov dword ptr [int10vec+0], ebx
@@ -13821,14 +14053,54 @@ if RING0
 	mov [regs.r0Esp], esp
 	mov [regs.r0SS], ss
 
+;--- invalidate a & d segment part ( will then be reinitialized )
+	xor ax, ax
+	mov [a_addr+4], ax
+	mov [d_addr+4], ax
+
 ;--- set stack to dgroup
 	mov ax, ds
 	mov ss, ax
+  if STK32
+	movzx esp, bp
+  else
 	mov sp, bp
+  endif
 	push es
 	push edi	; addr IDT now at [bp-6]
-	@dprintf "initcode: cs=%X, ds=%X, flat=%X, sp=%X:%X, es:edi=%X:%lX", cs, ax, cx, bp, es, edi
+	@dprintf "initcode: cs=%X, ds=%X, flat=%X, sp=%X, es:edi=%X:%lX, esi=%lX", cs, ax, cx, bp, es, edi, esi
 	mov es, ax
+
+if LMODE
+
+;--- get [dwBase64] - linear address of _TEXT64
+;--- depends on how _TEXT64 is aligned!
+;--- currently align 16
+
+TEXT64ALIGN equ 16
+
+	mov edi, offset endoftext16
+	add di, TEXT64ALIGN-1
+	and di, not TEXT64ALIGN-1
+	mov ebx, cs
+	call getlinearbase
+	add ebx, eax
+	push ds
+	mov ds, [wFlat]
+	mov al, ds:[ebx+4]
+	mov ah, ds:[ebx+7]
+	shl eax, 16
+	mov ax, ds:[ebx+2]
+	pop ds
+ if STK32
+	mov [dwBase], eax
+	@dprintf "initcode: dwBase=%lX", eax
+ endif
+	add eax, edi
+	mov [dwBase64], eax
+	@dprintf "initcode: dwBase64=%lX, di=%X", eax, di
+	mov ax, ds
+endif
 
 elseif DRIVER
 	mov ax, cs
@@ -14456,6 +14728,9 @@ if RING0
 	cmp al, -1
 	jz skipint
 	movzx edx, al
+ if LMODE
+	shl edx, 1	; in long mode, vector size is 16
+ endif
 	mov ax, es:[ebx+edx*8+0]
 	mov [di+0], ax
 	mov ax, es:[ebx+edx*8+6]
@@ -14480,9 +14755,17 @@ else
 endif
 	mov ax, [si]	;get address
 if RING0
+ if LMODE
+	movzx eax, ax
+	add eax, [dwBase64]
+	mov es:[ebx+edx*8+0], ax
+	mov word ptr es:[ebx+edx*8+2], 8	; selector 8 is 64-bit ( Dos32cm )
+	shr eax, 16
+ else
 	mov es:[ebx+edx*8+0], ax
 	mov es:[ebx+edx*8+2], cs
 	xor ax, ax
+ endif
 	mov es:[ebx+edx*8+6], ax
 skipint:
 elseif BOOTDBG
@@ -14502,8 +14785,14 @@ endif
 
 	mov ax, offset real_end + STACKSIZ + 15
 	and al, not 15		; debug's top of stack
-	mov [top_sp], ax
 	mov bx, ax
+if STK32
+	add eax, [dwBase]
+	mov [top_sp], eax
+	@dprintf "top_sp=%lX", eax
+else
+	mov [top_sp], ax
+endif
 	jmp initcont
 
 initcode endp

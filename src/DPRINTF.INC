@@ -30,13 +30,17 @@ handle_char endp
 
 ;--- ltob(long n, char * s, int base);
 ;--- convert long to string
-;--- outb is expected to be onto stack
+;--- eax=number
+;--- bx=buffer - is expected to be onto stack
+;--- cx=base
 
-ltob PROC stdcall uses edi number:dword, outb:word, base:word
+;ltob PROC stdcall uses edi number:dword, outb:word, base:word
+ltob PROC 
 
+	push edi
+	push edx
+	movzx edi, cx
 	mov ch,0
-	movzx edi, base
-	mov eax, number
 	cmp di,-10
 	jne @F
 	mov di,10
@@ -45,7 +49,6 @@ ltob PROC stdcall uses edi number:dword, outb:word, base:word
 	neg eax
 	mov ch,'-'
 @@:
-	mov bx,outb
 	add bx,10
 	mov BYTE PTR ss:[bx],0
 	dec bx
@@ -68,27 +71,47 @@ ltob PROC stdcall uses edi number:dword, outb:word, base:word
 @@:
 	inc bx
 	mov ax,bx
+	pop edx
+	pop edi
 	ret
 
 ltob ENDP
 
 ;--- ss doesn't need to be dgroup
+;--- v2.1: ss may be 32-bit!
 
-dprintf PROC c uses si di eax bx cx edx fmt:ptr, args:VARARG
+dprintf PROC
 
+d_sp   equ word ptr [bp+16+2]
+d_ret  equ word ptr [bp+16+2+2]
+d_fmt  equ word ptr [bp+16+2+2+2]
+d_args equ word ptr [bp+16+2+2+2+2]
+
+if 0
 local size_:word
 local flag:byte
 local longarg:byte
 local fill:byte
 local szTmp[12]:byte
+else
+d_size    equ <[bp-2]>
+d_flag    equ <byte ptr [bp-3]>
+d_longarg equ <byte ptr [bp-4]>
+d_fill    equ <byte ptr [bp-5]>
+d_szTmp   equ <[bp-18]>
+endif
 
+	push sp
 	pushf
+	pusha
+	mov bp, sp
+	sub sp, 18
 	push ds
 	push cs
 	pop ds
-	lea di,[fmt+2]
+	lea di, d_args
 @@L335:
-	mov si,[fmt]
+	mov si, d_fmt
 nextchar:
 	lodsb [si]
 	or al,al
@@ -98,14 +121,21 @@ nextchar:
 	call handle_char
 	jmp nextchar
 done:
+	sub di, 2
+	mov ax, d_ret
+	mov ss:[di], ax
+	mov d_sp, di
 	pop ds
+	mov sp, bp
+	popa
 	popf
+	pop sp
 	ret
 
 formatitem:
 	push @@L335
 	xor dx,dx
-	mov [longarg],dl
+	mov d_longarg,dl
 	mov bl,1
 	mov cl,' '
 	cmp BYTE PTR [si],'-'
@@ -113,13 +143,13 @@ formatitem:
 	dec bx
 	inc si
 @@:
-	mov [flag],bl
+	mov d_flag, bl
 	cmp BYTE PTR [si],'0'
 	jne @F
 	mov cl,'0'
 	inc si
 @@:
-	mov [fill],cl
+	mov d_fill,cl
 	mov bx,dx
 
 	.while byte ptr [si] >= '0' && byte ptr [si] <= '9'
@@ -131,14 +161,14 @@ formatitem:
 		mov bx,ax
 	.endw
 
-	mov [size_],bx
+	mov d_size, bx
 	cmp BYTE PTR [si],'l'
 	jne @F
-	mov [longarg],1
+	mov d_longarg,1
 	inc si
 @@:
 	lodsb
-	mov [fmt],si
+	mov d_fmt,si
 	cmp al,'x'
 	je handle_x
 	cmp al,'X'
@@ -165,29 +195,33 @@ handle_c:
 	retn
 
 handle_x:
-	mov bx,16
+	mov cx,16
 	jmp @@lprt262
 handle_d:
 handle_i:
-	mov bx,-10
+	mov cx,-10
 	jmp @@lprt262
 handle_u:
-	mov bx,10
+	mov cx,10
 @@lprt262:
 	mov ax,ss:[di]
 	add di,2
 	sub dx,dx
-	cmp bx,0		;signed or unsigned?
+	cmp cx,0		;signed or unsigned?
 	jge @F
 	cwd
 @@:
-	cmp [longarg],0
+	cmp d_longarg,0
 	je @F
 	mov dx,ss:[di]
 	add di,2
 @@:
-	lea cx,[szTmp]
-	invoke ltob, dx::ax, cx, bx
+	lea bx, d_szTmp
+	push dx
+	push ax
+	pop eax
+;	invoke ltob, eax, bx, cx
+	call ltob
 	mov si,ax
 	push ds
 	push ss
@@ -202,16 +236,16 @@ handle_s:
 
 output_string:	;display string at ds:si
 	mov ax,si
-	mov bx,size_
+	mov bx,d_size
 	.while byte ptr [si]
 		inc si
 	.endw
 	sub si,ax
 	xchg ax,si
 	sub bx,ax
-	.if flag == 1
+	.if d_flag == 1
 		.while sword ptr bx > 0
-			mov al,[fill]
+			mov al, d_fill
 			call handle_char
 			dec bx
 		.endw
@@ -223,7 +257,7 @@ output_string:	;display string at ds:si
 	.endw
 
 	.while sword ptr bx > 0
-		mov al,[fill]
+		mov al, d_fill
 		call handle_char
 		dec bx
 	.endw
