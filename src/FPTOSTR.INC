@@ -13,73 +13,37 @@ MAXNUM equ 16
 
 CONST segment
 
-ten		dq 10.0
-ten16	dq 1.0e16
+;ten	dq 10.0
+;ten16	dq 1.0e16
 ;rounder	dq 5.0e10
 
-ten_1	dt 1.0e1	;10.0
-	dt 1.0e2		;100.0
-	dt 1.0e3		;1,000.0
-	dt 1.0e4		;10,000.0
-	dt 1.0e5		;100,000.0
-	dt 1.0e6		;1,000,000.0
-	dt 1.0e7		;10,000,000.0
-	dt 1.0e8		;100,000,000.0
-	dt 1.0e9		;1,000,000,000.0
-	dt 1.0e10		;10,000,000,000.0
-	dt 1.0e11		;100,000,000,000.0
-	dt 1.0e12		;1,000,000,000,000.0
-	dt 1.0e13		;10,000,000,000,000.0
-	dt 1.0e14		;100,000,000,000,000.0
-	dt 1.0e15		;1,000,000,000,000,000.0
+iexp = 1
 
-ten_16	dt 1.0e16
-	dt 1.0e32
-	dt 1.0e48
-	dt 1.0e64
-	dt 1.0e80
-	dt 1.0e96
-	dt 1.0e112
-	dt 1.0e128
-	dt 1.0e144
-	dt 1.0e160
-	dt 1.0e176
-	dt 1.0e192
-	dt 1.0e208
-	dt 1.0e224
-	dt 1.0e240
+ten_1 label tbyte
+repeat 15
+	dt @CatStr(1.0e,%iexp)
+	iexp = iexp + 1
+endm
 
-ten_256	dt 1.0e256
+ten_16 label tbyte
+repeat 15
+	dt @CatStr(1.0e,%iexp)
+	iexp = iexp + 16
+endm
 
-; The remaining exponents are only necessary for 10-byte doubles.
+;--- just the first exponent is necessary for 8-byte doubles
 
-	dt 1.0e512
-	dt 1.0e768
-	dt 1.0e1024
-	dt 1.0e1280
-	dt 1.0e1536
-	dt 1.0e1792
-	dt 1.0e2048
-	dt 1.0e2304
-	dt 1.0e2560
-	dt 1.0e2816
-	dt 1.0e3072
-	dt 1.0e3328
-	dt 1.0e3584
-	dt 1.0e4096
-	dt 1.0e4352
-	dt 1.0e4608
-	dt 1.0e4864
+ten_256 label tbyte
+repeat 19
+	dt @CatStr(1.0e,%iexp)
+	iexp = iexp + 256
+endm
 
 CONST ends
 
-	.8086
-
-_TEXT segment
-
 ;--- called by FloatToStr
-;--- in: ax=xxx
-;--- modifies: bx, dx, cl
+;--- in: ax=exponent
+;--- modifies: bx, cl
 
 PowerOf10 proc uses si
 
@@ -97,8 +61,8 @@ PowerOf10 proc uses si
 @@:
 	mov bl, al
 	mov cl, 4
-	shr bl, cl
-	and bl, 0fh		;bits 4-7
+	shr bl, cl		;bits 4-7
+;	and bl, 0fh
 	je @F
 	mov si,offset ten_16
 	call mul10
@@ -119,10 +83,9 @@ PowerOf10 proc uses si
 	ret
 mul10:
 	dec bl
-	mov bh,0
 	push ax
-	mov ax,10
-	mul bx
+	mov al,10		; sizeof TBYTE
+	mul bl
 	xchg bx,ax
 	pop ax
 	fld tbyte ptr [bx + si]
@@ -141,23 +104,40 @@ PowerOf10 ENDP
 
 FloatToBCD PROC
 
-	push bp
-	mov bp,sp
+if FLATSS
+	sub esp, 12
+	mov esi, esp
+else
 	sub sp, 12
+	mov si, sp
+endif
 
 	; The fbstp instruction converts the top of the stack to a
 	; packed BCD form in ten bytes, with two digits per byte.  The top 
 	; byte has the sign, which we ignore.
 
-	fbstp [bp-12]
+if FLATSS
+	fbstp [esp]
+else
+	fbstp [si]
+endif
 
 	; Now we need to unpack the BCD to ASCII.
 
-	lea si, [bp-4]
+if FLATSS
+	add esi, 8
+else
+	add si, 8
+endif
 	mov cx, 9
 @@:
+if FLATSS
+	mov al, ss:[esi]	; xxxx xxxx AAAA BBBB
+	dec esi
+else
 	mov al, [si]		; xxxx xxxx AAAA BBBB
 	dec si
+endif
 if 0
 	rol ax, 12			; BBBB xxxx xxxx AAAA
 	rol ah, 4			; xxxx BBBB xxxx AAAA
@@ -169,8 +149,11 @@ endif
 	add ax, 3030h
 	stosw
 	loop @B
-	mov sp,bp
-	pop bp
+if FLATSS
+	add esp, 12
+else
+	add sp, 12
+endif
 	ret
 
 FloatToBCD ENDP
@@ -178,42 +161,42 @@ FloatToBCD ENDP
 ;
 ; Convert a double precision number to a string.
 ;
-; Entry:    fpin = 10-byte double to convert
-;          pszDbl = character buffer
+; Entry:   SI=fpin   = 10-byte double to convert
+;          DI=pszDbl = buffer to hold converted double
 ;
-; Exit:    pszDbl = converted value
-;
-; pszDbl should be at least 19 bytes long.
+; Exit:    DI = behind converted double
 
-FloatToStr PROC stdcall USES si di pfpin: ptr TBYTE, pszDbl: PTR BYTE
+FloatToStr PROC USES si
 
+if FLATSS
+_DATA segment
+iExp dw 0
+;mystat dw 0
+;szTemp db 22 dup (0)
+_DATA ends
+else
 LOCAL iExp: WORD
 LOCAL mystat: WORD
-local fpin: TBYTE
-local szTemp[22]:BYTE
+;local szTemp[22]:BYTE
+endif
 
 ;--- Special case zero has been filtered already (fxtract fails for zero).
 
-	mov si, [pfpin]
-	lea di, [fpin]
-	mov cx, 5
-	rep movsw
-
-	mov di, [pszDbl]
-
 ;--- Check for a negative number.
 
-	test byte ptr [fpin+9],80h
+	mov cl,[si+9]
+	test cl, 80h
 	jz @F
-	and byte ptr [fpin+9], 07fh		; change to positive
+	and byte ptr [si+9], 07fh		; change to positive
 	mov al,'-'						; store a minus sign
 	stosb
 @@:
 
 ;--- load our value onto the stack.
 
-	fld tbyte ptr [fpin]
+	fld tbyte ptr [si]
 	fld st
+	mov [si+9], cl	; restore fpin, must be preserved.
 
 ; Compute the closest power of 10 below the number.  We can't get an
 ; exact value because of rounding.  We could get close by adding in
@@ -229,35 +212,39 @@ local szTemp[22]:BYTE
 	fstp st			; drop the mantissa
 	fldlg2			; push log10(2)
 	fmulp st(1), st	; ST = log10(fpin), fpin
-	fistp [iExp]	; ST = fpin
+	fistp iExp		; ST = fpin
 
 ;--- A 10-byte double can carry almost 19 digits, but fbstp only stores the
 ;--- guaranteed 18.  If you're doing 10-byte doubles, change the '16' to '18'.
 
-	cmp [iExp],18
+	cmp iExp, 18
 	jnc notbelow18
     
 	fld st			; ST = fpin, fpin
 	frndint			; ST = int(fpin), fpin
 	fcomp st(1)		; ST = fpin, status set
-	fstsw [mystat]
-	mov ax,[mystat]
-
+if RING0
+	fstsw ax
+else
+	fstsw mystat
+	mov ax, mystat
+endif
 	test ah, FP_EQUALTO
 	jz notequal
 
 ;--- We have an integer!  Lucky day.  Go convert it into a temp buffer.
 
 	push di
-	lea di, [szTemp]
+;	lea di, szTemp
 	call FloatToBCD
 	pop di
 
 	mov ax, MAXNUM+1
-	mov cx, [iExp]
+	mov cx, iExp
 	sub ax, cx
 	inc cx
-	lea si, [szTemp]
+;	lea si, szTemp
+	mov si, di
 	add si, ax
 
 ;--- The off-by-one order of magnitude problem below can hit us here.  
@@ -280,32 +267,37 @@ notbelow18:
 ;--- Have fbstp round to 17 places.
 
 	mov ax, MAXNUM
-	sub ax, [iExp]		; adjust exponent to 17
+	sub ax, iExp		; adjust exponent to 17
 	call PowerOf10
 
 ; Either we have exactly 17 digits, or we have exactly 16 digits.  We can
 ; detect that condition and adjust now.
 
-	fcom qword ptr [ten16]
+	fcom qword ptr [ten_16]
     ; x0xxxx00 means top of stack > ten16
     ; x0xxxx01 means top of stack < ten16
     ; x1xxxx00 means top of stack = ten16
-	fstsw [mystat]
-	mov ax,[mystat]
+if RING0
+	fstsw ax
+else
+	fstsw mystat
+	mov ax, mystat
+endif
 	test ah,1
 	jz @F
-	fmul qword ptr [ten]
-	dec [iExp]
+	fmul qword ptr [ten_1]
+	dec iExp
 @@:
 
 ;--- Go convert to BCD.
 
 	push di
-	lea  di, [szTemp]
+	lea  di, [di+8]
 	call FloatToBCD
 	pop di
 
-	lea si, [szTemp+1]		; point to converted buffer
+;	lea si, [szTemp+1]		; point to converted buffer
+	lea si, [di+8+1]		; point to converted buffer
 
 ;--- If the exponent is between -15 and 16, we should express this as a number
 ;--- without scientific notation.
@@ -415,20 +407,8 @@ endif
 
 ;	add di, 4	; point to terminator
 
-; Clean up and go home.
-
 ftsExit:
-ftsExit2:
-if 0
-	mov ax,di
-	sub ax,[szDbl]
-	mov cx,21
-	sub cx,ax
-	mov al,' '
-	rep stosb
-endif
 	ret
 
 FloatToStr ENDP
 
-_TEXT ends

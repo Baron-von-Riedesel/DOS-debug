@@ -847,21 +847,23 @@
  10. DebugR Basics
  -----------------
 
-  DebugR is a variant of DEBUG that runs in ring-0 (privileged) protected-mode.
- A 80386 or better CPU is required. DebugR is a plain binary that has to be
- loaded and initialized (in protected-mode!) by some kind of "loader" code.
- Unlike DebugX, the DebugR binary isn't bimodal ( meaning to be able to run
- in both real-mode and protected-mode ). Exceptions in v86-mode, which are
- reported if DebugR runs in the context of a v86-monitor program like
- Jemm386, are ignored.
-  DebugR doesn't use DOS and actually doesn't use any BIOS calls at all. For
- its tty i/o it calls out to the "loader" program, which is responsible to
- route those calls to the OS or handle them on its own.
+  DebugR and DebugRL are variants of DEBUG that run in ring-0 (privileged)
+ protected-mode. DebugR runs in "legacy" mode, while DebugRL runs in long
+ mode. For DebugR, a 80386 or better CPU is required, while DebugRL needs
+ a 64-bit CPU. Both variants are plain binaries that have to be loaded and
+ initialized (in protected-mode!) by some kind of "loader" code.
+  Unlike DebugX, the DebugR(L) binaries aren't bimodal ( meaning to be able
+ to run in both real-mode and protected-mode ). For DebugR, exceptions in
+ v86-mode, which are reported if DebugR runs in the context of a v86-monitor
+ program like Jemm386, are ignored.
+  DebugR and DebugRL don't use DOS and actually don't use any BIOS calls at
+ all. For their tty i/o they call out to the "loader" program, which is
+ responsible to route those calls to the OS or handle them on its own.
  
-  Once loaded, DebugR can debug programs running in both ring-0 and ring-3
- protected-mode. Since it doesn't use DOS or BIOS, a few commands implemented
- in the standard Debug/X aren't available: DM, DX, L, N, Q, W, Xx. OTOH, DebugR
- has a few special commands:
+  Once loaded, DebugR(L) can debug programs running in both ring-0 and ring-3
+ protected-mode. Since they don't use DOS or BIOS, a few commands implemented
+ in the standard Debug/X aren't available: DM, DX, L, N, Q, W, Xx. OTOH,
+ DebugR(L) have some special commands:
 
  DG start [count]: display GDT ( Global Descriptor Table )
  DI start [count]: display IDT ( Interrupt Descriptor Table )
@@ -877,15 +879,15 @@
   At the debugger prompt, when an address is to be parsed, the prefix '%' will
  tell the debugger to interpret the following offset as linear address.
   For the a(ssemble and u(nassemble) commands, one may precede the segment part
- of the range argument with a '$' to make DebugR interpret it as real-mode
+ of the range argument with a '$' to make DebugR(L) interpret it as real-mode
  address and translate the segment to a selector.
 
-  Some GPFs occuring in non-privileged code are not handled by DebugR: CLI/STI
+  Some GPFs occuring in non-privileged code are not handled by DebugR(L): CLI/STI
  executed by programs with IOPL 0; trapped IN/INS/OUT/OUTS instructions; INT XX
  with DPL==0 in the IDT.
  
-  DebugR understand commandline option -m, that will instruct it to assume that
- exception and IRQ vectors ( interrupts 08-0Fh ) do not overlap.
+  DebugR(L) understand commandline option -m, that will instruct it to assume
+ that exception and IRQ vectors ( interrupts 08-0Fh ) do not overlap.
 
 
  11. DEBUG Scripts

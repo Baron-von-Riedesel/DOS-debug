@@ -6,7 +6,7 @@ OUTD=build
 ALL: $(OUTD)\DEBUG.COM   $(OUTD)\DEBUGX.COM  $(OUTD)\DEBUGXD.COM $(OUTD)\DEBUGXE.COM $(OUTD)\DEBUGXF.COM \
      $(OUTD)\DEBUGXG.EXE $(OUTD)\DEBUGXU.COM $(OUTD)\DEBUGXV.COM $(OUTD)\DEBUGB.BIN  $(OUTD)\DEBUGR.BIN $(OUTD)\DEBUGRL.BIN
 
-DEPS= src\debug.asm src\debugtbl.inc src\dprintf.inc src\fptostr.inc
+DEPS= src\debug.asm src\debugtbl.inc src\dprintf.inc src\fptostr.inc src\disasm.inc
 
 $(OUTD)\DEBUG.COM: $(DEPS)   src\trapr.inc
 	@echo creating debug.com
@@ -39,5 +39,5 @@ $(OUTD)\DEBUGR.BIN:  $(DEPS) src\trapp.inc
 	@echo creating debugR.bin - a protected-mode "ring 0"  version
 	@jwasm -nologo -bin  -Fo $(OUTD)\DEBUGR.BIN -Fl=$(OUTD)\DEBUGR.LST -DRING0=1 src\debug.asm
 $(OUTD)\DEBUGRL.BIN: $(DEPS) src\trappl.inc
-	@echo creating debugR.bin - a protected-mode "ring 0"  version for long mode
-	@jwasm -nologo -bin  -Fo $(OUTD)\DEBUGRL.BIN -Fl=$(OUTD)\DEBUGRL.LST -DRING0=1 -DLMODE=1 src\debug.asm
+	@echo creating debugRL.bin - a protected-mode "ring 0"  version for long mode
+	@jwasm -nologo -bin  -Fo $(OUTD)\DEBUGRL.BIN -Fl=$(OUTD)\DEBUGRL.LST -Sg -DRING0=1 -DLMODE=1 src\debug.asm

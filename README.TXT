@@ -160,10 +160,10 @@
      active. Definitely not for beginners. See "Installing and Initializing
      DebugB" in DEBUG.TXT for details.
 
-   - DebugR.BIN: a version that runs in ring0 protected-mode. This variant
-     needs additional software a) to be loaded and b) to handle its i/o
-     requests. Like DebugB.BIN it doesn't use DOS - actually, it doesn't even
-     use the BIOS - and hence it's not really a "DOS debugger" anymore. See
+   - DebugR(L).BIN: versions that runs in ring0 protected-mode. These variants
+     need additional software a) to be loaded and b) to handle the i/o
+     requests. Like DebugB.BIN no DOS is used - actually, not even the BIOS
+     is used - and hence these are not really "DOS debuggers" anymore. See
      "DebugR Basics" in DEBUG.TXT for more details.
 
   d. The following features of MS Debug are not implemented:
@@ -176,7 +176,9 @@
     MAKE.BAT is intended for rebuilding the debugger binaries. The
     recommended tool for this step is to use the JWasm assembler.
     Alternatively, one can use MS Masm, but then a 16-bit OMF linker 
-    will be needed as well (Open Watcom's WLink might do the job).
+    will be needed as well (Open Watcom's WLink might do the job). Also,
+    the DebugRL variant cannot be created with Masm, since it contains
+    a 64-bit segment.
 
 
  4. Files Overview

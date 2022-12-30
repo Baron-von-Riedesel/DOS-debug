@@ -273,7 +273,6 @@ intrtnp proc
 	jmp ue_intx
 
 int_dbgee:
-
 ;--- check vector traps (set/reset by VT/VC)
 	push ax
 	mov al, byte ptr [esp+2].EXCFR.wMsg+1

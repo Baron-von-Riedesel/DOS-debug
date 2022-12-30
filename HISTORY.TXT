@@ -297,3 +297,4 @@
        - DEBUGXV: stop in debugger if SYSREQ is pressed.
     2.1 []
        - added a ring0 (PL0) variant for long mode - DebugRL.bin.
+       - fixed: addr/opsize prefixes "toggle", but just once.
