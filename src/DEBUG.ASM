@@ -1387,7 +1387,7 @@ N_REPNC  equ $ - replist
 		db 0a6h,0aeh				;REPE/REPNE (CMPSB, SCASB)
 N_REPALL equ $ - replist
 
-	include <debugtbl.inc>
+	include <DEBUGTBL.INC>
 
 opindex label byte
 	.radix 16t
@@ -1844,7 +1844,7 @@ done:
 	ret
 setdbgexc0d0e endp
 
-	include trapd.inc
+	include <TRAPD.INC>
 
 if CATCHINT21
 intr21pm proc
@@ -9778,12 +9778,12 @@ run endp
 
 if RING0
  if LMODE
-	include trappl.inc
+	include <TRAPPL.INC>
  else
-	include trapp.inc
+	include <TRAPP.INC>
  endif
 else
-	include trapr.inc
+	include <TRAPR.INC>
 endif
 
 ;--- fall thru
@@ -11409,7 +11409,7 @@ ifsep:
 
 ;--- disassembler code
 
-	include disasm.inc
+	include <DISASM.INC>
 
 ;   SHOWMACH - Return strings 
 ;           "[needs _86]" or "[needs _87]",
@@ -11602,7 +11602,7 @@ if USEFP2STR
  if RING0
 	.386
  endif
-	include fptostr.inc
+	include <FPTOSTR.INC>
 endif
 
 ;--- the layout for FSAVE/FRSTOR depends on mode and 16/32bit
@@ -12082,7 +12082,7 @@ stdout endp
 ifdef _DEBUG
 	pushcontext cpu
 	.386
-	include dprintf.inc
+	include <DPRINTF.INC>
 	popcontext cpu
 endif
 
