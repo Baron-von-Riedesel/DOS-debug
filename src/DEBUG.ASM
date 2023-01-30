@@ -749,7 +749,7 @@ dstseg	dw ?
 PACKET32 ends
  endif
 
-	align
+	align 2
 
 packet PACKET <0,0,0,0>
  if ?PM

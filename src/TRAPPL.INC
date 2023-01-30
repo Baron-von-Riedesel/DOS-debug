@@ -57,22 +57,25 @@ if SKIPINTGPF
 	cmp al, 0CDh	;INT XX? ( causes GPF if gate's DPL=0 )
 	jz isiopl
 endif
-
-;--- todo: add missing: IN EAX,XX/DX - OUT XX/DX,EAX ( 66h prefix )
+	jmp ci1
+@@:
+	lodsb ds:[esi]
+ci1:
+	cmp al, 0F3h	;REP?
+	jz @B
+	cmp al, 066h	;size prefix?
+	jz @B
 
 ;--- E4/E5/E6/E7? IN AL/AX,XX - OUT XX,AL/AX
 ;--- EC/ED/EE/EF? IN AL/AX,DX - OUT DX,AL/AX
+;--- 6C/6D/6E/6F? INSB/INSW   - OUTSB/OUTSW
 
-	mov ah, al
-	and al, 0F4h
+	and al, 0FCh
 	cmp al, 0E4h
 	jz isiopl
-	cmp ah, 0F3h	;REP?
-	jnz @F
-	lodsb ds:[esi]
-@@:
-	and al,0FCh		;6C/6D/6E/6F (INSB, INSW, OUTSB, OUTSW)   
-	cmp al,6Ch
+	cmp al, 0ECh
+	jz isiopl
+	cmp al, 6Ch
 	jz isiopl
 	pop esi
 	pop ax
