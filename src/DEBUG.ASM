@@ -533,7 +533,13 @@ CONST segment
 ;--- cmds b,j,k,v,y and z don't exist yet
 
 cmdlist label word
-	dw a_cmd, cmd_error, c_cmd, d_cmd
+	dw a_cmd
+if RING0
+	dw b_cmd
+else
+	dw cmd_error
+endif
+	dw c_cmd, d_cmd
 	dw e_cmd, f_cmd, g_cmd, h_cmd
 	dw i_cmd, cmd_error, cmd_error
 ife RING0
@@ -1009,6 +1015,10 @@ endif
 
 helpmsg db DBGNAME2, ' v',@CatStr(!',%VERSION,!'),CR,LF
 	db 'assemble', TAB, 'A [address]',CR,LF
+if RING0
+	db 'clear bp', TAB, 'BC',CR,LF
+	db 'set/show bp', TAB, 'BP [address] [type]',CR,LF
+endif             
 	db 'compare', TAB, TAB, 'C range address',CR,LF
 	db 'dump', TAB, TAB, 'D [range]',CR,LF
 if DGCMD
@@ -4497,7 +4507,6 @@ dgl_cmd proc
 	cmp al,CR
 	jz @F
 	call getword
-	call chkeol
 	and dx,dx
 	jnz @F
 	inc dx
@@ -9971,6 +9980,81 @@ checkgfx:
 	retn
 endif
 intrtn endp
+
+if RING0
+
+;--- just DR0 is used
+;--- bit 0-1: LE/GE
+;--- bit 16-17: type (0=exec, 1=write, 2=I/O [if CR4.DE=1], 3=read or write)
+;--- bit 18-19: len (0=1 byte, 1=2 byte, 2=8 byte, 3=4 byte )
+
+b_cmd proc
+	cmp ah, 'b'
+	jnz cmd_error
+	or al, TOLOWER
+	cmp al, 'c'
+	jz bc_cmd
+	cmp al, 'p'
+	jz bp_cmd
+	jmp cmd_error
+bc_cmd:
+	xor eax, eax
+	mov dr0, eax
+	mov eax, dr7
+	and al, 0FCh
+	and ah, 0fCh	; disable GE/LE
+	mov dr7, eax
+	ret
+bp_cmd:
+	call skipwhite
+	cmp al,CR
+	jz bp_disp
+	call getdword	; get linear address into bx:dx
+	call skipwhite
+	push bx
+	push dx
+	mov cl, 0		; default type: 0=exec (1=write,3=rw)
+	cmp al,13
+	jz @F
+	call getbyte	; get byte into DL
+	mov cl, dl
+	call chkeol
+@@:
+	pop eax
+	mov dr0, eax
+	mov eax, dr7
+	and eax, 0fff0ffffh	; clear 16-19 ( exec, 1 byte )
+	movzx ecx, cl
+	shl ecx, 16
+	or eax, ecx		; set type
+	or al, 2		; set LE
+	or ah, 2		; enable GE
+	mov dr7, eax
+	ret
+bp_disp:
+	mov eax, dr7
+	test ax, 202h	; GE or LE enabled
+	jz nobp
+	mov eax,"=0rd"
+	stosd
+	mov eax, dr0
+	call hexdword
+	mov al, ' '
+	stosb
+	mov eax,"=6rd"
+	stosd
+	mov eax, dr6
+	call hexdword
+	call putsline
+	ret
+nobp:
+	mov eax, "b on"
+	stosd
+	mov al, 'p'
+	stosb
+	jmp putsline
+b_cmd endp
+endif
 
 if VXCMD
 

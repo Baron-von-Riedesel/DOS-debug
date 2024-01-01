@@ -865,6 +865,8 @@
  in the standard Debug/X aren't available: DM, DX, L, N, Q, W, Xx. OTOH,
  DebugR(L) have some special commands:
 
+ BC: clear hw watchpoint 0
+ BP [linear_addr type]: set/display hw watchpoint 0
  DG start [count]: display GDT ( Global Descriptor Table )
  DI start [count]: display IDT ( Interrupt Descriptor Table )
  DL start [count]: display LDT ( Local Descriptor Table )
