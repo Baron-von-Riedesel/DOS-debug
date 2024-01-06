@@ -79,7 +79,7 @@ ifndef ?DPMI
 ?DPMI      equ 0	;1=create a DPMI-aware variant (DebugX)
 endif
 ifndef LMODE
-LMODE      equ 0	;1=long mode version if RING0==1
+LMODE      equ 0	;1=long mode version if RING0==1 - this will define a 64-bit segment ( requires JWasm )
 endif
 
 DGCMD      = 0		; support DG cmd
@@ -238,6 +238,7 @@ SYSRQINT   equ 9	;if CATCHSYSREQ==1, defines the method (int 09h or int 15h)
 
 ifndef CATCHINT01
 CATCHINT01 equ 1	;catch INT 01 (single-step)
+NOEXC01INDBG equ 1	;v2.1: ignore unexpected debug exceptions in debug itself
 endif
 ifndef CATCHINT03
 CATCHINT03 equ 1	;catch INT 03 (break)
@@ -1017,7 +1018,7 @@ helpmsg db DBGNAME2, ' v',@CatStr(!',%VERSION,!'),CR,LF
 	db 'assemble', TAB, 'A [address]',CR,LF
 if RING0
 	db 'clear bp', TAB, 'BC',CR,LF
-	db 'set/show bp', TAB, 'BP [address] [type]',CR,LF
+	db 'set/show bp', TAB, 'BP [address [type]]',CR,LF
 endif             
 	db 'compare', TAB, TAB, 'C range address',CR,LF
 	db 'dump', TAB, TAB, 'D [range]',CR,LF
@@ -1985,6 +1986,14 @@ endif
 	mov [errret],offset cmdloop
 	push ds
 	pop es
+
+	cmp [bInDbg], 1
+	jz @F
+	mov ax, 0e07h
+	int 10h
+@@:
+
+
 if LCMDFILE
 	call isdebuggeeloaded
 	jnz @F
@@ -9983,8 +9992,19 @@ intrtn endp
 
 if RING0
 
-;--- just DR0 is used
-;--- bit 0-1: LE/GE
+;--- handle BP/BC cmds.
+;--- just hardware bp 0 is used here (DR0).
+;--- DR6 (debug status register):
+;--- bits 0-3: 1=bp# condition detected (must be cleared by software)
+;--- bit 12: read as 0
+;--- bit 13: BD, debug register access detected 
+;--- bit 14: BS, bp single step
+;--- bit 15: BT, bp task switch
+;--- rest of bits read as 1
+;--- DR7 (debug control register):
+;--- bit 0-7: L0,G0 - L3,G3
+;--- bit 8-9: LE,GE
+;--- type ( optional 2. argument ) will be copied to bits 16-19 (RW0,LEN0)
 ;--- bit 16-17: type (0=exec, 1=write, 2=I/O [if CR4.DE=1], 3=read or write)
 ;--- bit 18-19: len (0=1 byte, 1=2 byte, 2=8 byte, 3=4 byte )
 
@@ -9992,29 +10012,29 @@ b_cmd proc
 	cmp ah, 'b'
 	jnz cmd_error
 	or al, TOLOWER
-	cmp al, 'c'
+	cmp al, 'c'     ; is it BC?
 	jz bc_cmd
-	cmp al, 'p'
+	cmp al, 'p'     ; or BP?
 	jz bp_cmd
-	jmp cmd_error
+	jmp cmd_error   ; anything else is unknown
 bc_cmd:
 	xor eax, eax
 	mov dr0, eax
 	mov eax, dr7
-	and al, 0FCh
-	and ah, 0fCh	; disable GE/LE
+	and al, 0FCh	; disable G0/L0
+;	and ah, 0fCh	; disable GE/LE
 	mov dr7, eax
 	ret
 bp_cmd:
 	call skipwhite
-	cmp al,CR
+	cmp al,CR       ; no argument given? then just display status...
 	jz bp_disp
-	call getdword	; get linear address into bx:dx
+	call getdword	; get address into bx:dx ( may be linear address or IO port )
 	call skipwhite
 	push bx
 	push dx
 	mov cl, 0		; default type: 0=exec (1=write,3=rw)
-	cmp al,13
+	cmp al,13       ; second argument (=type) given?
 	jz @F
 	call getbyte	; get byte into DL
 	mov cl, dl
@@ -10023,17 +10043,17 @@ bp_cmd:
 	pop eax
 	mov dr0, eax
 	mov eax, dr7
-	and eax, 0fff0ffffh	; clear 16-19 ( exec, 1 byte )
-	movzx ecx, cl
+	and eax, 0fff0ffffh	; clear 16-19 ( means b0 0=exec, 1 byte )
+	and ecx, 0Fh	; type is just 4 bits!
 	shl ecx, 16
-	or eax, ecx		; set type
-	or al, 2		; set LE
-	or ah, 2		; enable GE
+	or eax, ecx		; set type (RW0, LEN0 )
+	or al, 2		; set G0=1
+	or ah, 2		; set GE=1
 	mov dr7, eax
 	ret
 bp_disp:
 	mov eax, dr7
-	test ax, 202h	; GE or LE enabled
+	test al, 3h		; L0/G0 enabled?
 	jz nobp
 	mov eax,"=0rd"
 	stosd
@@ -12380,6 +12400,7 @@ if DRIVER or RING0 or BOOTDBG
 	ret
  endif
 else
+	mov [bInDbg], 1  ; v2.1: variable is set only when debug is entered via interrupt
 	push ds
 	pop es
 	mov cl, 4

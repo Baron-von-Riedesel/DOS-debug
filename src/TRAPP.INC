@@ -110,7 +110,7 @@ intr00:				; divide error
 	call intrtnp1
 	jmp cs:[oldi00]
 
-intr01:				; single-step interrupt
+intr01:				; single-step interrupt/debug exception
 	push EXC01MSG or (1 shl 8)
 intr01ex:
 	call intrtnp1

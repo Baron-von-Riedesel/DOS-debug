@@ -27,11 +27,23 @@ intr00:
 	jmp intrtnr		;jump to register saving routine
 
 
+if CATCHINT01
+
 ;--- Interrupt 1 (single-step interrupt) handler.
 
 intr01:
+ if NOEXC01INDBG
+	cmp cs:[bInDbg],0
+	jnz @F
+ endif
 	mov cs:[run_int], EXC01MSG
 	jmp intrtnr
+ if NOEXC01INDBG
+@@:
+	iret			; just ignore the exception if in debug
+ endif
+ 
+endif
 
 if CATCHINT06
 

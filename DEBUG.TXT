@@ -126,7 +126,7 @@
  0002 is used to convert the segment - the selector returned cannot
  be released anymore.
 
- if debuggee is in protected-mode and the segment part of an address
+ If debuggee is in protected-mode and the segment part of an address
  has a limit beyond 64k, the offset parts of the starting and ending
  address - as well as the length - can be 32bit. Examples:
 
@@ -421,7 +421,7 @@
    If 'Q' doesn't leave protected-mode, then there's a problem
   with the debuggee or the DPMI host. In this case command variant
   'QQ' may be tried. It forces an exit, although it might prevent
-  the debuggee to do protected-mode clean-up work.
+  the debuggee from doing protected-mode clean-up work.
 
    Note: Once a DPMI client program has done an initial switch to
   protected-mode, it must be terminated by an int 21h, ah=4Ch call
@@ -866,7 +866,9 @@
  DebugR(L) have some special commands:
 
  BC: clear hw watchpoint 0
- BP [linear_addr type]: set/display hw watchpoint 0
+ BP [linear_addr [type]]: set/display hw watchpoint 0. Default for type is
+     0 ( meaning 'execute, 1 byte' ); 1 will be a 'write watchpoint'. For more
+     details, see description of 80386+, register DR7.
  DG start [count]: display GDT ( Global Descriptor Table )
  DI start [count]: display IDT ( Interrupt Descriptor Table )
  DL start [count]: display LDT ( Local Descriptor Table )

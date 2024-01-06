@@ -1,5 +1,7 @@
 
-# create all DEBUG versions
+# create all DEBUG versions with JWasm.
+# Masm could also be used, but then an OMF linker is required;
+# also, Masm won't be able to assemble the long mode variant DEBUGRL.BIN.
 
 NAME=DEBUG
 OUTD=build

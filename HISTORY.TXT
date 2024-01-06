@@ -299,3 +299,4 @@
        - added a ring0 (PL0) variant for long mode - DebugRL.bin.
        - fixed: addr/opsize prefixes "toggle", but just once.
        - added bp/bc cmds for ring 0 variants (DebugR/DebugRL).
+       - ignore debug exception if inside debugger.
