@@ -48,7 +48,7 @@
 ;       - add MMX instructions for A and U
 ;       - support loading *.HEX files
 
-VERSION    textequ <2.1>
+VERSION    textequ <2.01>
 
 	option casemap:none
 	option proc:private
@@ -238,7 +238,7 @@ SYSRQINT   equ 9	;if CATCHSYSREQ==1, defines the method (int 09h or int 15h)
 
 ifndef CATCHINT01
 CATCHINT01 equ 1	;catch INT 01 (single-step)
-NOEXC01INDBG equ 1	;v2.1: ignore unexpected debug exceptions in debug itself
+NOEXC01INDBG equ 1	;v2.01: ignore unexpected debug exceptions in debug itself
 endif
 ifndef CATCHINT03
 CATCHINT03 equ 1	;catch INT 03 (break)
@@ -4851,6 +4851,9 @@ endif
 
 if DMCMD
 
+;--- dm cmd: display list of MCBs
+;--- DI=lineout
+
 mcbout proc
 ;	mov di,offset line_out
 	mov ax,"SP"
@@ -4862,33 +4865,36 @@ mcbout proc
 	call putsline	;destroys cx,dx,bx
 
 	mov si,[wMCB]
+	push ds
 nextmcb:
 	mov di,offset line_out
-	push ds
 	call setds2si
-	mov ch,ds:[0000]
-	mov bx,ds:[0001]	;owner psp
-	mov dx,ds:[0003]
 	mov ax,si
 	call hexword	;segment address of MCB
 	mov al,' '
 	stosb
-	mov al,ch
-	call hexbyte	;'M' or 'Z'
+	mov al,ds:[0000];'M' or 'Z'
+	cmp al,'Z'
+	jz @F
+	cmp al,'M'
+	jnz mcbout_done
+@@:
+	call hexbyte
 	mov al,' '
 	stosb
-	mov ax,bx
-	call hexword	;MCB owner
+	mov ax,ds:[0001];MCB owner
+	mov bx,ax
+	call hexword
 	mov al,' '
 	stosb
-	mov ax,dx
-	call hexword	;MCB size in paragraphs
+	mov ax,ds:[0003];MCB size in paragraphs
+	mov dx,ax
+	call hexword
 	mov al,' '
 	stosb
 	and bx,bx
 	jz mcbisfree
 	push si
-	push cx
 	push dx
 	mov si,8
 	mov cx,2 
@@ -4903,21 +4909,17 @@ nextmcbchar:		;copy "name" of owner MCB
 	and al,al
 	loopnz nextmcbchar
 	pop dx
-	pop cx
 	pop si
 mcbisfree:
-	pop ds
 	add si,dx
 	jc mcbout_done
 	inc si
-	push cx
+	pop ds
+	push ds
 	call putsline	;destroys cx,dx,bx
-	pop cx
-	cmp ch,'Z'
-	jz nextmcb
-	cmp ch,'M'
-	jz nextmcb
+	jmp nextmcb
 mcbout_done:
+	pop ds
 	ret
 
 setds2si:
@@ -10982,8 +10984,8 @@ parse_pt endp
 ;   Uses AH,BX,CX,(E)DX.
 
 parseql proc
-	mov [eqflag],0	;mark '=' as absent
 	mov bx,[regs.rCS]	;default segment
+	mov [eqflag],al
 	cmp al,'='
 	jne peq1		;if no '=' operand
 	call skipwhite
@@ -10994,7 +10996,6 @@ endif
 	call getaddr	;get address into bx:(e)dx
 	sizeprfX		;mov [eqladdr+0],edx
 	mov [eqladdr+0],dx
-	inc [eqflag]
 peq1:
 	mov [eqladdr+4],bx
 	ret
@@ -11005,8 +11006,8 @@ parseql endp
 ;   Uses AX.
 
 seteq proc
-	cmp [eqflag],0		;'=' argument given?
-	jz @F
+	cmp [eqflag],'='	;'=' argument given?
+	jnz @F
 	sizeprfX			;mov eax,[eqladdr+0]
 	mov ax,[eqladdr+0]
 	sizeprfX			;mov [regs.rIP+0],eax
@@ -12400,7 +12401,7 @@ if DRIVER or RING0 or BOOTDBG
 	ret
  endif
 else
-	mov [bInDbg], 1  ; v2.1: variable is set only when debug is entered via interrupt
+	mov [bInDbg], 1  ; v2.01: variable is set only when debug is entered via interrupt
 	push ds
 	pop es
 	mov cl, 4

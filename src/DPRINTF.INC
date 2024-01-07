@@ -78,7 +78,7 @@ ltob PROC
 ltob ENDP
 
 ;--- ss doesn't need to be dgroup
-;--- v2.1: ss may be 32-bit!
+;--- v2.01: ss may be 32-bit!
 
 dprintf PROC
 

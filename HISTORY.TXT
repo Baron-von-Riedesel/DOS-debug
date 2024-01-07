@@ -21,7 +21,7 @@
     0.99c [29 Septemb 2006]
        - RX changed. Now it toggles 16/32 bit register dump.
        - RN displays floating point register status.
-    0.99d [02 October 2006]
+    0.99d [2 October 2006]
        - bugfix: RN displayed error-pointer registers wrong.
     0.99e [12 October 2006]
        - XR command added to reallocate EMS handle.
@@ -35,7 +35,7 @@
     0.99g [25 October 2006]
        - bugfix: U was unable to recognise [ESP] related memory operands
          (i.e. mov eax,[esp]).
-    0.99h [07 November 2006]
+    0.99h [7 November 2006]
        - bugfix: R trying to display content of effective address has
          caused a GPF in v86-mode if this address was FFFFh of FFFDh.
        - IW, ID, OW and OD implemented.
@@ -105,7 +105,7 @@
          int 2Fh is now hooked later. This allows to debug applications
          which install their own DPMI host during initialization.
        - DEBUGX: DL understands an optional "count" argument.
-    1.11 [06 February 2008]
+    1.11 [6 February 2008]
        - bugfix: debugger lost debuggee's HiWord(EFL) in real-mode.
        - bugfix: if debuggee set CR0 AM bit and EFL AC flag, an
          exception 11h occured in the debugger.
@@ -200,13 +200,13 @@
          MS debug is accepted now ( which is a segment register followed
          by a colon ).
        - file makex.bat added.
-    1.24 [04 July 2011]
+    1.24 [4 July 2011]
        - bugfix: line assembler didn't encode 32-bit addressing with SIB
          byte correctly in v1.23.
        - debug script DPMICL16.SCR added.
-    1.25 [08 August 2011]
+    1.25 [8 August 2011]
        - 2 variants (F & G) added to makex.bat
-    1.26 [16 January 2020]
+    1.26 [16.1.2020]
        - bugfix 'a' cmd: 'MOV sreg, mem' and 'MOV mem, sreg' needed a size.
        - bugfix 'xm' cmd: logical page displayed was 2 digits only.
        - DEBUGX: interrupt and exception 07 intercepted.
@@ -214,7 +214,7 @@
          break in real-mode.
        - bugfix 'xs' cmd: no of pages of just the first handle was displayed,
          and the handle total was not correct.
-    1.27 [08 November 2020]
+    1.27 [8.11.2020]
        - added new variant DEBUGXU.COM. This version does not use int 15h, 
          ah=87h inside the DX command, thus avoiding to disable a possibly
          active unreal mode. The catch is that this version's DX command won't
@@ -226,7 +226,7 @@
        - if InDOS flag is set, a '!' is preceding the debugger prompt.
        - BIOS used when waiting for a key in help msg display.
        - 'e' cmd uses BIOS if InDOS flag set.
-    1.28 [10 March 2022]
+    1.28 [10.3.2022]
        - DEBUGX bugfix e-cmd: used wrong offset when reading from 32-bit 
          segments.
        - DEBUGX bugfix d-cmd: hiword(ecx) wasn't cleared, resulting in a
@@ -237,7 +237,7 @@
        - DEBUGX: int 2Fh, ax=1686h to detect mode no longer used - this makes 
          interrupt 2Fh traceable.
        - bugfix 'e' cmd: don't stop input after byte '0d' has been entered.
-    1.29 [06 May 2022]
+    1.29 [6.5.2022]
        - DEBUGX bugfix c/d/e/m/s-cmd: an offset beyond 0ffffh was rejected if
          the segment descriptor's 'default-size' flag wasn't set.
        - DEBUGX bugfix e-cmd interactive mode: offset increment and decrement
@@ -261,7 +261,7 @@
          intercepted protected-mode int 21h and refuses to quit.
        - another variant - DEBUGXV - may be created. It allows to flip video
          screen between debugger and debuggee.
-    2.00 [5 December 2022]
+    2.00 [5.12.2022]
        - fixed: routine int21ah9 did use DOS, even if InDos flag was set.
        - fixed: reading stdin from file wasn't fully MS Debug compatible.
        - fixed: correctly handle tabs if output is via BIOS.
@@ -295,8 +295,9 @@
          converted to selectors during initial switch to protected-mode.
        - DEBUGX: exceptions 0dh/0eh are set/reset on debugger entry/exit.
        - DEBUGXV: stop in debugger if SYSREQ is pressed.
-    2.1 []
-       - added a ring0 (PL0) variant for long mode - DebugRL.bin.
+    2.01 [7.1.2024]
        - fixed: addr/opsize prefixes "toggle", but just once.
-       - added bp/bc cmds for ring 0 variants (DebugR/DebugRL).
-       - ignore debug exception if inside debugger.
+       - fixed: debug exceptions occuring inside debug are now ignored.
+       - fixed dm cmd: invalid last mcb no longer displayed.
+       - added a ring0 (PL0) variant for long mode - DebugRL.bin.
+       - DEBUGR(L): added bp & bc cmds.

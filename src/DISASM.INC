@@ -192,7 +192,7 @@ if ?PM
 	call getseldefsize
 	mov [bCSAttr],al
  if 0
-;--- ?PM v2.1: don't preset opsize/adrsize prefixes if D bit is set;
+;--- ?PM v2.01: don't preset opsize/adrsize prefixes if D bit is set;
 ;--- those prefixes toggle just once.
 	jz @F
 	or [preflags], PRE32D or PRE32A
@@ -301,14 +301,14 @@ da_fpugrp:
 ;--- dis_jmp2[5]: Instruction prefix.  At this point, bl = prefix bits; bh = segment
 
 da_insprf:
-if 0	; v2.1: removed - opsize/adrsize prefixes "toggle" just once
+if 0	; v2.01: removed - opsize/adrsize prefixes "toggle" just once
 	mov al,bl
 	and bl,not (PRE32D or PRE32A)	;these flags are XORed!
 endif
 	test bl,[preflags]
 	jnz disbad0		;if there are duplicates
 	or [preflags],bl
-if 0	; v2.1: removed - opsize/adrsize prefixes "toggle" just once
+if 0	; v2.01: removed - opsize/adrsize prefixes "toggle" just once
 	mov bl,al
 	and al,PRE32D or PRE32A
 	xor [preflags],al
@@ -326,7 +326,7 @@ disbad0:
 
 da13pre:
 
-if ?PM ; v2.1: update opsize/adrsize prefixes if D bit set AFTER prefixes have been read
+if ?PM ; v2.01: update opsize/adrsize prefixes if D bit set AFTER prefixes have been read
 	test [bCSAttr], 40h
 	jz @F
 	xor [preflags], PRE32D or PRE32A
