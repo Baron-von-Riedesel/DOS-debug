@@ -47,6 +47,8 @@
 ;       - better syntax checks for A (so i.e. "mov ax,al" is rejected)
 ;       - add MMX instructions for A and U
 ;       - support loading *.HEX files
+;       - hide debug's IVT vectors 0,1,3? Alternately, init them only when the
+;         first G/P/T cmd is run, like MS Debug does for 1 & 3?
 
 VERSION    textequ <2.01>
 
@@ -70,10 +72,10 @@ ifndef DRIVER
 DRIVER     equ 0	;1=create a device driver (for CONFIG.SYS) variant
 endif
 ifndef BOOTDBG
-BOOTDBG    equ 0	;1=create a bootstrap binary
+BOOTDBG    equ 0	;1=create a bootstrap binary (DebugB)
 endif
 ifndef RING0
-RING0      equ 0	;1=create a ring0 debugger variant
+RING0      equ 0	;1=create a ring0 debugger variant (DebugR)
 endif
 ifndef ?DPMI
 ?DPMI      equ 0	;1=create a DPMI-aware variant (DebugX)
@@ -81,6 +83,8 @@ endif
 ifndef LMODE
 LMODE      equ 0	;1=long mode version if RING0==1 - this will define a 64-bit segment ( requires JWasm )
 endif
+
+;--- default assembly-time values; may be overwritten below.
 
 DGCMD      = 0		; support DG cmd
 DICMD      = 0		; support DI cmd
@@ -99,7 +103,7 @@ USESDA     = 1		; use SDA to get/set PSP in real-mode
 INT22      = 1		; handle int 22h ( DOS program termination )
 INT2324    = 1		; switch int 23h & 24h for debugger/debuggee
 USEFP2STR  = 0		; 1=use FloatToStr()
-FLATSS     = 0		; always 0 (1 is for a flat stack if RING0==1)
+FLATSS     = 0		; always 0 except for DebugRL; flat stack needed for long mode ring0 variant.
 
 if LMODE
 CS32ATTR	equ 40h or 20h	; check both default size and 64-bit mode
@@ -7930,7 +7934,7 @@ endif
 nextint:
 	lodsb
 	push ds
-	add si,2	; skip rest of INTITEM
+;	add si,2	; skip rest of INTITEM (now done below)
 	lds dx, [di]
 	add di,4
 	cmp al,22h
@@ -7942,6 +7946,7 @@ nextint:
 	int 21h
 norestore:
 	pop ds
+	lodsw		; skip rest of INTITEM (16-bit offset)
 	loop nextint
 
 if INT22
@@ -10462,11 +10467,11 @@ if INT2324
 	call prehak1			;copy IVT 23/24 to di (real-mode only)
 	pop di
 	ret
-@@:
+@@:                         ;this is actually a programming error!
 	push ax
 	push dx
 	mov dx,offset ph_msg	;'error in sequence of calls to hack'
-	call int21ah9	;print string
+	call int21ah9			;print string
 	pop dx
 	pop ax
 endif
@@ -10486,7 +10491,7 @@ CONST ends
 prehak1 proc
  if ?DPMI
 	call ispm_dbg
-	jnz _ret		;nothing to do
+	jnz _ret		;nothing to do if in PM
  endif
 	push ds
 	push si
@@ -12541,6 +12546,10 @@ if RING0
 ;--- edx: offset input routine (int 16h)
 ;--- es:edi=IDT
 
+ if LMODE
+CS64SEL equ 8	; to be fixed: 64-bit code selector for DebugRL is 8 (Dos32cm)
+ endif
+
 	push ds
 	push es
 	mov ds, ax
@@ -13246,7 +13255,7 @@ endif
 	mov di, offset intsave
 if RING0
 	.386
-	les ebx, [bp-6]
+	les ebx, [bp-6]   ; load address of GDT
 	@dprintf "initcode: setup int vectors, es:ebx=%X:%lX", es, ebx
 elseif BOOTDBG
 	xor ax, ax
@@ -13283,13 +13292,14 @@ else
 	mov [di+2], es
 	xchg ax, dx		;save int # in dl
 endif
-	mov ax, [si]	;get address
+;	mov ax, [si]	;get address
+	lodsw			;get address (16-bit offset)
 if RING0
  if LMODE
-	movzx eax, ax
+	movzx eax, ax	;in long mode, IDT vectors must be 64-bit!
 	add eax, [dwBase64]
 	mov es:[ebx+edx*8+0], ax
-	mov word ptr es:[ebx+edx*8+2], 8	; selector 8 is 64-bit ( Dos32cm )
+	mov word ptr es:[ebx+edx*8+2], CS64SEL	; CS must be 64-bit
 	shr eax, 16
  else
 	mov es:[ebx+edx*8+0], ax
@@ -13307,7 +13317,7 @@ else
 	mov ah, 25h		;set interrupt vector
 	int 21h
 endif
-	add si, 2
+;	add si, 2
 	add di, sizeof INTVEC
 	loop @B
 
