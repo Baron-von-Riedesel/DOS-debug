@@ -301,3 +301,5 @@
        - fixed dm cmd: invalid last mcb no longer displayed.
        - added a ring0 (PL0) variant for long mode - DebugRL.bin.
        - DEBUGR(L): added bp & bc cmds.
+    2.02 [11.2.2024]
+       - fixed S cmd: position display was corrupted in v2.00-v2.01.

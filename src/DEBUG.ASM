@@ -50,7 +50,7 @@
 ;       - hide debug's IVT vectors 0,1,3? Alternately, init them only when the
 ;         first G/P/T cmd is run, like MS Debug does for 1 & 3?
 
-VERSION    textequ <2.01>
+VERSION    textequ <2.02>
 
 	option casemap:none
 	option proc:private
@@ -8374,7 +8374,9 @@ displaypos:
 	push dx
 	sizeprfX		;xchg esi, edi
 	xchg si,di		;render position right after search string
-	mov cx, di		;save pos in CX
+	push di			;v2.02 save pos on stack (in v2.0-v2.01, it was saved in CX)
+	push ds			;v2.02 restore ES; needed for hex(d)word
+	pop es
 	mov ax,bx
 	call hexword
 	mov al,':'
@@ -8394,10 +8396,10 @@ endif
 s_cont3:
 	mov ax,( LF shl 8 ) or CR
 	stosw
-	mov dx, cx
+	pop dx			;get pos from stack
 	mov cx, di
 	sub cx, dx
-	call stdout
+	call stdout		;write cx chars from ds:dx to stdout
 	pop dx
 	sizeprfX		;mov edi, esi
 	mov di,si
@@ -9021,7 +9023,7 @@ endif
 	mov [bp+8],ax
 	or ax,ax
 	jz @F
-	call hexnyb		;convert to hex and print
+	call hexnyb		;convert to hex digit and print
 @@:
 	mov ax,[regs.rCX]
 	mov [bp+6],ax
@@ -11860,7 +11862,7 @@ endif
 	call hexword
 	jmp fppm
 @@:
-	call hexnyb
+	call hexnyb	;convert to hex digit and print
 fppm:
 	sizeprfX	;mov eax,edx
 	mov ax,dx
@@ -12040,6 +12042,7 @@ endif
 ;--- copystring - copy non-empty null-terminated string.
 ;--- SI->string
 ;--- DI->buffer
+;--- modifies SI, DI, AL
 
 copystring proc
 	lodsb
