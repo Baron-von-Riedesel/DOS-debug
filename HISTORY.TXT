@@ -303,3 +303,7 @@
        - DEBUGR(L): added bp & bc cmds.
     2.02 [11.2.2024]
        - fixed S cmd: position display was corrupted in v2.00-v2.01.
+    2.03 []
+       - DEBUGR(L): optionally, the Q cmd may be activated.
+       - DEBUGX, DEBUGR(L), G/T/P cmds: use 386 debug register for bp if
+         possible.

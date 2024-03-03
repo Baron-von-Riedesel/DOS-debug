@@ -217,12 +217,18 @@ handle_u:
 	add di,2
 @@:
 	lea bx, d_szTmp
+
+	push eax		; hiword eax must be preserved
+
 	push dx
 	push ax
 	pop eax
 ;	invoke ltob, eax, bx, cx
 	call ltob
 	mov si,ax
+
+	pop eax
+
 	push ds
 	push ss
 	pop ds

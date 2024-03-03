@@ -301,6 +301,10 @@
 
  Syntax: G [=address] [break0 break1...]
 
+ [DEBUGX: If just 1 breakpoint is given, if the DPMI host supports the
+ feature and if the debuggee is in protected-mode, DebugX will use a debug
+ watchpoint to set the breakpoint.]
+
  ---
 
  The Hex command (H) computes the sum and difference of two hex
@@ -407,6 +411,10 @@
  Trace command.
 
  Syntax: P [=address] [number]
+
+ [DEBUGX: as it is described at the T(race) command, DEBUGX may use
+ the 80386 debug registers in protected-mode.
+ ]
 
  ---
 
@@ -536,11 +544,13 @@
   Furthermore, autorepeat is active for T. That is, if the last
   command was T, a single ENTER will count as a repeated T command.
 
-  DEBUGX: the Trace command has to write to the debuggee's memory on some
-  occations ( to set a breakpoint ). In protected-mode this may be
-  prohibited, because the page to write to is read-only. Since DEBUGX
-  doesn't use the CPU-provided "hardware" breakpoints, there's no way
-  for the debugger to solve this - a "page fault" will occur.
+  DEBUGX: the Trace command - internally, on certain conditions - has to
+  set a breakpoint. This may be achieved by 2 ways - either write an
+  INT 3 opcode to the code address or - if the cpu is at least an 80386 -
+  use a "hardware debug register". The first approach fails if the memory
+  cannot be written - in protected-mode a "page fault" will occur.
+  Therefore - if the DPMI host supports the feature - DEBUGX will prefer
+  to use the second method in protected-mode.
  ]
  ---
 
@@ -879,6 +889,10 @@
  VT vector: trap vector
 
  Vectors that can be trapped are vectors 0, 1, 3, 6, 0Dh and 0Eh.
+ 
+ Commands G, T and P: DebugR behaves somewhat like DebugX in this behalf:
+ if one breakpoint is to be set, debug register DR1 is used to set the
+ breakpoint. Unlike DebugX, this won't fail for DebugR.
 
   At the debugger prompt, when an address is to be parsed, the prefix '%' will
  tell the debugger to interpret the following offset as linear address.

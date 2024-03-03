@@ -50,7 +50,7 @@
 ;       - hide debug's IVT vectors 0,1,3? Alternately, init them only when the
 ;         first G/P/T cmd is run, like MS Debug does for 1 & 3?
 
-VERSION    textequ <2.02>
+VERSION    textequ <2.03>
 
 	option casemap:none
 	option proc:private
@@ -104,6 +104,7 @@ INT22      = 1		; handle int 22h ( DOS program termination )
 INT2324    = 1		; switch int 23h & 24h for debugger/debuggee
 USEFP2STR  = 0		; 1=use FloatToStr()
 FLATSS     = 0		; always 0 except for DebugRL; flat stack needed for long mode ring0 variant.
+USEHWBP    = 1		; 1=try to use 386 hw breakpoints for internal bp
 
 if LMODE
 CS32ATTR	equ 40h or 20h	; check both default size and 64-bit mode
@@ -186,7 +187,7 @@ CATCHINT0C = 0
 CATCHINT0D = 1
 CATCHINT41 = 0
 LCMD       = 0
-QCMD       = 0
+QCMD       = 0	; may be set to 1
 WCMD       = 0
 XCMDS      = 0
 LCMDFILE   = 0
@@ -676,7 +677,9 @@ else
 rmode	db 0		;flags for R command
 endif
 tmode	db 0		;bit 0: 1=ms-debug compatible trace mode
-
+if ?PM and USEHWBP
+bUseHWBP db 1
+endif
 has_87	db 0		;if there is a math coprocessor present
 mach_87	db 0		;coprocessor (0=8087,1,2,3=80387,...)
 if MMXSUPP
@@ -1245,6 +1248,9 @@ gatewrong db 'gate not accessible',0
 endif
 if RING0
 segerr	db "Debuggee segments invalid",CR,LF,'$'
+ if QCMD
+plerr   db "can't quit protected-mode",CR,LF,'$'
+ endif
 endif
 cantwritebp db "Can't write breakpoint",CR,LF,'$'
 
@@ -4441,7 +4447,7 @@ if RING0
 ;--- get base of descriptor table for selector in BX
 ;--- out: eax=base, dx=limit, C if error
 
-getlinearbase proc
+getlinearbaseDT proc
 	.386
 if FLATSS
 	sub esp, 6
@@ -4462,7 +4468,22 @@ endif
 	and dx, dx		; any LDT?
 	stc
 	jz exit
+	call getlinearbaseDX
+	clc
+exit:
+ife FLATSS
+	pop bp
+endif
+	ret
+getlinearbaseDT endp
+
+;--- get linear base of descriptor in DX
+;--- in: DX=selector, EAX=base of descriptor table
+;--- out: EAX=base of descriptor
+
+getlinearbaseDX proc
 	movzx edx, dx
+	and dl, 0f8h
 	add eax, edx	; now eax -> LDT descriptor
 	push ds
 	mov ds, [wFlat]
@@ -4474,13 +4495,8 @@ endif
 	mov eax, edx
 	pop dx
 	pop ds
-	clc
-exit:
-ife FLATSS
-	pop bp
-endif
 	ret
-getlinearbase endp
+getlinearbaseDX endp
 
 endif
 
@@ -4531,7 +4547,7 @@ if RING0
  else
 	mov bp, sp
  endif
-	call getlinearbase		; get base,limit
+	call getlinearbaseDT	; get linear base,limit of descriptor table
 	.386
 	push eax
 	push dx
@@ -5012,20 +5028,16 @@ dt_cmd proc
 	call hexword
 	cmp bx,0
 	jz @F
-	call getlinearbase
+	call getlinearbaseDT
 	jc @F
-	movzx ebx, bx
-	add ebx, eax	; ebx=linear addr of TR in GDT
+	mov dx, bx
+	call getlinearbaseDX
+	@dprintf "dt: bx=%X eax=%lX", bx, eax
+	mov ebx, eax
 	mov si, offset szPL0Stk
 	call copystring
 	push ds
 	mov ds, [wFlat]
-	mov ah, [ebx+7]
-	mov al, [ebx+4]
-	shl eax, 16
-	mov ax, [ebx+2]	; eax=linear addr TSS
-	@dprintf "dt: ebx=%lX eax=%lX", ebx, eax
-	mov ebx, eax
 if LMODE
 	mov eax,[ebx+8]	; get high32 RSP0
 	call hexdword
@@ -5192,7 +5204,7 @@ else
 	mov al,bl
 	stosb       ;base[24-31] of dest
  if ?DPMI
-	call ispm_dbg
+	call ispm_dbg	;???
  endif
 	mov si,offset line_out ;ds:si -> GDT
 	mov cx,0040h	;number of word to copy
@@ -5822,8 +5834,8 @@ setbps proc
 	mov si,offset line_out
 	lodsw
 	xchg cx, ax		;mov cx,ax
-@@:
-	jcxz @F
+	jcxz setbps_ex
+nextbp:
 	sizeprfX		;lodsd
 	lodsw
 	sizeprfX		;xchg edx,eax
@@ -5832,17 +5844,16 @@ setbps proc
 	xchg bx,ax		;mov bx,ax
 	call di			;call setbp1/resetbp1
 	inc si
-	loop @B 		;next bp
-@@:
+	loop nextbp		;next bp
+setbps_ex:
 	ret
 setbp1::
 	mov al,0CCh
-	call writemem	; write byte at bx:e/dx
+	call writemem	; write byte at bx:e/dx, C if write was unsuccessful (ROM)
 	mov [si],ah		; save the current contents
-	jc @F
-	retn
-@@:
+	jnc @F
 	call bp			; either ignore error (g cmd) or abort with msg (p cmd)
+@@:
 	retn
 resetbp1::
 	mov al,[si]
@@ -5982,6 +5993,25 @@ g_cmd proc
 	jmp @B			;next bp
 @@:
 
+if ?PM
+;--- if just 1 bp is to set, DebugX/DebugR may use DR1.
+;--- For DebugR this cannot fail; for DebugX, if hw bp
+;--- cannot be used, doproceed1 will jump back to gg_1!
+	mov si, offset line_out
+	lodsw
+	cmp ax, 1	;just 1 bp?
+	jnz @F
+	.386
+	lodsd
+	push eax
+	lodsw
+	mov bx, ax
+	pop esi
+	jmp doproceed1
+	.8086
+@@:
+endif
+
 ;--- Store breakpoint bytes in the given locations.
 
 	mov bp, offset _ret	; ignore write errors for g
@@ -6035,15 +6065,20 @@ endif
 	cmp [run_int], EXC03MSG
 	jnz gg_exit
 	mov cx,  -1
-	call getcseipbyte	; modifies (E)BX
+	call getcseipbyte	; get byte [cs:eip-1], sets E/BX
 	cmp al, 0CCh		; still a INT3 at [cs:eip-1] ?
 	jz gg_exit
+
+;--- here E/IP is decremented because DEBUG assumes an INT3 has been restored.
+;--- it's not always true, though - the INT3 may have been routed from protected-mode;
+;--- or anything else has just jumped to the vector for INT3.
 if ?PM
 	test [bCSAttr], CS32ATTR
 	jz $+3
 	db 66h	;mov [regs.rIP],ebx
 endif
 	mov [regs.rIP], bx	; decrement (E)IP
+
 if RING0
 	mov [run_int], -1	; v2.0: reset entry ( so SK cmd won't accept soft bps )
 endif
@@ -7353,7 +7388,7 @@ is_rm:
 	verw bx
 	jz isok
 	pushad
-	call getlinearbase
+	call getlinearbaseDT
 	jc error
 	cmp bx, dx
 	ja error
@@ -7816,6 +7851,9 @@ doproceed2:
 
 doproceed1::	;<--- used by T if an INT is to be processed
 	@dprintf "doproceed1: bx:esi=%X:%lX", bx, esi
+if ?PM and USEHWBP
+	call usehwdbg	; use 386 debug register for auto breakpoints?
+endif
 	mov di,offset line_out	;use the same breakpoint structure as in G
 	mov ax,1	;bp cnt
 	stosw
@@ -7834,6 +7872,75 @@ pp_err1:
 	jmp cmdloop
 
 p_cmd endp
+
+if ?PM and USEHWBP
+
+;--- try to set a hw bp at bx:esi
+;--- for DPMI, a watchpoint is used.
+;--- for RING0, debug register DR1 is used.
+
+usehwdbg proc
+ if ?DPMI
+	call ispm_dbg		; in protected-mode?
+	jz nohwbp
+	test bUseHWBP,1		; not in NTVDM!
+	jz nohwbp
+	cmp [machine],3		; is at least a 80386?
+	jb nohwbp
+	mov ax, 6
+	int 31h
+	.386
+	push cx
+	push dx
+	pop eax
+	add eax, esi
+	push eax
+	pop cx
+	pop bx			; BX::CX linear address
+	.8086
+	mov dx, 1		; size 1, type=exec
+	mov ax, 0b00h	; set watchpoint
+	int 31h
+	jc nohwbp
+	push bx			; save watchpoint handle
+	call run		; run the program
+	pop bx
+	call ispm_dbg	; still in protected-mode?
+	jz @F
+	mov ax, 0b01h
+	int 31h
+@@:
+ elseif RING0
+	call getlinearbaseDT; get base of descriptor table for BX into eax
+	mov dx, bx
+	call getlinearbaseDX
+	.386
+	add eax, esi
+	mov dr1, eax
+	@dprintf "usehwdbg: dr1=%lX, cs:eip=%X:%lX", eax, bx, esi
+	mov eax, dr7
+	and eax, 0ff0ffff3h	; clear 2-3 & 20-23 ( means b1 exec, 1 byte )
+	or al, 1000b	; set G1=1
+	or ah, 2		; set GE=1
+	mov dr7, eax
+	call run		; run the program
+	xor eax, eax
+	mov dr1, eax
+	mov eax, dr7
+	and al, 11110011b	; disable G1/L1
+	mov dr7, eax
+	.8086
+ endif
+	pop ax			; skip return address to doproceed1
+	cmp [run_int], EXC01MSG	; entry debug exception?
+	jnz ue_int		; if no, exit with msg and reg dump
+	jmp dumpregs	; if yes, return after reg dump
+nohwbp:
+	ret	; just return, will then do the "int3" bp
+
+usehwdbg endp
+
+endif
 
 if ?DPMI
 exitdpmi proc
@@ -7871,6 +7978,41 @@ if QCMD
 ;--- Q command - quit.
 
 q_cmd proc
+
+if RING0
+
+;--- the ring0 debugger core doesn't really know how to "quit";
+;--- that's why the Q cmd isn't active as default.
+;--- If activated, this code checks if current debuggee's CS is
+;--- non-priviledged - if yes, it pokes a "dos exit" at the current
+;--- instruction pointer. That's rather hackish, the current OS may
+;--- not have implemented an int 21h API at all. However, it will work
+;--- in many cases and hence seems better than nothing.
+;
+;--- A better way is to implement "dot-commands" like wdeb386,
+;--- that is, the debugger core is to call out to the loader if the
+;--- first non-space character is a '.' and then let the loader bother
+;--- about the user input. Here's the problem that the loader has
+;--- no way to find out at what status the debuggee currently is.
+
+	mov bx, [regs.rCS]
+	.386
+	lar ax, bx
+	and ah, 60h
+	jz @F		; can't exit in ring 0
+	call IsWriteableBX
+	mov edx, dword ptr [regs.rIP]
+	push ds
+	mov ds, bx
+	mov dword ptr [edx], 21CD4CB4h	; mov ah,4ch , int 21h
+	pop ds
+	call run
+	ret
+@@:
+	mov dx, offset plerr
+	jmp int21ah9
+	.8086
+else
 
 if ?DPMI
 	mov byte ptr [dpmidisable+1],0	;disble DPMI hook
@@ -7969,6 +8111,8 @@ endif
 
 	int 20h			;won't work if format == MZ!
 	jmp cmdloop		;returned? then something is terribly wrong.
+
+endif
 
 q_cmd endp
 
@@ -8493,15 +8637,15 @@ trace1_1:
 endif
 	xor cx,cx
 	call getcseipbyte
-	cmp al,0CDh
+	cmp al,0CDh			; an INT instruction?
 	jnz isstdtrace
 	inc cx
 	call getcseipbyte
-	cmp al,3
+	cmp al,3			; 2-byte INT 3?
 	jz isstdtrace
 	test byte ptr [tmode], 1	;TM=1?
 	jz trace_int
-	cmp al,1
+	cmp al,1			; INT 1?
 	jnz step_int
 isstdtrace:
 	or byte ptr [regs.rFL+1],1h	;set single-step mode
@@ -8530,9 +8674,20 @@ tt1_1:
 ; it is important that the breakpoint won't be restored!
 
 trace_int:
+if RING0 and USEHWBP	; never check in ring 0
+else
+ if ?DPMI and USEHWBP	; may check in DPMI
+	call ispm_dbe		; always check in real-mode
+	jz @F
+	test [bUseHWBP], 1	; and always check in NTVDM
+	jnz useproceed
+@@:
+ endif
 	mov cx,2
 	call iswriteablecseip	;is current CS:IP in ROM?
 	jc isstdtrace			;then do standard trace
+endif
+useproceed:
 	mov bx,[regs.rCS]
 if ?PM
 	test [bCSAttr], CS32ATTR
@@ -10030,8 +10185,8 @@ bc_cmd:
 	xor eax, eax
 	mov dr0, eax
 	mov eax, dr7
-	and al, 0FCh	; disable G0/L0
-;	and ah, 0fCh	; disable GE/LE
+	and al, 11111100b	; disable G0/L0
+;	and ah, 0fCh		; disable GE/LE
 	mov dr7, eax
 	ret
 bp_cmd:
@@ -10052,11 +10207,11 @@ bp_cmd:
 	pop eax
 	mov dr0, eax
 	mov eax, dr7
-	and eax, 0fff0ffffh	; clear 16-19 ( means b0 0=exec, 1 byte )
+	and eax, 0fff0fffch	; clear 0-1 & 16-19 ( means b0 0=exec, 1 byte )
 	and ecx, 0Fh	; type is just 4 bits!
 	shl ecx, 16
 	or eax, ecx		; set type (RW0, LEN0 )
-	or al, 2		; set G0=1
+	or al, 00000010b; set G0=1
 	or ah, 2		; set GE=1
 	mov dr7, eax
 	ret
@@ -12676,8 +12831,11 @@ ife (BOOTDBG or RING0)
 	jnz @F
 	mov ax,3306h
 	int 21h
-	cmp bx,3205h
+	cmp bx,3205h	; NTVDM?
 	jnz @F
+  if USEHWBP
+	mov bUseHWBP, 0	; don't try to use DPMI watchpoints in NTVDM
+  endif
 	mov si,offset szDebxxVdd	;DS:SI->"DEBXXVDD.DLL"
 	mov bx,offset szDispatch	;DS:BX->"Dispatch"
 	mov di,offset szInit		;ES:DI->"Init"
