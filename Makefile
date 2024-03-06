@@ -3,6 +3,8 @@
 # Masm could also be used, but then an OMF linker is required;
 # also, Masm won't be able to assemble the long mode variant DEBUGRL.BIN.
 
+# to enable the BP/BC cmds, use -DBCMD=1
+
 NAME=DEBUG
 OUTD=build
 

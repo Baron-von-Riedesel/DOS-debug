@@ -305,5 +305,7 @@
        - fixed S cmd: position display was corrupted in v2.00-v2.01.
     2.03 []
        - DEBUGR(L): optionally, the Q cmd may be activated.
+       - DEBUGR(L): BP/BC cmds accept up to 3 permanent breakpoints.
+       - DEBUGX: BP/BC cmds implemented, but inactive.
        - DEBUGX, DEBUGR(L), G/T/P cmds: use 386 debug register for bp if
-         possible.
+         possible, in real-mode and protected-mode.

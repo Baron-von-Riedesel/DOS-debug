@@ -104,7 +104,6 @@ INT22      = 1		; handle int 22h ( DOS program termination )
 INT2324    = 1		; switch int 23h & 24h for debugger/debuggee
 USEFP2STR  = 0		; 1=use FloatToStr()
 FLATSS     = 0		; always 0 except for DebugRL; flat stack needed for long mode ring0 variant.
-USEHWBP    = 1		; 1=try to use 386 hw breakpoints for internal bp
 
 if LMODE
 CS32ATTR	equ 40h or 20h	; check both default size and 64-bit mode
@@ -129,10 +128,14 @@ DBGNAME2   equ <"Deb386">
  endif
 
 ?PM        equ 1
+USEHWBP    equ 1	; 1=try to use 386 hw breakpoints
 VDD        equ 0
 NOEXTENDER equ 0
 DISPPL0STK equ 0	;1=display ring 0 stack in register dump
 CHKIOPL    equ 1	;1=don't stop if GPF cause of IOPL==0 and iosensitive instr
+ifndef BCMD
+BCMD       equ 1
+endif
 DGCMD      = 1
 DICMD      = 1
 DLCMD      = 1
@@ -143,6 +146,7 @@ elseif ?DPMI
 DBGNAME    equ <"DEBUGX">
 DBGNAME2   equ <"DebugX">
 ?PM        equ 1
+USEHWBP    equ 1	; 1=try to use 386 hw breakpoints
 VDD        equ 1	;1=try to load DEBXXVDD.DLL
 NOEXTENDER equ 1	;1=don't assume DPMI host includes a DOS extender
 WIN9XSUPP  equ 1	;1=avoid to hook DPMI entry when running in Win9x
@@ -161,7 +165,9 @@ CATCHINT31 equ 0	;1=hook DPMI int 31h
  endif
 CATCHINT41 equ 1	;1=hook into protected-mode debug interface
 MMXSUPP    equ 1	;1=support MMX specific commands
-;DPMIMSW    equ 0	;1=use int 2F,ax=1686h to detect mode, 0=use value of cs
+ifndef BCMD
+BCMD       equ 0
+endif
 DICMD      = 1
 DLCMD      = 1
 DXCMD      = 1
@@ -172,6 +178,10 @@ DBGNAME2   equ <"Debug">
 ?PM        equ 0
 VDD        equ 0
 NOEXTENDER equ 0
+ifndef BCMD
+BCMD       equ 0
+endif
+USEHWBP    equ 0
 endif
 
 if DRIVER
@@ -543,7 +553,7 @@ cmdlist label word
 if RING0
 	dw b_cmd
 else
-	dw cmd_error
+bcmdv dw cmd_error	; may be dynamically set to b_cmd
 endif
 	dw c_cmd, d_cmd
 	dw e_cmd, f_cmd, g_cmd, h_cmd
@@ -677,9 +687,14 @@ else
 rmode	db 0		;flags for R command
 endif
 tmode	db 0		;bit 0: 1=ms-debug compatible trace mode
-if ?PM and USEHWBP
-bUseHWBP db 1
+
+if USEHWBP
+bBPhit   db 0
+wStoreBP dw offset storebpdef
+wRMSetBP dw offset r0sethwbp
+wRMResetBP dw offset r0resethwbp
 endif
+
 has_87	db 0		;if there is a math coprocessor present
 mach_87	db 0		;coprocessor (0=8087,1,2,3=80387,...)
 if MMXSUPP
@@ -705,6 +720,23 @@ endif
 a_addr	dw 0,0,0	;address for next A command
 d_addr	dw 0,0,0	;address for last D command; must follow a_addr
 u_addr	dw 0,0,0	;address for last U command; must follow d_addr
+
+if USEHWBP
+HWBPSTRUCT struct
+dwLinAd dd ?
+bType   db ?
+ ife RING0
+wHdl	dw ?	; DPMI only
+ endif
+HWBPSTRUCT ends
+
+ if BCMD
+MAXHWBP equ 4
+ else
+MAXHWBP equ 1
+ endif
+HWBps HWBPSTRUCT MAXHWBP dup (<0,-1>)
+endif
 
 if DXCMD
 x_addr	dd 0		;(phys) address for last DX command
@@ -1023,8 +1055,8 @@ endif
 
 helpmsg db DBGNAME2, ' v',@CatStr(!',%VERSION,!'),CR,LF
 	db 'assemble', TAB, 'A [address]',CR,LF
-if RING0
-	db 'clear bp', TAB, 'BC',CR,LF
+if BCMD
+	db 'clear bp', TAB, 'BC # (#=0|1|2)',CR,LF
 	db 'set/show bp', TAB, 'BP [address [type]]',CR,LF
 endif             
 	db 'compare', TAB, TAB, 'C range address',CR,LF
@@ -2003,6 +2035,12 @@ endif
 	int 10h
 @@:
 
+if USEHWBP
+;--- clear the internal HW bp in case it was set; this is done here since the
+;--- G cmd may have caused a page fault when trying to write an INT3. In such
+;--- cases the G cmd is aborted and won't reset the internal bp.
+	mov [HWBps.HWBPSTRUCT.bType][(MAXHWBP-1)*sizeof HWBPSTRUCT], -1
+endif
 
 if LCMDFILE
 	call isdebuggeeloaded
@@ -4446,6 +4484,7 @@ if RING0
 
 ;--- get base of descriptor table for selector in BX
 ;--- out: eax=base, dx=limit, C if error
+;--- other registers preserved
 
 getlinearbaseDT proc
 	.386
@@ -4468,7 +4507,10 @@ endif
 	and dx, dx		; any LDT?
 	stc
 	jz exit
-	call getlinearbaseDX
+	push bx
+	mov bx, dx
+	call getlinearbaseBX
+	pop bx
 	clc
 exit:
 ife FLATSS
@@ -4477,12 +4519,12 @@ endif
 	ret
 getlinearbaseDT endp
 
-;--- get linear base of descriptor in DX
-;--- in: DX=selector, EAX=base of descriptor table
-;--- out: EAX=base of descriptor
+;--- get linear base of descriptor in BX
+;--- in: BX=selector, EAX=base of descriptor table
+;--- out: EAX=base of descriptor, DX=limit of descriptor
 
-getlinearbaseDX proc
-	movzx edx, dx
+getlinearbaseBX proc
+	movzx edx, bx
 	and dl, 0f8h
 	add eax, edx	; now eax -> LDT descriptor
 	push ds
@@ -4491,12 +4533,11 @@ getlinearbaseDX proc
 	mov dh, [eax+7]
 	shl edx, 16
 	mov dx, [eax+2]
-	push word ptr [eax+0]
-	mov eax, edx
-	pop dx
+	mov ax, [eax+0]
+	xchg eax, edx	; base to eax, limit to dx
 	pop ds
 	ret
-getlinearbaseDX endp
+getlinearbaseBX endp
 
 endif
 
@@ -5030,8 +5071,7 @@ dt_cmd proc
 	jz @F
 	call getlinearbaseDT
 	jc @F
-	mov dx, bx
-	call getlinearbaseDX
+	call getlinearbaseBX
 	@dprintf "dt: bx=%X eax=%lX", bx, eax
 	mov ebx, eax
 	mov si, offset szPL0Stk
@@ -5955,6 +5995,58 @@ resetbpsEx endp
 
 endif
 
+if USEHWBP
+
+;--- try to set a hw bp at bx:edx
+;--- bx and edx must be preserved
+;--- this proc is called onyl if cpu is 80386+
+;--- and hw debug registers are accessible
+
+	.386
+
+usehwdbg proc
+ if RING0
+	call getlinearbaseDT; EAX=base of descriptor table for BX
+	call getlinearbaseBX; EAX=base of selector BX in descriptor table EAX
+ else
+	call ispm_dbg		; in protected-mode?
+	jz rmbase
+	push dx
+	mov ax, 6
+	int 31h
+	jc nohwbp2
+	push cx
+	push dx
+	pop eax
+	pop dx
+ endif
+base_ok:
+	add eax, edx
+	@dprintf "usehwdbg: linear=%lX (cs:eip=%X:%lX)", eax, bx, edx
+	mov [HWBps][(MAXHWBP-1) * sizeof HWBPSTRUCT].dwLinAd, eax
+	mov [HWBps][(MAXHWBP-1) * sizeof HWBPSTRUCT].bType, 0
+	ret
+ ife RING0
+rmbase:
+	smsw ax		; currently no hw bps in v86-mode!
+	test al,1
+	jnz nohwbp
+	movzx eax, bx
+	shl eax, 4
+	jmp base_ok
+nohwbp2:
+	pop dx
+nohwbp:
+	stc
+	ret
+ endif
+usehwdbg endp
+
+	.8086
+
+endif
+
+
 ;--- G command - go.
 
 g_cmd proc
@@ -5963,14 +6055,19 @@ g_cmd proc
 
 ;--- Parse the rest of the line for breakpoints
 
-	mov di,offset line_out
-	xor ax,ax
+	mov di,offset line_out 
+	xor ax,ax		; init bp cnt to 0
 	stosw
+if USEHWBP
+	mov bp, [wStoreBP]
+else
+	mov bp, offset storebpdef
+endif
 @@:
 	dec si
 	call skipcomma
 	cmp al,CR		;end of line?
-	je @F
+	je gg_parsebp_done
 
 ;--- calling getaddr was a bug in protected-mode up to v1.29.
 ;--- ( it was a different getaddr than now, one that ensured the
@@ -5982,6 +6079,13 @@ g_cmd proc
 	mov bx,[eqladdr+4]	;default segment ( either CS or segm of '=' )
 	call getaddr	;get address into bx:(e)dx
 	@dprintf "g_cmd: bp=%X:%lX", bx, edx
+	call bp
+	jmp @B			;next bp
+
+storebpdef2:
+	mov bp, offset storebpdef
+storebpdef::
+	@dprintf "std int3 bp, cs:eip=%X:%lX", bx, edx
 	sizeprfX		;xchg eax,edx
 	xchg ax,dx		;mov ax,dx
 	sizeprfX		;stosd
@@ -5990,34 +6094,23 @@ g_cmd proc
 	stosw
 	inc di			; reserve to store byte at bp location
 	inc byte ptr line_out	;use [line_out+0] to count bps
-	jmp @B			;next bp
-@@:
-
-if ?PM
-;--- if just 1 bp is to set, DebugX/DebugR may use DR1.
-;--- For DebugR this cannot fail; for DebugX, if hw bp
-;--- cannot be used, doproceed1 will jump back to gg_1!
-	mov si, offset line_out
-	lodsw
-	cmp ax, 1	;just 1 bp?
-	jnz @F
-	.386
-	lodsd
-	push eax
-	lodsw
-	mov bx, ax
-	pop esi
-	jmp doproceed1
-	.8086
-@@:
+	retn
+if USEHWBP
+storebpx::
+	call usehwdbg
+	jc storebpdef2
+	@dprintf "storebpx: bp linear=%lX (cs:eip=%X:%lX)", eax, bx, edx
+	retn
 endif
+
+gg_parsebp_done:
 
 ;--- Store breakpoint bytes in the given locations.
 
 	mov bp, offset _ret	; ignore write errors for g
 gg_1::				; <--- called by p ( run an int/call/... - set 1 bp )
 	mov di,offset setbp1
-	call setbps
+	call setbps		; may cause a GPF in protected-mode if location is read-only
 	@dprintf "g_cmd: calling run"
 
 if ?DPMI
@@ -6029,7 +6122,7 @@ if ?DPMI
 endif
 
 ife RING0
-	@dprintf "g_cmd: run returned, [spadjust]=%X, [spsav]=%lX", [spadjust], dword ptr ds:[SPSAV]
+	@dprintf "g_cmd: run returned, [spadjust]=%X, [spsav]=%X:%X", [spadjust], word ptr ds:[SPSAV+2], word ptr ds:[SPSAV]
 endif
 
 if ?PM
@@ -6062,6 +6155,12 @@ if 0 ; v2.0: not needed for soft/hard bp detection
 	cmp al,0CCh		; was a CC at CS:[EIP-1]?
 	jnz gg_exit
 endif
+
+if USEHWBP
+	cmp bBPhit, 0
+	jnz gg_ok
+endif
+
 	cmp [run_int], EXC03MSG
 	jnz gg_exit
 	mov cx,  -1
@@ -6079,6 +6178,7 @@ if ?PM
 endif
 	mov [regs.rIP], bx	; decrement (E)IP
 
+gg_ok:
 if RING0
 	mov [run_int], -1	; v2.0: reset entry ( so SK cmd won't accept soft bps )
 endif
@@ -7851,18 +7951,23 @@ doproceed2:
 
 doproceed1::	;<--- used by T if an INT is to be processed
 	@dprintf "doproceed1: bx:esi=%X:%lX", bx, esi
-if ?PM and USEHWBP
-	call usehwdbg	; use 386 debug register for auto breakpoints?
-endif
 	mov di,offset line_out	;use the same breakpoint structure as in G
-	mov ax,1	;bp cnt
+if USEHWBP
+	xor ax, ax
+	stosw
+	sizeprfX	; mov edx, esi
+	mov dx, si
+	call [wStoreBP]	; optionally use 386 debug register for auto breakpoints?
+else
+	mov ax, 1	;bp cnt
 	stosw
 	sizeprfX	;xchg eax,esi
 	xchg ax,si
 	sizeprfX	;stosd
 	stosw
-	mov ax,bx
+	xchg ax, bx
 	stosw
+endif
 	mov bp, offset pp_err1	; abort if bp couldn't be written
 	call gg_1	; use g_cmd to write bp, run program, reset bp
 	retn
@@ -7872,75 +7977,6 @@ pp_err1:
 	jmp cmdloop
 
 p_cmd endp
-
-if ?PM and USEHWBP
-
-;--- try to set a hw bp at bx:esi
-;--- for DPMI, a watchpoint is used.
-;--- for RING0, debug register DR1 is used.
-
-usehwdbg proc
- if ?DPMI
-	call ispm_dbg		; in protected-mode?
-	jz nohwbp
-	test bUseHWBP,1		; not in NTVDM!
-	jz nohwbp
-	cmp [machine],3		; is at least a 80386?
-	jb nohwbp
-	mov ax, 6
-	int 31h
-	.386
-	push cx
-	push dx
-	pop eax
-	add eax, esi
-	push eax
-	pop cx
-	pop bx			; BX::CX linear address
-	.8086
-	mov dx, 1		; size 1, type=exec
-	mov ax, 0b00h	; set watchpoint
-	int 31h
-	jc nohwbp
-	push bx			; save watchpoint handle
-	call run		; run the program
-	pop bx
-	call ispm_dbg	; still in protected-mode?
-	jz @F
-	mov ax, 0b01h
-	int 31h
-@@:
- elseif RING0
-	call getlinearbaseDT; get base of descriptor table for BX into eax
-	mov dx, bx
-	call getlinearbaseDX
-	.386
-	add eax, esi
-	mov dr1, eax
-	@dprintf "usehwdbg: dr1=%lX, cs:eip=%X:%lX", eax, bx, esi
-	mov eax, dr7
-	and eax, 0ff0ffff3h	; clear 2-3 & 20-23 ( means b1 exec, 1 byte )
-	or al, 1000b	; set G1=1
-	or ah, 2		; set GE=1
-	mov dr7, eax
-	call run		; run the program
-	xor eax, eax
-	mov dr1, eax
-	mov eax, dr7
-	and al, 11110011b	; disable G1/L1
-	mov dr7, eax
-	.8086
- endif
-	pop ax			; skip return address to doproceed1
-	cmp [run_int], EXC01MSG	; entry debug exception?
-	jnz ue_int		; if no, exit with msg and reg dump
-	jmp dumpregs	; if yes, return after reg dump
-nohwbp:
-	ret	; just return, will then do the "int3" bp
-
-usehwdbg endp
-
-endif
 
 if ?DPMI
 exitdpmi proc
@@ -8674,19 +8710,16 @@ tt1_1:
 ; it is important that the breakpoint won't be restored!
 
 trace_int:
-if RING0 and USEHWBP	; never check in ring 0
-else
- if ?DPMI and USEHWBP	; may check in DPMI
-	call ispm_dbe		; always check in real-mode
-	jz @F
-	test [bUseHWBP], 1	; and always check in NTVDM
-	jnz useproceed
-@@:
+if USEHWBP
+ if RING0				; never check in ring 0
+ elseif ?DPMI
+	call ispm_dbe		; in protected-mode?
+	jnz useproceed		; then don't check, optionally use hw bp 
  endif
+endif
 	mov cx,2
 	call iswriteablecseip	;is current CS:IP in ROM?
 	jc isstdtrace			;then do standard trace
-endif
 useproceed:
 	mov bx,[regs.rCS]
 if ?PM
@@ -9804,6 +9837,197 @@ error:
 	stc
 	ret
 checksegm endp
+
+endif
+
+if USEHWBP
+
+WPENABLE equ 1	;local wp enable
+;WPENABLE equ 2	;global wp enable
+
+;--- DR6 (debug status register):
+;--- bits 0-3: 1=bp# condition detected (must be cleared by software)
+;--- bit 12: read as 0
+;--- bit 13: BD, debug register access detected 
+;--- bit 14: BS, bp single step
+;--- bit 15: BT, bp task switch
+;--- rest of bits read as 1
+;--- DR7 (debug control register):
+;--- bit 0-7: L0,G0 - L3,G3
+;--- bit 8-9: LE,GE
+;--- type ( optional 2. argument ) will be copied to bits 16-19 (RW0,LEN0)
+;--- bit 16-17: type (0=exec, 1=write, 2=I/O [if CR4.DE=1], 3=read or write)
+;--- bit 18-19: len (0=1 byte, 1=2 byte, 2=8 byte, 3=4 byte )
+
+setHWBps proc
+ife RING0
+	ret		; will be patched to NOP if cpu >= 80386
+ if ?DPMI
+	mov bp, offset pmsethwbp
+	call ispm_dbg
+	jnz @F
+ endif
+	mov bp, [wRMSetBP]
+@@:
+endif
+	xor cx, cx
+	mov si, offset HWBps
+	.386
+nextbp:
+	lodsd
+	xchg eax, edx
+	lodsb
+	cmp al, -1
+	jz skipbp
+	@dprintf "setHWBps %lX", edx
+	xchg eax, edx
+ if RING0
+	call r0sethwbp
+ else
+	push cx
+	call bp
+	pop cx
+ endif
+	or byte ptr [regs.rFL+2], 1	; set resume flag so a hwbp at cs:eip will be skipped
+skipbp:
+ ife RING0
+	lodsw
+ endif
+	inc cx
+	cmp cl, MAXHWBP
+	jnz nextbp
+done:
+	ret
+if ?DPMI
+pmsethwbp: 
+	push eax
+	pop cx
+	pop bx
+	mov dh, dl
+	shr dl, 2		; size is in bits 2-3
+	and dh, 3		; dh = type (0=exec,1=read, 2=r/w)
+	add dl, 1		; 0->, 1->2
+	@dprintf "pmsethwbp bx:cx=%X%04X dx=%X", bx, cx, dx
+	mov ax, 0b00h	; set watchpoint
+	int 31h
+	jc @F
+	mov [si], bx
+	@dprintf "pmsethwbp hdl=%X", bx
+	mov ax, 0b03h	; clear status in dr6
+	int 31h
+@@:
+	retn
+endif
+
+if 1; it's used both in ring0 and real-mode
+
+r0sethwbp::
+	call setdrreg
+	mov eax, dr6
+	btr ax, bx
+	mov dr6, eax
+	mov eax, dr7
+	movzx edx, dl	; type in bits 0-3
+	mov ebx, 0fffffff0h
+	push cx
+	shl cl, 2
+	add cl, 16		; cl = 16|20|24 for bp0|1|2
+	shl edx, cl
+	rol ebx, cl
+	pop cx
+	and eax, ebx
+	or eax, edx		; set type (RW0, LEN0 )
+	mov bl, WPENABLE
+	shl bl, cl
+	shl bl, cl
+	or al, bl		; set G|L0|1|2=1
+	or ah, WPENABLE	; set G|LE=1 ("legacy")
+	mov dr7, eax
+  ifdef _DEBUG
+	mov ebx, dr6
+	@dprintf "r0sethwbp dr7=%lX dr6=%lX", eax, ebx
+  endif
+	retn
+setdrreg::
+	movzx bx, cl
+	shl bx, 2
+	add bx, offset setdrx
+	jmp bx
+setdrx:
+	mov dr0, eax
+	retn
+	mov dr1, eax
+	retn
+	mov dr2, eax
+	retn
+	mov dr3, eax
+	retn
+endif
+setHWBps endp
+
+resetHWBps proc
+ife RING0
+	ret		; will be patched to NOP if cpu >= 80386
+endif
+	mov [bBPhit], 0
+if ?DPMI
+	mov bp, offset pmresethwbp
+	call ispm_dbg
+	jnz @F			; skip if in real-mode
+endif
+	mov bp, [wRMResetBP]
+@@:
+	xor cx, cx
+	mov dl, not 11b
+	mov si, offset HWBps
+nextbp:
+	lodsd
+	lodsb
+	cmp al,-1
+	jz skipbp
+ if RING0
+	call r0resethwbp
+ else
+	call bp
+ endif
+skipbp:
+ ife RING0
+	lodsw
+ endif
+	rol dl, 2
+	inc cx
+	cmp cl, MAXHWBP
+	jb nextbp
+done:
+	ret
+
+pmresethwbp:
+	mov bx, [si]
+	mov ax, 0b02h
+	int 31h
+	add [bBPhit], al
+	mov ax, 0b01h
+	int 31h
+	@dprintf "pmresetHWBps hdl=%X", bx
+	retn
+r0resethwbp::
+	xor eax, eax
+	call setdrreg
+	mov eax, dr7
+	and al, dl		; disable G0|1|2
+	mov dr7, eax
+  if 1
+	mov eax, dr6
+	btr ax, cx		; clear bit in DR6
+	adc [bBPhit],ch
+	mov dr6, eax
+  endif
+	@dprintf "r0resethwbp bp#=%X", cx
+	retn
+resetHWBps endp
+
+	.8086
+
 endif
 
 ;--- This is the routine that starts up the running program.
@@ -9839,7 +10063,12 @@ if ?DPMI
 	call setdbeexc0d0e
 endif
 
+if USEHWBP
+	call setHWBps
+endif
+
 if FLATSS
+	.386
 	mov [run_sp],esp	;save stack position
 else
 	mov [run_sp],sp		;save stack position
@@ -10076,6 +10305,10 @@ if RING0
 	call srscratch		;save GDT scratch entry
 endif
 
+if USEHWBP
+	call resetHWBps
+endif
+
 if LCMDFILE
 	call setpspdbg		;set debugger's PSP
 endif
@@ -10154,23 +10387,17 @@ checkgfx:
 endif
 intrtn endp
 
-if RING0
+if BCMD
+
+CONST segment
+no_free_bp db "All BPs used",CR,LF,'$'
+bp_not_set db "BP isn't set",CR,LF,'$'
+CONST ends
 
 ;--- handle BP/BC cmds.
-;--- just hardware bp 0 is used here (DR0).
-;--- DR6 (debug status register):
-;--- bits 0-3: 1=bp# condition detected (must be cleared by software)
-;--- bit 12: read as 0
-;--- bit 13: BD, debug register access detected 
-;--- bit 14: BS, bp single step
-;--- bit 15: BT, bp task switch
-;--- rest of bits read as 1
-;--- DR7 (debug control register):
-;--- bit 0-7: L0,G0 - L3,G3
-;--- bit 8-9: LE,GE
-;--- type ( optional 2. argument ) will be copied to bits 16-19 (RW0,LEN0)
-;--- bit 16-17: type (0=exec, 1=write, 2=I/O [if CR4.DE=1], 3=read or write)
-;--- bit 18-19: len (0=1 byte, 1=2 byte, 2=8 byte, 3=4 byte )
+;--- this code will only run if cpu is 80386+.
+
+	.386
 
 b_cmd proc
 	cmp ah, 'b'
@@ -10182,62 +10409,117 @@ b_cmd proc
 	jz bp_cmd
 	jmp cmd_error   ; anything else is unknown
 bc_cmd:
-	xor eax, eax
-	mov dr0, eax
-	mov eax, dr7
-	and al, 11111100b	; disable G0/L0
-;	and ah, 0fCh		; disable GE/LE
-	mov dr7, eax
+	call skipwhite
+	cmp al,CR       ; no argument given? then just display status...
+	jz cmd_error
+	call getbyte	; get byte into DL
+	call chkeol
+	movzx ax, dl
+	cmp al, 3
+	jnb cmd_error
+	imul ax, sizeof HWBPSTRUCT
+	mov bx, ax
+	mov al, -1
+	xchg al,[bx+HWBps].HWBPSTRUCT.bType
+	cmp al, -1
+	mov dx, offset bp_not_set
+	jz error
 	ret
 bp_cmd:
 	call skipwhite
 	cmp al,CR       ; no argument given? then just display status...
 	jz bp_disp
-	call getdword	; get address into bx:dx ( may be linear address or IO port )
-	call skipwhite
-	push bx
-	push dx
-	mov cl, 0		; default type: 0=exec (1=write,3=rw)
-	cmp al,13       ; second argument (=type) given?
+	mov bx,[regs.rCS];default segment to use
+	call getaddr	; get address into bx:e/dx
+	call skipwh0
+	push edx
+	mov dl, 0		; default type: 0=exec (1=write,3=rw)
+	cmp al,CR       ; second argument (=type) given?
 	jz @F
 	call getbyte	; get byte into DL
-	mov cl, dl
 	call chkeol
 @@:
+	push dx
+
+	mov di, offset HWBps
+	mov cx, MAXHWBP-1
+@@:
+	cmp [di].HWBPSTRUCT.bType, -1
+	jz hwbp_free
+	add di, sizeof HWBPSTRUCT
+	loop @B
+	add sp, 2+4
+	mov dx, offset no_free_bp
+error:
+	jmp int21ah9
+
+;--- bx=segment/selector, [sp]=type, [sp+2]=offset
+
+hwbp_free:
+if RING0
+	call getlinearbaseDT	; eax=base of descriptor table for BX
+	call getlinearbaseBX	; eax=base of BX
+else
+	movzx eax, bx
+	shl eax, 4
+	call ispm_dbg
+	jz @F
+	mov ax, 6
+	int 31h
+	jc cmd_error			; can't get base of BX
+	push cx
+	push dx
 	pop eax
-	mov dr0, eax
-	mov eax, dr7
-	and eax, 0fff0fffch	; clear 0-1 & 16-19 ( means b0 0=exec, 1 byte )
-	and ecx, 0Fh	; type is just 4 bits!
-	shl ecx, 16
-	or eax, ecx		; set type (RW0, LEN0 )
-	or al, 00000010b; set G0=1
-	or ah, 2		; set GE=1
-	mov dr7, eax
-	ret
-bp_disp:
-	mov eax, dr7
-	test al, 3h		; L0/G0 enabled?
-	jz nobp
-	mov eax,"=0rd"
+@@:
+endif
+	pop dx		; restore type
+	pop ecx		; get offset
+	add eax, ecx
 	stosd
-	mov eax, dr0
+	mov al, dl
+	and al, 0fh		; type is 4 bits only
+	stosb
+	ret
+
+bp_disp:
+	mov si, offset HWBps
+	mov cl, 0
+nextbp:
+	lodsd
+	xchg edx, eax
+	lodsb
+	@dprintf "bp: cx=%X, edx=%lX, ax=%X", cx, edx, ax
+	cmp al, -1
+	jz skipbp
+	mov di, offset line_out
+	push cx
+	push ax
+	mov ax,"pB"
+	stosw
+	mov al, cl
+	add al, '0'
+	mov ah, ':'
+	stosw
+	mov eax, edx
 	call hexdword
 	mov al, ' '
 	stosb
-	mov eax,"=6rd"
-	stosd
-	mov eax, dr6
-	call hexdword
+	pop ax
+	call hexbyte
 	call putsline
+	pop cx
+skipbp:
+if ?DPMI
+	add si, 2
+endif
+	inc cx
+	cmp cl, MAXHWBP
+	jnz nextbp
 	ret
-nobp:
-	mov eax, "b on"
-	stosd
-	mov al, 'p'
-	stosb
-	jmp putsline
 b_cmd endp
+
+	.8086
+
 endif
 
 if VXCMD
@@ -11795,7 +12077,7 @@ no386_31:
 
 ;--- display 1 disassembled line at CS:[E]IP
 
-	@dprintf "dumpregs"
+;	@dprintf "dumpregs"
 	mov si, offset regs.rIP
 	mov di, offset u_addr
 	movsw
@@ -12833,9 +13115,6 @@ ife (BOOTDBG or RING0)
 	int 21h
 	cmp bx,3205h	; NTVDM?
 	jnz @F
-  if USEHWBP
-	mov bUseHWBP, 0	; don't try to use DPMI watchpoints in NTVDM
-  endif
 	mov si,offset szDebxxVdd	;DS:SI->"DEBXXVDD.DLL"
 	mov bx,offset szDispatch	;DS:BX->"Dispatch"
 	mov di,offset szInit		;ES:DI->"Init"
@@ -12895,7 +13174,21 @@ init2:
 	inc [machine]
 
 ;   It is now safe to use 32-bit opcode/operands.
-
+ if BCMD
+	mov [bcmdv], offset b_cmd	;activate b cmd (requires 80386
+ endif
+ if USEHWBP 
+  if VDD
+	cmp [hVdd], -1	; no hwbp for NTVDM
+	jnz nohwbp
+  endif
+	mov byte ptr [setHWBps], 90h	; patch code RET -> NOP
+	mov byte ptr [resetHWBps], 90h	; patch code RET -> NOP
+	mov [wStoreBP], offset storebpx
+nohwbp:
+ endif
+elseif USEHWBP 
+	mov [wStoreBP], offset storebpx
 endif
 
 	.386

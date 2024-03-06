@@ -146,6 +146,38 @@
  Syntax: A [address]
 
  ---
+[ENH:
+ The Breakpoint commands (BP and BC) are activated for DebugR only, but
+ may be activated for the DebugX variants as well. The commands use the
+ 80386+ debug capabilities. Up to 3 breakpoints may be set ( the hardware
+ allows 4 breakpoints, but one is used internally for the G, T and P
+ commands ). The feature works in protected-mode and real-mode only;
+ support for v86-mode isn't implemented.
+ Without argument, BP will display the currently active breakpoints. Although
+ the breakpoints may be entered in the usual format ( segment:offset ), BP
+ displays the linear address of the breakpoints only.
+ The type argument consists of 2 bitfields. Bits 0-1 define the type:
+
+  0 code breakpoint
+  1 write watchpoint
+  2 I/O watchpoint ( not allowed by DPMI v0.9/v1.0 )
+  3 read/write watchpoint
+
+ while bits 2-3 define the size ( for watchpoints ):
+
+  0 byte access
+  1 word access
+  3 dword access
+
+ If no type argument is given, a code breakpoint is assumed. Note that I/O
+ watchpoints may be rejected by the DPMI host; in any case they require
+ bit DE be set in register CR4.
+
+ Command BC is used to clear a previously set breakpoint.
+ 
+ Syntax: BP [[address] type]
+         BC bp#
+ ---]
 
  The Compare command (C) compares two memory regions. All differences will be
  listed, both addresses are displayed, with their respective data bytes.
@@ -301,9 +333,9 @@
 
  Syntax: G [=address] [break0 break1...]
 
- [DEBUGX: If just 1 breakpoint is given, if the DPMI host supports the
- feature and if the debuggee is in protected-mode, DebugX will use a debug
- watchpoint to set the breakpoint.]
+ [DEBUGX: DebugX will use a debug watchpoint to set the first
+ breakpoint. Should always work in real-mode; in protected-mode this
+ must be supported by the DPMI host; in v86-mode, it's inactive for now. 
 
  ---
 
@@ -413,7 +445,7 @@
  Syntax: P [=address] [number]
 
  [DEBUGX: as it is described at the T(race) command, DEBUGX may use
- the 80386 debug registers in protected-mode.
+ the 80386 debug register in protected-mode.
  ]
 
  ---
@@ -875,8 +907,8 @@
  in the standard Debug/X aren't available: DM, DX, L, N, Q, W, Xx. OTOH,
  DebugR(L) have some special commands:
 
- BC: clear hw watchpoint 0
- BP [linear_addr [type]]: set/display hw watchpoint 0. Default for type is
+ BC n: clear hw watchpoint no n ( n=0-2 ).
+ BP [linear_addr [type]]: set/display hw watchpoints. Default for type is
      0 ( meaning 'execute, 1 byte' ); 1 will be a 'write watchpoint'. For more
      details, see description of 80386+, register DR7.
  DG start [count]: display GDT ( Global Descriptor Table )
@@ -891,8 +923,12 @@
  Vectors that can be trapped are vectors 0, 1, 3, 6, 0Dh and 0Eh.
  
  Commands G, T and P: DebugR behaves somewhat like DebugX in this behalf:
- if one breakpoint is to be set, debug register DR1 is used to set the
- breakpoint. Unlike DebugX, this won't fail for DebugR.
+ if a breakpoint is to be set, debug register DR3 is used to set the
+ breakpoint. Unlike DebugX, this can't fail for DebugR. For the G command
+ this applies to the first breakpoint only - any further breakpoints will
+ still be set by writing INT 3 to the location. It should be avoided to set
+ a breakpoint that may be triggered in real-mode - in such cases the debugger
+ won't be notified!
 
   At the debugger prompt, when an address is to be parsed, the prefix '%' will
  tell the debugger to interpret the following offset as linear address.
