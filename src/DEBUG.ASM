@@ -133,9 +133,9 @@ VDD        equ 0
 NOEXTENDER equ 0
 DISPPL0STK equ 0	;1=display ring 0 stack in register dump
 CHKIOPL    equ 1	;1=don't stop if GPF cause of IOPL==0 and iosensitive instr
-ifndef BCMD
+ ifndef BCMD
 BCMD       equ 1
-endif
+ endif
 DGCMD      = 1
 DICMD      = 1
 DLCMD      = 1
@@ -165,9 +165,9 @@ CATCHINT31 equ 0	;1=hook DPMI int 31h
  endif
 CATCHINT41 equ 1	;1=hook into protected-mode debug interface
 MMXSUPP    equ 1	;1=support MMX specific commands
-ifndef BCMD
+ ifndef BCMD
 BCMD       equ 0
-endif
+ endif
 DICMD      = 1
 DLCMD      = 1
 DXCMD      = 1
@@ -178,10 +178,10 @@ DBGNAME2   equ <"Debug">
 ?PM        equ 0
 VDD        equ 0
 NOEXTENDER equ 0
-ifndef BCMD
+ ifndef BCMD
 BCMD       equ 0
-endif
-USEHWBP    equ 0
+ endif
+USEHWBP    equ BCMD
 endif
 
 if DRIVER
@@ -725,7 +725,7 @@ if USEHWBP
 HWBPSTRUCT struct
 dwLinAd dd ?
 bType   db ?
- ife RING0
+ if ?DPMI
 wHdl	dw ?	; DPMI only
  endif
 HWBPSTRUCT ends
@@ -4483,7 +4483,8 @@ endif
 if RING0
 
 ;--- get base of descriptor table for selector in BX
-;--- out: eax=base, dx=limit, C if error
+;--- out: NC, eax=base, dx=limit
+;---       C if error
 ;--- other registers preserved
 
 getlinearbaseDT proc
@@ -4499,23 +4500,27 @@ else
 endif
 ;	mov dx, [bp-6]
 ;	mov eax, [bp-4]	; get linear address GDT
+	@dprintf "getlinearbaseDT: bx=%X", bx
 	pop dx
 	pop eax
 	test bl, 4
-	jz exit
-	sldt dx
-	and dx, dx		; any LDT?
-	stc
-	jz exit
+	jz @F
 	push bx
-	mov bx, dx
+	sldt bx
+	@dprintf "getlinearbaseDT: ldt=%X", bx
+	and bx,bx
+	stc
+	jz noldt
 	call getlinearbaseBX
-	pop bx
+	@dprintf "getlinearbaseDT: eax=%lX", eax
 	clc
-exit:
+noldt:
+	pop bx
+@@:
 ife FLATSS
 	pop bp
 endif
+done:
 	ret
 getlinearbaseDT endp
 
@@ -4588,11 +4593,11 @@ if RING0
  else
 	mov bp, sp
  endif
-	call getlinearbaseDT	; get linear base,limit of descriptor table
+	call getlinearbaseDT	; get linear base & limit of descriptor table for BX
 	.386
 	push eax
 	push dx
-	pushf
+	pushf         ; save error flag of getlinearbase
 	push si
 	test bl,4
 	jz @F
@@ -5998,17 +6003,20 @@ endif
 if USEHWBP
 
 ;--- try to set a hw bp at bx:edx
-;--- bx and edx must be preserved
-;--- this proc is called onyl if cpu is 80386+
-;--- and hw debug registers are accessible
+;--- bx and edx must be preserved.
+;--- this proc is called only if cpu is 80386+
+;--- and hw debug registers are accessible.
 
 	.386
 
 usehwdbg proc
  if RING0
+	push edx
 	call getlinearbaseDT; EAX=base of descriptor table for BX
+	jc exit
 	call getlinearbaseBX; EAX=base of selector BX in descriptor table EAX
- else
+	pop edx
+ elseif ?DPMI
 	call ispm_dbg		; in protected-mode?
 	jz rmbase
 	push dx
@@ -6019,12 +6027,15 @@ usehwdbg proc
 	push dx
 	pop eax
 	pop dx
+ else
+	jmp rmbase
  endif
 base_ok:
 	add eax, edx
 	@dprintf "usehwdbg: linear=%lX (cs:eip=%X:%lX)", eax, bx, edx
 	mov [HWBps][(MAXHWBP-1) * sizeof HWBPSTRUCT].dwLinAd, eax
 	mov [HWBps][(MAXHWBP-1) * sizeof HWBPSTRUCT].bType, 0
+exit:
 	ret
  ife RING0
 rmbase:
@@ -6060,8 +6071,6 @@ g_cmd proc
 	stosw
 if USEHWBP
 	mov bp, [wStoreBP]
-else
-	mov bp, offset storebpdef
 endif
 @@:
 	dec si
@@ -6079,11 +6088,17 @@ endif
 	mov bx,[eqladdr+4]	;default segment ( either CS or segm of '=' )
 	call getaddr	;get address into bx:(e)dx
 	@dprintf "g_cmd: bp=%X:%lX", bx, edx
+if USEHWBP
 	call bp
+else
+	call storebpdef
+endif
 	jmp @B			;next bp
 
+if USEHWBP
 storebpdef2:
 	mov bp, offset storebpdef
+endif
 storebpdef::
 	@dprintf "std int3 bp, cs:eip=%X:%lX", bx, edx
 	sizeprfX		;xchg eax,edx
@@ -6130,7 +6145,11 @@ if ?PM
 	mov [bCSAttr],al	; must be set for getcseipbyte()
 endif
 
-if 0 ; v2.0: not needed for soft/hard bp detection
+if 0
+;--- this is inactive since v2.0;
+;--- not needed for soft/hard bp detection?
+;--- see comment below - no safe detection for soft BPs anymore!
+
 	mov cx,-1
 	call getcseipbyte	;get byte at [cs:eip-1], set E/BX to E/IP-1
 	push ax
@@ -6150,7 +6169,7 @@ endif
 ;--- Finish up.  Check if it was one of _our_ breakpoints.
 ;--- if yes, decrement (E)IP 
 
-if 0 ; v2.0: not needed for soft/hard bp detection
+if 0 ; v2.0: not needed for soft/hard bp detection?
 	pop ax
 	cmp al,0CCh		; was a CC at CS:[EIP-1]?
 	jnz gg_exit
@@ -6728,10 +6747,10 @@ ll1:
 	test [fileext], EXT_COM or EXT_EXE
 	jz loadfile		;if not .com or .exe file
 	cmp bx,[regs.rCS]
-	jne ll2			;if segment is wrong
+	jne l_err		;if segment is wrong
 	cmp dx,100h
 	je loadfile		;if address is OK (or not given)
-ll2:
+l_err:
 	jmp cmd_error	;can only load .com or .exe at cs:100
 
  endif
@@ -9890,7 +9909,7 @@ nextbp:
  endif
 	or byte ptr [regs.rFL+2], 1	; set resume flag so a hwbp at cs:eip will be skipped
 skipbp:
- ife RING0
+ if ?DPMI
 	lodsw
  endif
 	inc cx
@@ -9991,7 +10010,7 @@ nextbp:
 	call bp
  endif
 skipbp:
- ife RING0
+ if ?DPMI
 	lodsw
  endif
 	rol dl, 2
@@ -10093,6 +10112,9 @@ if FLATSS
 	push ds
 	pop ss
 endif
+if RING0
+	@dprintf "r0 ss:esp=%X:%lX efl=%lX", word ptr [regs.r0SSEsp+4], dword ptr [regs.r0SSEsp], dword ptr [regs.rFL]
+endif
 	mov sp,offset regs
 ife RING0
 	cmp [machine],3
@@ -10125,7 +10147,7 @@ ife RING0
 	add sp,2*2	; skip places for FS,GS
 else
 	.386
-if 0;LMODE
+ if 0;LMODE
 ;--- FS and GS might be "unset" ( still containing real-mode values )
 ;--- so check if value has changed and if not, don't write the regs
 	mov ax, fs
@@ -10138,18 +10160,18 @@ if 0;LMODE
 	jz @F
 	mov gs, [regs.rGS]
 @@:
-endif
+ endif
 	lar ax, [regs.rCS]
 	and ah, 60h
 	popad
 	pop es
 	pop es
-if 0;LMODE
+ if 0;LMODE
 	lea sp,[esp+2+2]
-else
+ else
 	pop fs
 	pop gs
-endif
+ endif
 	jz @F
 	lss esp, [regs.r0SSEsp]		; debuggee runs in non-privileged mode, so
 	push dword ptr [regs.rSS]	; create a full IRETD stack frame with SS:ESP
@@ -10401,29 +10423,30 @@ CONST ends
 
 b_cmd proc
 	cmp ah, 'b'
-	jnz cmd_error
+	jnz b_err
 	or al, TOLOWER
 	cmp al, 'c'     ; is it BC?
 	jz bc_cmd
 	cmp al, 'p'     ; or BP?
 	jz bp_cmd
+b_err:
 	jmp cmd_error   ; anything else is unknown
 bc_cmd:
 	call skipwhite
 	cmp al,CR       ; no argument given? then just display status...
-	jz cmd_error
+	jz b_err
 	call getbyte	; get byte into DL
 	call chkeol
 	movzx ax, dl
 	cmp al, 3
-	jnb cmd_error
+	jnb b_err
 	imul ax, sizeof HWBPSTRUCT
 	mov bx, ax
 	mov al, -1
-	xchg al,[bx+HWBps].HWBPSTRUCT.bType
+	xchg al,[bx][HWBps].bType
 	cmp al, -1
 	mov dx, offset bp_not_set
-	jz error
+	jz b_errmsg
 	ret
 bp_cmd:
 	call skipwhite
@@ -10450,27 +10473,33 @@ bp_cmd:
 	loop @B
 	add sp, 2+4
 	mov dx, offset no_free_bp
-error:
+b_errmsg:
 	jmp int21ah9
 
 ;--- bx=segment/selector, [sp]=type, [sp+2]=offset
 
 hwbp_free:
 if RING0
+	lar ax, bx
+	jnz b_err
 	call getlinearbaseDT	; eax=base of descriptor table for BX
 	call getlinearbaseBX	; eax=base of BX
 else
 	movzx eax, bx
 	shl eax, 4
+ if ?DPMI
 	call ispm_dbg
 	jz @F
+	lar ax, bx
+	jnz b_err
 	mov ax, 6
 	int 31h
-	jc cmd_error			; can't get base of BX
+	jc b_err			; can't get base of BX
 	push cx
 	push dx
 	pop eax
 @@:
+ endif
 endif
 	pop dx		; restore type
 	pop ecx		; get offset
@@ -10483,7 +10512,7 @@ endif
 
 bp_disp:
 	mov si, offset HWBps
-	mov cl, 0
+	xor cx, cx
 nextbp:
 	lodsd
 	xchg edx, eax
@@ -10510,7 +10539,7 @@ nextbp:
 	pop cx
 skipbp:
 if ?DPMI
-	add si, 2
+	lodsw
 endif
 	inc cx
 	cmp cl, MAXHWBP
@@ -13001,6 +13030,9 @@ CS64SEL equ 8	; to be fixed: 64-bit code selector for DebugRL is 8 (Dos32cm)
 	mov [jmpv162s], cs
  endif
 	.386
+ ife LMODE
+	@checkss	; ensure hiword esp isn't trashed
+ endif
 	mov ax, [esp+2*2+4]	; get caller's CS
 	mov dword ptr [int10vec+0], ebx
 	mov word ptr [int10vec+4], ax

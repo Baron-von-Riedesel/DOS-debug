@@ -106,7 +106,7 @@
      have to internally use a breakpoint. Allows to set a breakpoint
      in ROM code or - in protected-mode - in pages marked as read-only.
      This feature is active in protected-mode and true real-mode, but not
-     in v86-mode. Be aware that not all DPMI hosts may allow this.
+     in v86-mode. Be aware that some DPMI hosts don't support that.
 
    - 'rn' displays FPU registers in "readable" format.
 

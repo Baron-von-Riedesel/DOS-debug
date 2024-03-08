@@ -9,6 +9,12 @@
 
 SKIPINTGPF equ 1	; ignore GPFs caused by INT xx
 
+;--- stack size problem: if "SAFESS equ 0" it's assumed that ring0 stack
+;--- is 32-bit - which may not be true. if ring0 ss is 16-bit, but
+;--- ring3 ss is 32-bit, hiword esp may be != 0 and the debugger will crash.
+
+SAFESS equ 1
+
 	.386
 
 FAULT32 struct
@@ -89,6 +95,25 @@ checkioplinstr endp
 
 endif
 
+if SAFESS
+checkss:
+	push eax
+	mov ax, ss
+	lar eax, eax
+	bt eax, 22
+	jc @F
+	movzx esp, sp
+@@:
+	pop eax
+	ret
+endif
+
+@checkss macro
+if SAFESS
+	call checkss
+endif
+endm
+
 ;--- store value of cr2 in exc msg
 rendercr2:
 	cld
@@ -104,6 +129,7 @@ rendercr2:
 	pop es
 	ret
 
+;--- entries vectors 0,1,3,6,7,c,d,e
 
 intr00:				; divide error
 	push EXC00MSG or (0 shl 8)
@@ -195,6 +221,7 @@ endif
 ;--- exceptions with error code
 
 intrtnp2:
+	@checkss
 if 0
 	test byte ptr [esp].EXCFR.wMsg+1, 08	; int 08-0F?
 	jz intrtnp
@@ -231,6 +258,7 @@ endif
 
 ;--- exceptions without error code
 intrtnp1:
+	@checkss
 	push dword ptr [esp]	; add a fake "error code" to the stack frame
 
 ;--- Common interrupt routine.

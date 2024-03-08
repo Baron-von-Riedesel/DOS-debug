@@ -148,7 +148,7 @@
  ---
 [ENH:
  The Breakpoint commands (BP and BC) are activated for DebugR only, but
- may be activated for the DebugX variants as well. The commands use the
+ may be activated for all Debug variants as well. The commands use the
  80386+ debug capabilities. Up to 3 breakpoints may be set ( the hardware
  allows 4 breakpoints, but one is used internally for the G, T and P
  commands ). The feature works in protected-mode and real-mode only;
@@ -907,10 +907,6 @@
  in the standard Debug/X aren't available: DM, DX, L, N, Q, W, Xx. OTOH,
  DebugR(L) have some special commands:
 
- BC n: clear hw watchpoint no n ( n=0-2 ).
- BP [linear_addr [type]]: set/display hw watchpoints. Default for type is
-     0 ( meaning 'execute, 1 byte' ); 1 will be a 'write watchpoint'. For more
-     details, see description of 80386+, register DR7.
  DG start [count]: display GDT ( Global Descriptor Table )
  DI start [count]: display IDT ( Interrupt Descriptor Table )
  DL start [count]: display LDT ( Local Descriptor Table )
@@ -918,17 +914,18 @@
  SK: Skip handling of current exception, hand it over to previous handler.
  VC vector: untrap vector
  VL: list (un)trapped vectors ( vectors marked with '*' are untrapped )
- VT vector: trap vector
-
- Vectors that can be trapped are vectors 0, 1, 3, 6, 0Dh and 0Eh.
+ VT vector: trap vector; vectors that can be trapped are vectors 0, 1, 3, 6,
+    0Dh and 0Eh.
  
- Commands G, T and P: DebugR behaves somewhat like DebugX in this behalf:
- if a breakpoint is to be set, debug register DR3 is used to set the
- breakpoint. Unlike DebugX, this can't fail for DebugR. For the G command
- this applies to the first breakpoint only - any further breakpoints will
- still be set by writing INT 3 to the location. It should be avoided to set
- a breakpoint that may be triggered in real-mode - in such cases the debugger
- won't be notified!
+ Commands BC and BP are activated for DebugR.
+
+ Commands G, T and P: since support for 80386+ hardware debug registers is
+ active, it may be used by those commands in case a breakpoint is to be set. 
+ Unlike DebugX, this can't fail for DebugR. As for the G command this applies
+ to the first breakpoint only - any further breakpoints will still be set by
+ writing INT 3 to the location. One shouldn't set a breakpoint that may be
+ triggered in real-mode - DebugR is, unlike DebugX, not bimodal and hence
+ won't be notified in such cases!
 
   At the debugger prompt, when an address is to be parsed, the prefix '%' will
  tell the debugger to interpret the following offset as linear address.

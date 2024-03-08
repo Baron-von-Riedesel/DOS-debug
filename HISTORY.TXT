@@ -304,8 +304,10 @@
     2.02 [11.2.2024]
        - fixed S cmd: position display was corrupted in v2.00-v2.01.
     2.03 []
+       - DEBUGR fix: debugger assumed a 32-bit ring0 SS register; if this
+         wasn't true, a crash may have occured.
        - DEBUGR(L): optionally, the Q cmd may be activated.
        - DEBUGR(L): BP/BC cmds accept up to 3 permanent breakpoints.
        - DEBUGX: BP/BC cmds implemented, but inactive.
-       - DEBUGX, DEBUGR(L), G/T/P cmds: use 386 debug register for bp if
-         possible, in real-mode and protected-mode.
+       - DEBUGX, DEBUGR(L), G/T/P cmds: if possible, a 386 debug register
+         will be used to set a breakpoint , in real-mode and protected-mode.
