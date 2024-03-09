@@ -8729,16 +8729,16 @@ tt1_1:
 ; it is important that the breakpoint won't be restored!
 
 trace_int:
-if USEHWBP
- if RING0				; never check in ring 0
- elseif ?DPMI
+if USEHWBP and ?DPMI
 	call ispm_dbe		; in protected-mode?
 	jnz useproceed		; then don't check, optionally use hw bp 
- endif
 endif
+if RING0 and USEHWBP	; no check for DebugR if USEHWBP is 1
+else
 	mov cx,2
 	call iswriteablecseip	;is current CS:IP in ROM?
 	jc isstdtrace			;then do standard trace
+endif
 useproceed:
 	mov bx,[regs.rCS]
 if ?PM
@@ -8854,6 +8854,8 @@ trace1 endp
 ;--- used by T cmd.
 ;--- IN: CX=offset for (E)IP
 
+if RING0 and USEHWBP	; remove if RING==1 and USEHWBP==1
+else
 iswriteablecseip proc
 	call getcseipbyte	;get byte ptr at CS:EIP+CX
 	mov ah,al
@@ -8871,6 +8873,7 @@ notwriteable:
 	stc
 	ret
 iswriteablecseip endp
+endif
 
 ;--- clear TF in the copy of flags register onto the stack
 
