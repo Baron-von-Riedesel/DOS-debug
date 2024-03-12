@@ -128,7 +128,7 @@ DBGNAME2   equ <"Deb386">
  endif
 
 ?PM        equ 1
-USEHWBP    equ 1	; 1=try to use 386 hw breakpoints
+USEHWBP    equ 1	; 1=use 386 hw breakpoints
 VDD        equ 0
 NOEXTENDER equ 0
 DISPPL0STK equ 0	;1=display ring 0 stack in register dump
@@ -146,7 +146,6 @@ elseif ?DPMI
 DBGNAME    equ <"DEBUGX">
 DBGNAME2   equ <"DebugX">
 ?PM        equ 1
-USEHWBP    equ 1	; 1=try to use 386 hw breakpoints
 VDD        equ 1	;1=try to load DEBXXVDD.DLL
 NOEXTENDER equ 1	;1=don't assume DPMI host includes a DOS extender
 WIN9XSUPP  equ 1	;1=avoid to hook DPMI entry when running in Win9x
@@ -165,8 +164,11 @@ CATCHINT31 equ 0	;1=hook DPMI int 31h
  endif
 CATCHINT41 equ 1	;1=hook into protected-mode debug interface
 MMXSUPP    equ 1	;1=support MMX specific commands
+ ifndef USEHWBP
+USEHWBP    equ 1	;1=try to use 386 hw breakpoints (fails on NTVDM/DosEmu)
+ endif
  ifndef BCMD
-BCMD       equ 0
+BCMD       equ 0	;BCMD=1 requires USEHWBP=1
  endif
 DICMD      = 1
 DLCMD      = 1
@@ -550,10 +552,10 @@ CONST segment
 
 cmdlist label word
 	dw a_cmd
-if RING0
-	dw b_cmd
+if BCMD
+bcmdv dw b_cmderr	; may be dynamically set to b_cmd
 else
-bcmdv dw cmd_error	; may be dynamically set to b_cmd
+	dw cmd_error
 endif
 	dw c_cmd, d_cmd
 	dw e_cmd, f_cmd, g_cmd, h_cmd
@@ -690,9 +692,9 @@ tmode	db 0		;bit 0: 1=ms-debug compatible trace mode
 
 if USEHWBP
 bBPhit   db 0
-wStoreBP dw offset storebpdef
-wRMSetBP dw offset r0sethwbp
-wRMResetBP dw offset r0resethwbp
+wStoreBP   dw offset storebpdef  ; proc to set first bp for G/P/T
+wRMSetBP   dw offset r0sethwbp   ; proc to set hw bps in real-mode/r0
+wRMResetBP dw offset r0resethwbp ; proc to reset hw bps in real-mode/r0
 endif
 
 has_87	db 0		;if there is a math coprocessor present
@@ -2096,6 +2098,8 @@ endif
 	mov ah,[si-2]	; v2.0: for easily detecting 2-byte cmds
 	or ah, TOLOWER
 cmd4:
+	sizeprfX		;clear ecx - needed for cmds that call getrange
+	xor cx,cx
 	mov di,offset line_out
 	call dx
 	jmp cmdloop		;back to the top
@@ -4428,7 +4432,6 @@ if DPCMD
 ;--- DP disk - display partition table of a fixed disk
 
 dp_cmd proc
-	call skipwhite
 	call getbyte		;get byte into DL
 	call chkeol			;expect end of line here
 	mov bp, sp
@@ -4556,7 +4559,7 @@ CONST ends
  endif
 
 ;--- DG/DL commands
-;--- al = 'l' or 'g'
+;--- ah = 'l' or 'g'
 
 CONST segment
 descbase db ' base=???????? limit=???????? attr=????',0
@@ -4565,14 +4568,13 @@ CONST ends
 dgl_cmd proc
 
 	push ax
-	call skipwhite
 	call getword	;get word into DX
 	pop cx
 	mov bx, dx
 
 	and bl, 0f8h
  if DGCMD
-	cmp cl, 'g'
+	cmp ch, 'g'
 	jz @F
  endif
 	or bl, 4
@@ -4740,7 +4742,6 @@ CONST ends
 ;--- DI command
 
 di_cmd proc
-	call skipwhite
 	call getbyte	;get byte into DL
 	mov bx,dx
 	call skipcomm0
@@ -4920,7 +4921,7 @@ if DMCMD
 ;--- dm cmd: display list of MCBs
 ;--- DI=lineout
 
-mcbout proc
+dm_cmd proc
 ;	mov di,offset line_out
 	mov ax,"SP"
 	stosw
@@ -5000,19 +5001,11 @@ sd2s_ex:
 endif
 	mov ds,bx
 	ret
-mcbout endp
+dm_cmd endp
 
 endif
 
 if DTCMD
-
-CONST segment
-if LMODE
-szPL0Stk db " RSP0=",0
-else
-szPL0Stk db " R0 SS:ESP=",0
-endif
-CONST ends
 
  if 0
 ;--- "legacy TSS "
@@ -5062,6 +5055,14 @@ _Ist7	dq ?	;+54
 wOffs   dw ?	;+66
 TSSSTR ends
  endif
+
+CONST segment
+if LMODE
+szPL0Stk db " RSP0=",0
+else
+szPL0Stk db " R0 SS:ESP=",0
+endif
+CONST ends
  
 dt_cmd proc
 	.386
@@ -5172,12 +5173,12 @@ endif
 	iret
 endif
 
-	.386
-
 dx_cmd proc
+	cmp [machine],3
+	jb cmd_error
+	.386
 	mov dx,word ptr [x_addr+0]
 	mov bx,word ptr [x_addr+2]
-	call skipwhite
 	cmp al,CR
 	jz @F
 	call getdword	;get linear address into bx:dx
@@ -5219,9 +5220,9 @@ if USEUNREAL
 @@:
 	pop ds
 else
-	mov di,offset line_out	;create a GDT for Int 15h, ah=87h
+;	mov di,offset line_out	;create a GDT for Int 15h, ah=87h
 	xor ax,ax
-	mov cx,24	;init 6 descriptors (48 bytes)
+	mov cx,6*4	;init 6 descriptors (48 bytes)
 	rep stosw
 	sub di,4*8
 	mov ax,007Fh;limit of source (128 bytes)
@@ -5248,13 +5249,11 @@ else
 	stosw
 	mov al,bl
 	stosb       ;base[24-31] of dest
- if ?DPMI
-	call ispm_dbg	;???
- endif
 	mov si,offset line_out ;ds:si -> GDT
-	mov cx,0040h	;number of word to copy
+	mov cx,0040h	;number of words to copy
 	mov ah,87h
  if ?DPMI
+	call ispm_dbg
 	jz @F
 	invoke intcall, 15h, cs:[pspdbg]
 	jmp i15ok
@@ -5330,62 +5329,78 @@ endif
 	or dx, -1
 	jmp dd2
 
+DMPJT struct
+pDispOfs dw ?	; display offset 16/32 
+pGetB    dw ?	; get # of bytes to print in cx
+pLoad    dw ?	; load a byte
+pEnd     dw ?	; check if dump is done
+DMPJT ends
+
+CONST segment
+dd16 DMPJT < hexword, getb16, load16, end16>
+if ?PM
+dd32 DMPJT <hexdword, getb32, load32, end32>
+endif
+CONST ends
+
+ife DGCMD+DICMD+DLCMD+DPCMD+DTCMD+DXCMD	; if just the DM cmd exists (std debug)
+
 dd1:
-if DGCMD or DICMD or DLCMD or DMCMD or DPCMD or DTCMD or DXCMD
-	cmp ah,'d'
+	cmp ah,'d'	; char 'd' just before g/i/l/m/p/t/x?
 	jnz dd1_1
 	or al,TOLOWER
- if DGCMD
-	cmp al,'g'
-	jnz @F
-	jmp dgl_cmd
-@@:
- endif
- if DLCMD
-	cmp al,'l'
-	jnz @F
-	jmp dgl_cmd
-@@:
- endif
- if DICMD
-	cmp al,'i'
-	jnz @F
-	jmp di_cmd
-@@:
- endif
- if DTCMD
-	cmp al,'t'
-	jnz @F
-	jmp dt_cmd
-@@:
- endif
- if DXCMD
-	cmp al,'x'
-	jnz @F
-	cmp [machine],3
-	jb @F
-	jmp dx_cmd
-@@:
- endif
- if DPCMD
-	cmp al,'p'
-	jnz @F
-	jmp dp_cmd
-@@:
- endif
  if DMCMD
 	cmp al,'m'
-	jnz @F
-	jmp mcbout
-@@:
+	jz dm_cmd
  endif
-dd1_1:
+
+else
+
+@condcmd macro ifcond, byt_,ofs_
+if ifcond
+	db byt_
+	dw offset ofs_
 endif
-	sizeprfX		;clear hiword ecx (14.2.2021)
-	xor cx,cx
-	mov cl,80h		;default length
-	mov bx,[regs.rDS]
-	call getrange	;get address range into bx:(e)dx ... bx:(e)cx
+endm
+
+CONST segment
+dcmds label byte
+	@condcmd DGCMD,'g',dgl_cmd
+	@condcmd DICMD,'i',di_cmd
+	@condcmd DLCMD,'l',dgl_cmd
+	@condcmd DMCMD,'m',dm_cmd
+	@condcmd DPCMD,'p',dp_cmd
+	@condcmd DTCMD,'t',dt_cmd
+	@condcmd DXCMD,'x',dx_cmd
+size_dcmds equ ($ - offset dcmds) / 3
+CONST ends
+
+d_subcmd:
+	mov ah, al
+	call skipwhite
+	jmp word ptr [bx+1]
+dd1:
+	cmp ah,'d'	; char 'd' just before g/i/l/m/p/t/x?
+	jnz dd1_1
+	or al,TOLOWER
+	mov bx, offset dcmds
+	mov cx, size_dcmds
+@@:
+	cmp al,[bx]
+	jz d_subcmd
+	add bx, 3
+	loop @B
+endif
+
+if FLATSS
+DMPPFX textequ <cs:>
+else
+DMPPFX textequ <>
+endif
+
+dd1_1:
+	mov cx,80h		;default length
+	call getrangeDS	;get address range into bx:(e)dx ... bx:(e)cx
 	call chkeol		;expect end of line here
 
 	sizeprfX	; mov esi,edx
@@ -5393,42 +5408,35 @@ endif
 	sizeprfX	; mov edx,ecx (14.2.2021)
 	mov dx,cx	; dx = end address
     
-;--- Parsing is done.  Print first/next line.
-;--- DI=output pos, BX=segment/selector
+;--- Parsing is done.  Print lines.
+;--- BX=segment/selector
 ;--- E/SI=src offset, E/DX=end src
 
 dd2:
 	mov [lastcmd], offset d_cmd
 	mov [d_addr+4], bx	;save segment (offset is saved later)
+	mov bp, offset dd16
 if ?PM
-	xor bp,bp
 	call getseglimit	;Z flag set if segment limit is <= 64 kB
 	jz @F
-	inc bp
+	mov bp, offset dd32
 @@:
 endif
 	@dprintf "d: bx:esi=%X:%lX edx=%lx", bx, esi, edx
 	call prephack	;set up for faking int vectors 23 and 24
-dd_loop:
+
+nextline:
+	mov di,offset line_out
 	mov ax,[d_addr+4]
 	call hexword
 	mov al,':'
 	stosb
-if ?PM
-	and bp, bp
-	jz @F
-	.386
-	shld eax,esi,16		;AX=HiWord(esi)
-	.8086
-	call hexword
-@@:
-endif
+	sizeprfX		; mov eax, esi
 	mov ax, si
-	and al,0f0h
+	and al, 0f0h
 	mov cx, si
 	sub cx, ax
-	call hexword
-
+	call DMPPFX[bp].DMPJT.pDispOfs
 ;--- blank the line
 	mov ax,'  '
 	stosw
@@ -5446,45 +5454,15 @@ endif
 	add cx,cx
 	add di,cx
 
-if ?PM
-	and bp,bp
-	jz dd4a
-	.386
-	mov ecx,esi
-	or cl,0fh
-	cmp ecx,edx
-	jb @F
-	mov ecx,edx
-@@:
-	sub ecx,esi
-	inc ecx
-	.8086
-	jmp dd4b
-dd4a:
-endif
-	mov cx,si
-	or cl,0fh
-	cmp cx,dx		;compare with end address
-	jb @F			;if we write to the end of the line
-	mov cx,dx
-@@:
-	sub cx,si
-	inc cx			;cx = number of bytes to print this line
-dd4b:
+	call DMPPFX[bp].DMPJT.pGetB
+
 	call dohack		;set debuggee's int 23/24
 	mov ds,[d_addr+4]
-dd6:
-if ?PM
-	and bp,bp
-	jz $+3
-	db 67h			;lodsb [esi] 
-endif
-	lodsb
+nextbyte:
+	call DMPPFX[bp].DMPJT.pLoad
 	push ax
 	call hexbyte
 	inc di
-;	mov al, ' '
-;	stosb
 	pop ax
 	cmp al,' '
 	jb dd7		;if control character
@@ -5495,38 +5473,65 @@ dd7:
 dd8:
 	mov es:[bx],al
 	inc bx
-	loop dd6
+	loop nextbyte
 
 	push es		;restore ds
 	pop ds
 
-	sizeprfX	;mov [d_addr],esi
-	mov [d_addr],si
 	call unhack	;set debugger's int 23/24
 	mov di,bx
 	push dx
 	call putsline
 	pop dx
-	mov di,offset line_out	;set up for next time
+	call DMPPFX[bp].DMPJT.pEnd
+	jc nextline
+	sizeprfX	;mov [d_addr],esi
+	mov [d_addr],si
+	ret
+
 if ?PM
-	and bp,bp
-	jz @F
-	.386
-	dec esi
-	cmp esi, edx
-	jae dd11
-	inc esi
-	.8086
-	jmp dd_loop
-@@:
+load32:
+	db 67h			;lodsb [esi] 
 endif
+load16:
+	lodsb
+	ret
+getb16:
+	mov cx,si
+	or cl,0fh
+	cmp cx,dx		;compare with end address
+	jb @F			;if we write to the end of the line
+	mov cx,dx
+@@:
+	sub cx,si
+	inc cx			;cx = number of bytes to print this line
+	ret
+end16:
 	dec si
 	cmp si,dx
-	jae dd11
 	inc si
-	jmp dd_loop
-dd11:
 	ret
+
+if ?PM
+	.386
+getb32:
+	mov ecx, esi
+	or cl, 0fh
+	cmp ecx, edx
+	jb @F
+	mov ecx, edx
+@@:
+	sub ecx, esi
+	inc ecx
+	ret
+end32:
+	dec esi
+	cmp esi, edx
+	inc esi
+	ret
+	.8086
+endif
+
 d_cmd endp
 
 errorj4:
@@ -5762,13 +5767,10 @@ ee16:
 e_cmd endp
 
 ;--- F command - fill memory
+;--- entry: SI=line, CX=0, AL=last char
 
 f_cmd proc
-	sizeprfX		;xor ecx, ecx
-	xor cx,cx		;get address range (no default length)
-	mov bx,[regs.rDS]
-;--- v2.0: getRange must now be followed by a IsWriteableBX() in pm
-	call getrange	;get address range into bx:(e)dx/(e)cx
+	call getrangeDS	;get address range into bx:(e)dx/(e)cx
 if ?PM
 	cmp [bAddr32],0
 	jz @F
@@ -6013,44 +6015,39 @@ usehwdbg proc
  if RING0
 	push edx
 	call getlinearbaseDT; EAX=base of descriptor table for BX
-	jc exit
+	jc nohwbp
 	call getlinearbaseBX; EAX=base of selector BX in descriptor table EAX
 	pop edx
- elseif ?DPMI
+ else
+  if ?DPMI
 	call ispm_dbg		; in protected-mode?
 	jz rmbase
 	push dx
 	mov ax, 6
 	int 31h
-	jc nohwbp2
 	push cx
 	push dx
 	pop eax
 	pop dx
- else
-	jmp rmbase
+	jc nohwbp
+	jmp setbase
+  endif
+rmbase:
+	smsw ax		; currently no hw bps in v86-mode!
+	test al,1
+	stc
+	jnz nohwbp
+	movzx eax, bx
+	shl eax, 4
  endif
-base_ok:
+setbase:
 	add eax, edx
 	@dprintf "usehwdbg: linear=%lX (cs:eip=%X:%lX)", eax, bx, edx
 	mov [HWBps][(MAXHWBP-1) * sizeof HWBPSTRUCT].dwLinAd, eax
 	mov [HWBps][(MAXHWBP-1) * sizeof HWBPSTRUCT].bType, 0
-exit:
-	ret
- ife RING0
-rmbase:
-	smsw ax		; currently no hw bps in v86-mode!
-	test al,1
-	jnz nohwbp
-	movzx eax, bx
-	shl eax, 4
-	jmp base_ok
-nohwbp2:
-	pop dx
+	clc
 nohwbp:
-	stc
 	ret
- endif
 usehwdbg endp
 
 	.8086
@@ -7022,19 +7019,20 @@ endif
 	push ss
 	pop ds
 
-;--- Set up initial addresses for 'a', 'd', and 'u' commands.
+;--- Set up initial addresses for a/d/u commands.
+;--- out: ax=regs.rCS
 
 setup_adu::
 	mov di,offset a_addr
 	mov si,offset regs.rIP
-	push di
-	movsw
-	movsw
 	mov ax,[regs.rCS]
-	stosw
+	push di
+	movsw		; write a_addr eip
+	movsw
+	stosw		; write a_addr cs
 	pop si
-	mov cx,3*2
-	rep movsw
+	mov cx, 2*3
+	rep movsw	; copy a_addr to d_addr and u_addr
 	ret
 
 loadpgm endp
@@ -8478,9 +8476,7 @@ if RING0
 	jz sk_cmd
 @@:
 endif
-	mov bx,[regs.rDS]	;get search range
-	xor cx,cx
-	call getrange	;get address range into BX:(E)DX..BX:(E)CX
+	call getrangeDS	;get address range into BX:(E)DX..BX:(E)CX
 	call skipcomm0
 	push cx
 	push dx
@@ -8988,9 +8984,7 @@ u_cmd proc
 	mov [lastcmd],offset u_cmd
 	cmp al,CR
 	je lastuu		;if no address was given
-	sizeprfX		;xor ecx, ecx
-	xor cx,cx
-	mov cl,20h		;default length
+	mov cx,20h		;default length
 	mov bx,[regs.rCS]
 	call getrange	;get address range into bx:(e)dx
 	call chkeol		;expect end of line here
@@ -9882,16 +9876,14 @@ WPENABLE equ 1	;local wp enable
 ;--- bit 18-19: len (0=1 byte, 1=2 byte, 2=8 byte, 3=4 byte )
 
 setHWBps proc
-ife RING0
-	ret		; will be patched to NOP if cpu >= 80386
- if ?DPMI
+	ret		; will be patched to NOP if hw bp enabled
+if ?DPMI
 	mov bp, offset pmsethwbp
 	call ispm_dbg
 	jnz @F
- endif
+endif
 	mov bp, [wRMSetBP]
 @@:
-endif
 	xor cx, cx
 	mov si, offset HWBps
 	.386
@@ -9903,13 +9895,9 @@ nextbp:
 	jz skipbp
 	@dprintf "setHWBps %lX", edx
 	xchg eax, edx
- if RING0
-	call r0sethwbp
- else
 	push cx
 	call bp
 	pop cx
- endif
 	or byte ptr [regs.rFL+2], 1	; set resume flag so a hwbp at cs:eip will be skipped
 skipbp:
  if ?DPMI
@@ -9988,9 +9976,7 @@ endif
 setHWBps endp
 
 resetHWBps proc
-ife RING0
-	ret		; will be patched to NOP if cpu >= 80386
-endif
+	ret		; will be patched to NOP if hw bp enabled
 	mov [bBPhit], 0
 if ?DPMI
 	mov bp, offset pmresethwbp
@@ -10007,11 +9993,7 @@ nextbp:
 	lodsb
 	cmp al,-1
 	jz skipbp
- if RING0
-	call r0resethwbp
- else
 	call bp
- endif
 skipbp:
  if ?DPMI
 	lodsw
@@ -10417,6 +10399,7 @@ if BCMD
 CONST segment
 no_free_bp db "All BPs used",CR,LF,'$'
 bp_not_set db "BP isn't set",CR,LF,'$'
+b_inactive db "cmd inactive",CR,LF,'$'
 CONST ends
 
 ;--- handle BP/BC cmds.
@@ -10478,6 +10461,10 @@ bp_cmd:
 	mov dx, offset no_free_bp
 b_errmsg:
 	jmp int21ah9
+b_cmderr::
+	mov dx, offset b_inactive
+	jmp b_errmsg
+
 
 ;--- bx=segment/selector, [sp]=type, [sp+2]=offset
 
@@ -11253,11 +11240,8 @@ endif
 
 parsecm proc
 	call prephack
-	mov bx,[regs.rDS];DS = default for source range segment
-	sizeprfX		;xor ecx, ecx
 	xor cx,cx
-
-	call getrange	;get address range into bx:(e)dx bx:(e)cx
+	call getrangeDS	;get address range into bx:(e)dx bx:(e)cx
 	push bx			;save segment first address ( src for m cmd )
 if ?PM
 	cmp [bAddr32],0
@@ -11563,6 +11547,13 @@ glfbx_2:
 	ret
 getlenforbx endp
 
+;--- get range with default segment DS
+
+getrangeDS proc
+	mov bx,[regs.rDS]
+;--- fall thru!
+getrangeDS endp
+
 ;   getrange - Get address range from input line.
 ;    a range consists of:
 ;       1. a start address: [segment:]start-offset
@@ -11570,7 +11561,7 @@ getlenforbx endp
 ;   Entry   AL  First character of range
 ;       SI  Address of next character
 ;       BX  Default segment to use
-;       CX  Default length to use (or 0 if not allowed)
+;       (E)CX  Default length to use (or 0 if not allowed)
 ;   Exit    AL  First character beyond range
 ;       SI  Address of the character after that
 ;       BX:(E)DX    First address in range
@@ -12049,67 +12040,42 @@ sm4:
 showmach endp
 
 ;--- DUMPREGS - Dump registers.
-;--- 16bit: 8 std regs, NL, skip 2, 4 seg regs, IP, flags
-;--- 32bit: 6 std regs, NL, 2 std regs+IP+FL, flags, NL, 6 seg regs
 
 dumpregs proc
+;	@dprintf "dumpregs"
 	mov si,offset regnames
 	mov di,offset line_out
-	mov cx,8			;print all 8 std regs (16-bit)
+	mov cx, 5
+	mov bx,offset regfmt16
 	test [rmode],RM_386REGS
 	jz @F
-	mov cl,6			;room for 6 std regs (32-bit) only
+	mov bx,offset regfmt32
 @@:
-	call dmpr1			;print first row
-	call trimputs
-	mov di,offset line_out
-	test [rmode],RM_386REGS
-	jnz @F
-	push si
-	add si,2*2			;skip "IP"+"FL"
-	mov cl,4			;print 4 segment regs
-	call dmpr1w
-	pop si
-	inc cx			;cx=1
-	call dmpr1		;print (E)IP
-	call dmpflags	;print flags in 8086 mode
-	jmp no386_31
+nextgrp:
+	push cx
+	mov cl, [bx+0]
+	and cx,7fh
+	push bx
+	call word ptr [bx+1]
+	pop bx
+	test byte ptr [bx],80h
+	jz @F
+	call putsline
+	mov di, dx
 @@:
-	mov cl,4		;print rest of 32-bit std regs + EIP + EFL
-	call dmpr1d
-	push si
-	call dmpflags	;print flags in 386 mode 
-	call trimputs
-	pop si
-	mov di,offset line_out
-	mov cl,6		;print ds, es, ss, cs, fs, gs
-	call dmpr1w
+	add bx, sizeof FMTITEM
+	pop cx
+	loop nextgrp
+
 if RING0
  if DISPPL0STK
-	.386
-	lar ax, [regs.rCS]
-	and ah,60h
-	jz @F
-	mov si, offset pl0esp
-	mov cl, sizeof pl0esp
-	rep movsb
-	mov ax, [regs.r0SS]
-	call hexword
-	mov al,':'
-	stosb
-	mov eax, [regs.r0Esp]
-	call hexdword
-	mov al,']'
-	stosb
-@@:
+	call dmpr0ssesp
+	call putsline
  endif
 endif
-no386_31:
-	call trimputs
 
 ;--- display 1 disassembled line at CS:[E]IP
 
-;	@dprintf "dumpregs"
 	mov si, offset regs.rIP
 	mov di, offset u_addr
 	movsw
@@ -12127,19 +12093,34 @@ no386_31:
 	mov [u_addr],ax
 	ret
 
-if RING0 
- if DISPPL0STK
-pl0esp db "[PL0 SS:ESP="
- endif
-endif
+FMTITEM struct
+bNum db ?
+wAdr dw ?
+FMTITEM ends
 
-;--- Function to print multiple WORD/DWORD register entries.
-;--- SI->register names (2 bytes)
-;--- CX=count
+;--- 16bit: 8 std regs, NL, skip 2, 4 seg regs, IP, flags
+;--- 32bit: 6 std regs, NL, 2 std regs+IP+FL, flags, NL, 6 seg regs
 
-dmpr1:
-	test [rmode],RM_386REGS
-	jnz dmpr1d
+CONST segment
+regfmt16 FMTITEM <88h,dmpr1w>,<2,skipregs>,<4,dmpr1w>,<1,dmpip>,<80h,dmpflags>
+regfmt32 label FMTITEM
+	FMTITEM <86h,dmpr1d>
+	FMTITEM <4,dmpr1d>
+	FMTITEM <80h,dmpflags>
+	FMTITEM <0,prepsr>
+	FMTITEM <86h,dmpr1w>
+CONST ends
+
+skipregs:
+	rep lodsw
+	ret
+prepsr:
+	mov si, offset regnames+10*2	; just position SI to segment regs
+	ret
+
+dmpip:
+	mov si, offset regnames+8*2
+;--- fall thru
 
 ;--- Function to print multiple WORD register entries.
 ;--- SI->register names (2 bytes)
@@ -12176,6 +12157,35 @@ dmpr1d:
 	stosb
 	loop dmpr1d
 	ret
+
+if RING0
+ if DISPPL0STK
+
+CONST segment
+pl0esp db "[PL0 SS:ESP="
+CONST ends
+
+dmpr0ssesp:
+	.386
+	lar ax, [regs.rCS]
+	and ah,60h
+	jz @F
+	mov si, offset pl0esp
+	mov cl, sizeof pl0esp
+	rep movsb
+	mov ax, [regs.r0SS]
+	call hexword
+	mov al,':'
+	stosb
+	mov eax, [regs.r0Esp]
+	call hexdword
+	mov al,']'
+	stosb
+@@:
+	ret
+ endif
+endif
+
 
 dumpregs endp
 
@@ -12686,7 +12696,7 @@ createdummytask proc
 	int 21h
 	jc ct_done		;shouldn't happen
 
-	mov byte ptr [regs.rIP+1],1	;IP=100h
+	inc byte ptr [regs.rIP+1]	;set IP=100h
 
 	call setespefl	; set regs.rSP/rFL
 
@@ -12697,8 +12707,8 @@ createdummytask proc
 	mov di,offset regs.rSS	;init regs.rSS,regs.rCS
 	stosw
 	stosw
-	call setup_adu			; setup default for a/d/u cmds
-	mov bx,[regs.rCS]	;bx:dx = where to load program
+	call setup_adu	; setup default for a/d/u cmds
+	xchg ax, bx		; bx = CS; bx:dx = where to load program
 	mov es, bx
 	pop ax			;get size of memory block
 	mov dx,ax
@@ -12733,6 +12743,7 @@ createdummytask proc
 @@:
 	mov [pspdbe],es
 
+;--- set owner and name to newly created PSP
 	mov ax,es
 	dec ax
 	mov es, ax
@@ -12830,6 +12841,14 @@ line_in		db 255,0,CR				;length = 257
 line_out	equ line_in+LINE_IN_LEN+1;length = 1 + 263
 real_end	equ line_in+LINE_IN_LEN+1+264
 
+if USEHWBP
+ if RING0
+bUseHWBP db 1
+ else
+bUseHWBP db 0
+ endif
+endif
+
 _DATA ends
 
 _ITEXT segment
@@ -12901,21 +12920,27 @@ endif
 ;--- Debug initialization code.
 ;---------------------------------------
 
-if ALTVID
-ALTSWHLP textequ <' [/2]',>
-else
-ALTSWHLP textequ <>
-endif
 
 ife (DRIVER or BOOTDBG or RING0)
 
+
 imsg1 db DBGNAME,' version ',@CatStr(!',%VERSION,!'),CR,LF,LF
-	db 'Usage: ', DBGNAME, ALTSWHLP ' [[drive:][path]progname [arglist]]',CR,LF,LF
- if ALTVID
-	db '  /2: use alternate video adapter for output if available',CR,LF
+	db 'Usage: ', DBGNAME, ' '
+ if ALTVID or USEHWBP
+	db '[options] '
  endif
-	db '  progname: (executable) file to debug or examine',CR,LF
-	db '  arglist: parameters given to program',CR,LF,LF
+	db '[[drive:][path]progname [arglist]]',CR,LF
+ if ALTVID or USEHWBP
+	db ' options:',CR,LF
+  if ALTVID
+	db '  /2: use alternate video adapter for output if available',CR,LF
+  endif
+  if USEHWBP
+	db '  /s: use software breakpoints only',CR,LF
+  endif
+ endif
+	db ' progname: (executable) file to debug or examine',CR,LF
+	db ' arglist: parameters given to program',CR,LF,LF
 	db 'For a list of debugging commands, '
 	db 'run ', DBGNAME, ' and type ? at the prompt.',CR,LF,'$'
 
@@ -13134,37 +13159,6 @@ if REDIRECT
 @@:
 endif
 
-;--- Check DOS version
-
-ife (BOOTDBG or RING0)
-	mov ax,3000h	;check DOS version
-	int 21h
-	xchg al,ah
-	cmp ax,31fh
-	jb init2		;if version < 3.3, then don't use new INT 25h method
-	inc [usepacket]
- if VDD
-	cmp ah,5
-	jnz @F
-	mov ax,3306h
-	int 21h
-	cmp bx,3205h	; NTVDM?
-	jnz @F
-	mov si,offset szDebxxVdd	;DS:SI->"DEBXXVDD.DLL"
-	mov bx,offset szDispatch	;DS:BX->"Dispatch"
-	mov di,offset szInit		;ES:DI->"Init"
-	RegisterModule
-	jc init2
-	mov [hVdd], ax
-	jmp isntordos71
-@@:
- endif
-	cmp ax,070Ah
-	jb init2
-isntordos71:
-	inc [usepacket]	;enable FAT32 access method for L/W
-endif
-
 ife RING0
 
 ;   Determine the processor type.  This is adapted from code in the
@@ -13180,7 +13174,6 @@ ife RING0
 ;   Bits 12-15 of the FLAGS register are always set on the 8086 processor.
 ;   Probably the 186 as well.
 
-init2:
 	push sp
 	pop ax
 	cmp ax,sp		
@@ -13209,21 +13202,11 @@ init2:
 	inc [machine]
 
 ;   It is now safe to use 32-bit opcode/operands.
- if BCMD
-	mov [bcmdv], offset b_cmd	;activate b cmd (requires 80386
+
+ if USEHWBP
+	inc [bUseHWBP]
  endif
- if USEHWBP 
-  if VDD
-	cmp [hVdd], -1	; no hwbp for NTVDM
-	jnz nohwbp
-  endif
-	mov byte ptr [setHWBps], 90h	; patch code RET -> NOP
-	mov byte ptr [resetHWBps], 90h	; patch code RET -> NOP
-	mov [wStoreBP], offset storebpx
-nohwbp:
- endif
-elseif USEHWBP 
-	mov [wStoreBP], offset storebpx
+
 endif
 
 	.386
@@ -13381,6 +13364,41 @@ ife RING0
 nopatch:
 endif
 
+;--- Check DOS version
+
+ife (BOOTDBG or RING0)
+	mov ax,3000h	;check DOS version
+	int 21h
+	xchg al,ah
+	cmp ax,31fh
+	jb init2		;if version < 3.3, then don't use new INT 25h method
+	inc [usepacket]
+ if VDD
+	cmp ah,5
+	jnz @F
+	mov ax,3306h
+	int 21h
+	cmp bx,3205h	; NTVDM?
+	jnz @F
+  if USEHWBP
+	mov bUseHWBP,0	; not for NTVDM
+  endif
+	mov si,offset szDebxxVdd	;DS:SI->"DEBXXVDD.DLL"
+	mov bx,offset szDispatch	;DS:BX->"Dispatch"
+	mov di,offset szInit		;ES:DI->"Init"
+	RegisterModule
+	jc init2
+	mov [hVdd], ax
+	jmp isntordos71
+@@:
+ endif
+	cmp ax,070Ah
+	jb init2
+isntordos71:
+	inc [usepacket]	;enable FAT32 access method for L/W
+init2:
+endif
+
 ;--- Interpret switches and erase them from the command line.
 
 ife BOOTDBG
@@ -13507,6 +13525,14 @@ noopt2:
 
 ;--- ||| Other switches may go here.
 
+ if USEHWBP
+	cmp al,'s'
+	jnz @F
+	mov [bUseHWBP],0
+	jmp contparse
+@@:
+ endif
+
  if MCLOPT and ( CATCHINT0C or CATCHINT0D )
 	cmp al, 'm'		; /m cmdline option?
 	jnz @F
@@ -13534,6 +13560,7 @@ noopti:
  endif
 
 doneoptions:
+
  ife (DRIVER or RING0)
 	dec si
 	lodsb
@@ -13609,13 +13636,31 @@ if ?DPMI
 	mov si,offset dDosEmuDate
 	mov cx,4
 	repe cmpsw		;running in DosEmu?
-	jz no2fhook
+	jz no2fhook2
  endif
 	jmp dpmihostchecked
+no2fhook2:
+ if USEHWBP
+	mov [bUseHWBP],0; disable hw bps for DosEmu
+ endif
 no2fhook:
 	inc [bNoHook2F]
 dpmihostchecked:
 
+endif
+
+;--- setup hardware bp usage
+
+if USEHWBP 
+	cmp [bUseHWBP],1
+	jnz @F
+	mov byte ptr [setHWBps], 90h	; patch code RET -> NOP
+	mov byte ptr [resetHWBps], 90h	; patch code RET -> NOP
+	mov [wStoreBP], offset storebpx
+ if BCMD
+	mov [bcmdv], offset b_cmd	;activate b cmd (requires 80386)
+ endif
+@@:
 endif
 
 	push ds

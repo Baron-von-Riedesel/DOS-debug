@@ -101,12 +101,11 @@
      Be aware that Int 15h, ah=87h most likely will disable "unreal"-mode
      if it was enabled. This may be an unwanted side effect during debugging.
 
-   - 'g': the 80386+ debug hardware support may be used for the first
-     breakpoint. This also applies to the 't' and 'p' commands, if they
-     have to internally use a breakpoint. Allows to set a breakpoint
-     in ROM code or - in protected-mode - in pages marked as read-only.
-     This feature is active in protected-mode and true real-mode, but not
-     in v86-mode. Be aware that some DPMI hosts don't support that.
+   - 'g','p','t': the 80386+ debug registers may be used if a breakpoint
+     is to be set. This allows setting breakpoints in code that is read-only.
+     The feature may be switched off by cmdline option /s. It's never active
+     if DebugX runs on NTVDM or DosEmu, since the debug registers aren't
+     accessible there.
 
    - 'rn' displays FPU registers in "readable" format.
 

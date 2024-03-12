@@ -8,7 +8,7 @@
   5. Unassemble Format
   6. Instruction Operands
   7. DEBUG Statements in Assembly Mode
-  8. Debugging with DEBUGX
+  8. Debugging with DebugX
   9. Installing and Initializing DebugB
  10. DebugR Basics
  11. DEBUG Scripts
@@ -19,12 +19,12 @@
 
  This is a quick and dirty DEBUG tutorial.
 
- Public Domain 2004 Michael Webster, 2010-2022 japheth.
+ Public Domain 2004 Michael Webster, 2010-2024 japheth.
 
  Note: MS-Debug means the original Debug written by Microsoft.
-       DEBUG/X  means the MS-Debug clone (both versions).
-       DEBUG    means both the original and the clone.
-       Enhancements for DEBUG/X are put in square brackets: [ENH: ].
+       Debug/X  means the "clone" variants (both Debug and DebugX).
+       DEBUG    means both MS-Debug and Debug/X.
+       Enhancements for Debug/X are put in square brackets: [ ].
 
  MS-Debug was developed originally by Tim Paterson as a tool to aid in
  his development of the 16-bit x86 OS that eventually became MS-DOS
@@ -36,10 +36,10 @@
 
  DEBUG supports the 8086/8088 and 8087 registers and instruction sets.
 
- [ENH: DEBUG/X supports the 80386 registers and instruction sets
+ [ENH: Debug/X supports the 80386 registers and instruction sets
  up to the Pentium Pro, including Floating Point instructions. The MMX
  instruction set is missing, however. It is planned - and partially 
- implemented - for DEBUGX].
+ implemented - for DebugX].
 
 
  2. DEBUG command line
@@ -59,8 +59,9 @@
    options are:
     /? : display cmdline format help.
 
-[ENH: DEBUGX accepts another option:
+[ENH: DebugX accepts further options:
     /2 : use an alternate (monochrome) adapter if available.
+    /s : tells debugger not to use hardware breakpoints.
 ]
 
 
@@ -90,7 +91,7 @@
  to store the output from the Assemble command, the variable for IP
  is set to 100h, and the variable for SP is set to FFFEh.
 
- [ENH: DEBUG/X supports the 32bit registers introduced with 
+ [ENH: Debug/X supports the 32bit registers introduced with 
   the 80386. The high-words of these registers are initialized to zero
   on program start.]
 
@@ -115,13 +116,13 @@
 
  [ENH: the command prompt is changed if the debuggee has been stopped
  inside DOS - a '!' will precede the default prompt ('!-' instead of
- just '-'). DEBUGX changes the prompt to '#' if debuggee is in protected-
+ just '-'). DebugX changes the prompt to '#' if debuggee is in protected-
  mode. Prompt '!#', which means "inside DOS" AND "in protected-mode",
  is also possible, if the debuggee has been stopped in a so-called
  DPMI real-mode callback.
 
  When an address is entered in protected-mode, a '$' just before the
- segment part will tell DEBUGX to interpret the address as a real-mode
+ segment part will tell DebugX to interpret the address as a real-mode
  address. However, this should be used sparsely, since DPMI function
  0002 is used to convert the segment - the selector returned cannot
  be released anymore.
@@ -171,7 +172,10 @@
 
  If no type argument is given, a code breakpoint is assumed. Note that I/O
  watchpoints may be rejected by the DPMI host; in any case they require
- bit DE be set in register CR4.
+ bit DE to be set in register CR4.
+
+ WinNT platforms and DosEmu don't allow access to the debug registers, hence
+ it's inactive there.
 
  Command BC is used to clear a previously set breakpoint.
  
@@ -210,7 +214,7 @@
  [ENH:
  ---
 
- DEBUGX only: the Dump Interrupt (DI) command displays interrupt vectors in
+ DebugX only: the Dump Interrupt (DI) command displays interrupt vectors in
  real/v86-mode and DPMI interrupt (+exception) vectors in protected-mode.
  Examples:
 
@@ -231,7 +235,7 @@
 
  ---
 
- DEBUGX only: the Dump LDT descriptor (DL) command displays DPMI LDT
+ DebugX only: the Dump LDT descriptor (DL) command displays DPMI LDT
  descriptors. Example:
 
  #dl 84 2
@@ -270,7 +274,7 @@
 
  ---
 
- DEBUGX only: The Dump eXtended memory command (DX) allows to examine
+ DebugX only: The Dump eXtended memory command (DX) allows to examine
  the full range of memory. It uses interrupt 15h, AH=87h for extended
  memory access. It should be noted that, when running under a Expanded
  Memory Manager (EMM), Interrupt 15h, AH=87h behaves slightly inconsistent:
@@ -333,9 +337,11 @@
 
  Syntax: G [=address] [break0 break1...]
 
- [DEBUGX: DebugX will use a debug watchpoint to set the first
- breakpoint. Should always work in real-mode; in protected-mode this
- must be supported by the DPMI host; in v86-mode, it's inactive for now. 
+ [ENH: DebugX will use a debug watchpoint to set the first breakpoint.
+ Should always work in real-mode; in protected-mode this must be supported
+ by the DPMI host; in v86-mode, it's inactive for now, since it requires
+ the VCPI API, which is only available in true DOS environments. The feature
+ may be deactivated by the /s cmdline option.]
 
  ---
 
@@ -344,7 +350,7 @@
 
  Syntax: H value1 value2
 
- [ENH: MS-Debug will handle WORD values only, DEBUG/X will accept
+ [ENH: MS-Debug will handle WORD values only, Debug/X will accept
   DWORD values.]
 
  ---
@@ -378,7 +384,7 @@
 
  Syntax: L address drive startsector numberofsectors
 
- [ENH: L with logical sectors on Windows XP will work for DEBUGX only.]
+ [ENH: L with logical sectors on Windows XP will work for DebugX only.]
  ---
 
  The Move command (M) copies a memory region to another location. If
@@ -388,7 +394,7 @@
  Syntax: M range address
 
  [ENH:
- if M is entered without - or with one - argument, it is regarded as 'Mode'
+  if M is entered without - or with one - argument, it is regarded as 'Mode'
  command, which displays - or sets - the current CPU mode.
 
  Syntax: M [mode]
@@ -427,8 +433,8 @@
  Syntax: O port byte
 
  [ENH: besides O there exists OW/OD to write a WORD/DWORD to
- a 16-bit/32-bit port. OD is available on machines with a 80386+ cpu
- only.]
+  a 16-bit/32-bit port. OD is available on machines with a 80386+ cpu
+  only.]
 
  ---
 
@@ -444,8 +450,8 @@
 
  Syntax: P [=address] [number]
 
- [DEBUGX: as it is described at the T(race) command, DEBUGX may use
- the 80386 debug register in protected-mode.
+ [DebugX: see the remark at the T(race) command about DebugX's possible
+  usage of the 80386 debug registers in protected-mode and real-mode.
  ]
 
  ---
@@ -454,9 +460,9 @@
 
  Syntax: Q
 
- [DEBUGX: If the debuggee is in protected-mode ( indicated by the
+ [DebugX: If the debuggee is in protected-mode ( indicated by the
   '#' prompt ), Q will just make the debuggee to terminate and
-  leave protected-mode. DEBUGX's real-mode prompt '-' should then
+  leave protected-mode. DebugX's real-mode prompt '-' should then
   appear. Entering 'q' again should now quit the debugger.
    If 'Q' doesn't leave protected-mode, then there's a problem
   with the debuggee or the DPMI host. In this case command variant
@@ -493,7 +499,7 @@
  Syntax: R [register]
 
  [ENH: if the register argument is given, it can be immediately
- followed by the new value . No prompt will appear then.
+  followed by the new value . No prompt will appear then.
 
  Syntax: R [register] [value]
 
@@ -508,14 +514,14 @@
 
  ---
 
- DEBUGX only: The RM command displays MMX registers.
+ DebugX only: The RM command displays MMX registers.
  The content is displayed from low to high bytes!
 
  Syntax: RM
 
  ---
 
- The RN command display the content of the floating point registers. DEBUGX
+ The RN command display the content of the floating point registers. DebugX
  renders the content of these registers in "readable" floating point format,
  DEBUG displays the content in raw hex format (because the rendering code
  requires quite some space and DEBUG is intended to be kept small in size).
@@ -568,7 +574,7 @@
 
  Syntax: T [=address] [number]
 
- [ENH: if the current CS:IP points to an INT opcode, DEBUG/X's
+ [ENH: if the current CS:IP points to an INT opcode, Debug/X's
   behaviour depends on the current value of the TM option. If it
   is 0 (the default), the debugger will regain control when the
   INT has been processed. If TM is 1, the debugger will step "into"
@@ -576,13 +582,14 @@
   Furthermore, autorepeat is active for T. That is, if the last
   command was T, a single ENTER will count as a repeated T command.
 
-  DEBUGX: the Trace command - internally, on certain conditions - has to
+  DebugX: the Trace command - internally, on certain conditions - has to
   set a breakpoint. This may be achieved by 2 ways - either write an
   INT 3 opcode to the code address or - if the cpu is at least an 80386 -
   use a "hardware debug register". The first approach fails if the memory
   cannot be written - in protected-mode a "page fault" will occur.
-  Therefore - if the DPMI host supports the feature - DEBUGX will prefer
-  to use the second method in protected-mode.
+  Therefore - if the DPMI host supports the feature - DebugX will prefer
+  to use the second method in protected-mode and true real-mode. This
+  feature may be suppressed by the /s cmdline option.
  ]
  ---
 
@@ -629,7 +636,7 @@
  WARNING: You should know what you are doing when using this command.
  If used inappropriately, W can cause severe data losses.
 
- [ENH: W with logical sectors on Windows XP will work for DEBUGX only.]
+ [ENH: W with logical sectors on Windows XP will work for DebugX only.]
  ---
 
 
@@ -801,47 +808,47 @@
     the error.
 
 
- 8. Debugging with DEBUGX
+ 8. Debugging with DebugX
  ------------------------
 
-  DEBUGX is able to debug both standard real-mode and DPMI protected-mode
+  DebugX is able to debug both standard real-mode and DPMI protected-mode
  applications. The DPMI applications may be either 16-bit or 32-bit.
- For this to achieve DEBUGX has to intrude into the DPMI host's address
+ For this to achieve DebugX has to intrude into the DPMI host's address
  space when a new DPMI client starts. This is the first obstacle for
- DEBUGX and whether it works smoothly depends on the DPMI host. NT's
+ DebugX and whether it works smoothly depends on the DPMI host. NT's
  DOSX.EXE works pretty well; the same is true for HDPMI. Less good work
  the hosts implemented in Windows 9X or DOSEMU; in these environments
- it's required that DEBUGX traces through the initial switch to protected-
+ it's required that DebugX traces through the initial switch to protected-
  mode, else it will loose control of its debuggee.
 
   Another problem may arise in true DOS: a protected-mode application
- may launch its DPMI host on the fly during startup. To allow DEBUGX to
+ may launch its DPMI host on the fly during startup. To allow DebugX to
  intrude in such a host, it has to intercept interrupt 2Fh AFTER the
  DPMI host has been installed, but BEFORE the debuggee inquires the
  DPMI host's entry point. This is pretty advanced stuff and to avoid
  those quirks it's usually the best option to install the DPMI host
- before DEBUGX is started.
+ before DebugX is started.
 
-  During debugging, DEBUGX may become active in both protected-mode and
+  During debugging, DebugX may become active in both protected-mode and
  real-mode - it is a bimodal application, in this regard rather unique.
  While the debugger is active in protected-mode, it may display faults
  that happen when one tries to display memory that is inaccessible; 
  such faults usually can be safely ignored.
  
   As it has been mentioned at the Q command: when the debuggee is in
- protected-mode, the behavior of DEBUGX's Q command differs from that
+ protected-mode, the behavior of DebugX's Q command differs from that
  in real-mode: it won't exit the debugger session, but just exit
  protected-mde, that is, terminate the DPMI client and fall back to
  the real-mode prompt. Another Q cmd will then quit the debugger.
  Sometimes Q may not work to exit protected-mode, then one can try
  to forcably terminate the debuggee with the command variant QQ.
 
-  If a second video adapter is available, DEBUGX may be told to display
- its output to that device via the /2 cmdline option. This gives DEBUGX
+  If a second video adapter is available, DebugX may be told to display
+ its output to that device via the /2 cmdline option. This gives DebugX
  the ability to debug graphics applications.
 
   The HX PE loader DPMILD32 may set pages of code sections to readonly
- if certain conditions are met. This reliably prevents DEBUGX from setting
+ if certain conditions are met. This reliably prevents DebugX from setting
  its breakpoints. There should exist an option to make DPMILD32 not modify
  those page attributes - see the docs supplied with DPMILD32 for details.
 
@@ -1029,7 +1036,7 @@
  -N HELLO.COM
  -A
  1078:0100         mov     ah,9
- 1078:0102         mov     dx,110
+ 1078:0102         mov     dx,109
  1078:0105         int     21
  1078:0107         int     20
  1078:0109         db      'Hello World$'
