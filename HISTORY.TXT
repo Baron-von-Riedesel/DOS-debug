@@ -306,10 +306,16 @@
     2.03 []
        - DebugR fix: debugger assumed a 32-bit ring0 SS register on init;
          if this wasn't true, a crash may have occured.
+       - fix: disassembled line after register dump won't show memory contents
+         for LEA instruction anymore.
        - DebugR(L): Q cmd may be activated for this variant.
-       - DebugR(L): BP/BC cmds accept up to 3 permanent breakpoints.
-       - DebugX: BP/BC cmds implemented, but inactive.
+       - cmds bp/bc accept up to 3 permanent breakpoints.
+       - cmds bp/bc implemented, but inactive for Debug & DebugX; activated in
+         DebugXg & DebugXv variants.
        - DebugX, DebugR(L), G/T/P cmds: if possible, a 386 debug register
-         will be used to set a breakpoint , in real-mode and protected-mode.
-       - DebugX, DebugR(L): new cmdline option /s; forces debugger to use soft
-         breakpoints only.
+         will be used to set a breakpoint; for DebugX, in both real-mode and
+         protected-mode.
+       - all Debug variants that may use hardware breakpoints got new cmdline
+         option /s to disable this feature.
+       - g cmd: if a breakpoint cannot be written, the cmd is aborted.
+

@@ -11,13 +11,13 @@ echo creating debugxF - debuggee can't modify exc 1, 3, 0dh and 0eh in protected
 jwasm -nologo -bin -Fo build\DEBUGXF.COM -Fl=build\DEBUGXF.LST -D?DPMI=1 -DCATCHINT31=1 src\debug.asm
 
 echo creating debugxG - device driver version of debugx
-jwasm -nologo -mz  -Fo build\DEBUGXG.EXE -Fl=build\DEBUGXG.LST -D?DPMI=1 -DDRIVER=1 src\debug.asm
+jwasm -nologo -mz  -Fo build\DEBUGXG.EXE -Fl=build\DEBUGXG.LST -D?DPMI=1 -DDRIVER=1 -DBCMD=1 src\debug.asm
 
 echo creating debugxU - dx cmd uses unreal mode
 jwasm -nologo -bin -Fo build\DEBUGXU.COM -Fl=build\DEBUGXU.LST -D?DPMI=1 -DUSEUNREAL=1 -DCATCHINT0D=1 src\debug.asm
 
 echo creating debugxV - v cmd flips screens & sysreq trapped
-jwasm -nologo -bin -Fo build\DEBUGXV.COM -Fl=build\DEBUGXV.LST -D?DPMI=1 -DVXCHG=1 -DCATCHSYSREQ=1 src\debug.asm
+jwasm -nologo -bin -Fo build\DEBUGXV.COM -Fl=build\DEBUGXV.LST -D?DPMI=1 -DVXCHG=1 -DCATCHSYSREQ=1 -DBCMD=1 src\debug.asm
 
 echo creating debugB.bin - a "boot loader"  version
 jwasm -nologo -bin  -Fo build\DEBUGB.BIN -Fl=build\DEBUGB.LST -DBOOTDBG=1 src\debug.asm

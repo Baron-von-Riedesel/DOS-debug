@@ -30,13 +30,13 @@ $(OUTD)/DEBUGXF.COM: $(DEPS) src/TRAPR.INC src/TRAPD.INC
 	@jwasm -nologo -D?DPMI=1 -bin -Fo $(OUTD)/DEBUGXF.COM -Fl=$(OUTD)/DEBUGXF.LST -DCATCHINT31=1 src/$(NAME).ASM
 $(OUTD)/DEBUGXG.EXE: $(DEPS) src/TRAPR.INC src/TRAPD.INC
 	@echo creating debugxG - device driver version of debugx
-	@jwasm -nologo -D?DPMI=1 -mz  -Fo $(OUTD)/DEBUGXG.EXE -Fl=$(OUTD)/DEBUGXG.LST -DDRIVER=1 src/$(NAME).ASM
+	@jwasm -nologo -D?DPMI=1 -mz  -Fo $(OUTD)/DEBUGXG.EXE -Fl=$(OUTD)/DEBUGXG.LST -DDRIVER=1 -DBCMD=1 src/$(NAME).ASM
 $(OUTD)/DEBUGXU.COM: $(DEPS) src/TRAPR.INC src/TRAPD.INC
 	@echo creating debugxU - dx cmd uses unreal mode
 	@jwasm -nologo -D?DPMI=1 -bin -Fo $(OUTD)/DEBUGXU.COM -Fl=$(OUTD)/DEBUGXU.LST -DUSEUNREAL=1 -DCATCHINT0D=1 src/$(NAME).ASM
 $(OUTD)/DEBUGXV.COM: $(DEPS) src/TRAPR.INC src/TRAPD.INC
 	@echo creating debugxV - v cmd flips screens and sysreq trapped
-	@jwasm -nologo -D?DPMI=1 -bin -Fo $(OUTD)/DEBUGXV.COM -Fl=$(OUTD)/DEBUGXV.LST -DVXCHG=1 -DCATCHSYSREQ=1 src/$(NAME).ASM
+	@jwasm -nologo -D?DPMI=1 -bin -Fo $(OUTD)/DEBUGXV.COM -Fl=$(OUTD)/DEBUGXV.LST -DVXCHG=1 -DCATCHSYSREQ=1 -DBCMD=1 src/$(NAME).ASM
 $(OUTD)/DEBUGB.BIN:  $(DEPS) src/TRAPR.INC
 	@echo creating debugB.bin - a "boot loader"  version
 	@jwasm -nologo -bin  -Fo $(OUTD)/DEBUGB.BIN -Fl=$(OUTD)/DEBUGB.LST -DBOOTDBG=1 src/$(NAME).ASM

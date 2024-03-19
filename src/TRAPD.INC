@@ -65,6 +65,7 @@ isdebuggee16:
 	and byte ptr [bp].EXFR16.rFL+1, not 3	;reset IF + TF
 	mov [bp].EXFR16.rSP, offset regs.rSS
 	mov [regs.rIP],ax
+	mov word ptr [regs.rIP+2],0
 	mov [regs.rCS],bx
 	mov [regs.rFL],cx
 	mov [regs.rSP],dx

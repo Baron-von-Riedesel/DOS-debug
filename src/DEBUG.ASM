@@ -724,6 +724,14 @@ d_addr	dw 0,0,0	;address for last D command; must follow a_addr
 u_addr	dw 0,0,0	;address for last U command; must follow d_addr
 
 if USEHWBP
+;--- bits in bType:
+;---   0-3: type
+;---   6: 1=bp active
+;---   7: 1=bp used
+BP_ACTIVE equ 40h
+BP_ACTIVEBIT equ 6
+BP_USED   equ 80h
+
 HWBPSTRUCT struct
 dwLinAd dd ?
 bType   db ?
@@ -737,7 +745,7 @@ MAXHWBP equ 4
  else
 MAXHWBP equ 1
  endif
-HWBps HWBPSTRUCT MAXHWBP dup (<0,-1>)
+HWBps HWBPSTRUCT MAXHWBP dup (<0,0>)
 endif
 
 if DXCMD
@@ -2036,13 +2044,6 @@ endif
 	mov ax, 0e07h
 	int 10h
 @@:
-
-if USEHWBP
-;--- clear the internal HW bp in case it was set; this is done here since the
-;--- G cmd may have caused a page fault when trying to write an INT3. In such
-;--- cases the G cmd is aborted and won't reset the internal bp.
-	mov [HWBps.HWBPSTRUCT.bType][(MAXHWBP-1)*sizeof HWBPSTRUCT], -1
-endif
 
 if LCMDFILE
 	call isdebuggeeloaded
@@ -6004,19 +6005,20 @@ endif
 
 if USEHWBP
 
-;--- try to set a hw bp at bx:edx
+;--- set a bp at bx:edx;
 ;--- bx and edx must be preserved.
 ;--- this proc is called only if cpu is 80386+
 ;--- and hw debug registers are accessible.
 
 	.386
 
-usehwdbg proc
+sethwbptmp proc
  if RING0
 	push edx
 	call getlinearbaseDT; EAX=base of descriptor table for BX
 	jc nohwbp
 	call getlinearbaseBX; EAX=base of selector BX in descriptor table EAX
+	@dprintf "sethwbptmp: base cs=%lx", eax
 	pop edx
  else
   if ?DPMI
@@ -6042,13 +6044,13 @@ rmbase:
  endif
 setbase:
 	add eax, edx
-	@dprintf "usehwdbg: linear=%lX (cs:eip=%X:%lX)", eax, bx, edx
+	@dprintf "sethwbptmp: linear=%lX (cs:eip=%X:%lX)", eax, bx, edx
 	mov [HWBps][(MAXHWBP-1) * sizeof HWBPSTRUCT].dwLinAd, eax
-	mov [HWBps][(MAXHWBP-1) * sizeof HWBPSTRUCT].bType, 0
+	mov [HWBps][(MAXHWBP-1) * sizeof HWBPSTRUCT].bType, 0 or BP_USED
 	clc
 nohwbp:
 	ret
-usehwdbg endp
+sethwbptmp endp
 
 	.8086
 
@@ -6109,7 +6111,7 @@ storebpdef::
 	retn
 if USEHWBP
 storebpx::
-	call usehwdbg
+	call sethwbptmp
 	jc storebpdef2
 	@dprintf "storebpx: bp linear=%lX (cs:eip=%X:%lX)", eax, bx, edx
 	retn
@@ -6119,8 +6121,10 @@ gg_parsebp_done:
 
 ;--- Store breakpoint bytes in the given locations.
 
-	mov bp, offset _ret	; ignore write errors for g
-gg_1::				; <--- called by p ( run an int/call/... - set 1 bp )
+;--- v2.03: abort g like t/p if bp can't be written
+;	mov bp, offset _ret	; ignore write errors for g
+	mov bp, offset bp_writeerr
+gg_1::				; <--- called by p/t ( run an int/call/... - set 1 bp )
 	mov di,offset setbp1
 	call setbps		; may cause a GPF in protected-mode if location is read-only
 	@dprintf "g_cmd: calling run"
@@ -6193,11 +6197,10 @@ if ?PM
 	db 66h	;mov [regs.rIP],ebx
 endif
 	mov [regs.rIP], bx	; decrement (E)IP
-
-gg_ok:
 if RING0
 	mov [run_int], -1	; v2.0: reset entry ( so SK cmd won't accept soft bps )
 endif
+gg_ok:
 	call dumpregs	; then just display register dump
 _ret:
 	ret				; and done ( no "unexpected breakpoint" msg )
@@ -7813,7 +7816,7 @@ p_cmd proc
 
 ;--- Do it <CX=count> times.  First check the type of instruction.
 
-instrloop:
+instrloop:			; <--- next instruction
 	push cx			; save cx
 	mov dx,15		; DL = number of bytes to go; DH = prefix flags.
 if ?PM
@@ -7821,11 +7824,11 @@ if ?PM
 	mov [bCSAttr],al
 	jz @F
 	mov dh,PP_ADRSIZ + PP_OPSIZ
-	db 66h		; mov esi,[regs.rIP]
 @@:
 endif
+	sizeprfX		; mov esi,[regs.rIP]
 	mov si,[regs.rIP]
-pp2:
+nextprf:			; <- get next prefix byte
 	call getnextb	; AL=[cs:(e)ip], eip++
 	mov di,offset ppbytes
 	mov cx,PPLEN
@@ -7837,7 +7840,7 @@ pp2:
 	jz @F			; if not a prefix
 	xor dh,al		; update the flags
 	dec dl
-	jnz pp2			; if not out of bytes
+	jnz nextprf		; if not out of bytes
 	jmp dotrace		; more than 15 prefixes will cause a GPF
 @@:
 	test al,40h
@@ -7923,7 +7926,7 @@ pp13:				;<--- Common part to finish up.
 pp15:
 	jmp ue_int		;print message about unexpected interrupt and quit
 
-inceip:
+inceip::
 if ?PM
 	test [bCSAttr], CS32ATTR
 	jz $+3
@@ -7985,10 +7988,10 @@ else
 	xchg ax, bx
 	stosw
 endif
-	mov bp, offset pp_err1	; abort if bp couldn't be written
+	mov bp, offset bp_writeerr	; abort if bp couldn't be written
 	call gg_1	; use g_cmd to write bp, run program, reset bp
 	retn
-pp_err1:
+bp_writeerr::
 	mov dx, offset cantwritebp
 	call int21ah9
 	jmp cmdloop
@@ -8041,12 +8044,6 @@ if RING0
 ;--- instruction pointer. That's rather hackish, the current OS may
 ;--- not have implemented an int 21h API at all. However, it will work
 ;--- in many cases and hence seems better than nothing.
-;
-;--- A better way is to implement "dot-commands" like wdeb386,
-;--- that is, the debugger core is to call out to the loader if the
-;--- first non-space character is a '.' and then let the loader bother
-;--- about the user input. Here's the problem that the loader has
-;--- no way to find out at what status the debuggee currently is.
 
 	mov bx, [regs.rCS]
 	.386
@@ -8737,17 +8734,14 @@ else
 endif
 useproceed:
 	mov bx,[regs.rCS]
-if ?PM
-	test [bCSAttr], CS32ATTR
-	jz $+3
-	db 66h	;mov esi,dword ptr [regs.rIP]
-endif
+	sizeprfX			; mov esi,[regs.rIP]
 	mov si,[regs.rIP]
 if ?PM
-	jz $+3
-	db 66h	;add esi,2
+	call inceip
+	call inceip
+else
+	add si, 2
 endif
-	add si,2
 	call doproceed1		;set BP at BX:(E)SI and run debuggee
 	ret
 
@@ -9875,8 +9869,12 @@ WPENABLE equ 1	;local wp enable
 ;--- bit 16-17: type (0=exec, 1=write, 2=I/O [if CR4.DE=1], 3=read or write)
 ;--- bit 18-19: len (0=1 byte, 1=2 byte, 2=8 byte, 3=4 byte )
 
+;--- map (hard) breakpoints to debug registers
+;--- entry will be patched to NOP NOP if hw bp enabled
+
 setHWBps proc
-	ret		; will be patched to NOP if hw bp enabled
+	clc
+	ret
 if ?DPMI
 	mov bp, offset pmsethwbp
 	call ispm_dbg
@@ -9891,13 +9889,15 @@ nextbp:
 	lodsd
 	xchg eax, edx
 	lodsb
-	cmp al, -1
+	test al, BP_USED
 	jz skipbp
 	@dprintf "setHWBps %lX", edx
 	xchg eax, edx
 	push cx
 	call bp
 	pop cx
+	jc error
+	or byte ptr [si-1], BP_ACTIVE
 	or byte ptr [regs.rFL+2], 1	; set resume flag so a hwbp at cs:eip will be skipped
 skipbp:
  if ?DPMI
@@ -9906,7 +9906,10 @@ skipbp:
 	inc cx
 	cmp cl, MAXHWBP
 	jnz nextbp
-done:
+	ret
+error:
+	call resetHWBps
+	stc
 	ret
 if ?DPMI
 pmsethwbp: 
@@ -9914,9 +9917,9 @@ pmsethwbp:
 	pop cx
 	pop bx
 	mov dh, dl
-	shr dl, 2		; size is in bits 2-3
-	and dh, 3		; dh = type (0=exec,1=read, 2=r/w)
-	add dl, 1		; 0->, 1->2
+	shr dl, 2		; dl = size (was in bits 2-3)
+	and dx, 303h	; dh = type (0=exec,1=read, 2=r/w)
+	add dl, 1		; 0->1, 1->2, 3->4
 	@dprintf "pmsethwbp bx:cx=%X%04X dx=%X", bx, cx, dx
 	mov ax, 0b00h	; set watchpoint
 	int 31h
@@ -9937,7 +9940,7 @@ r0sethwbp::
 	btr ax, bx
 	mov dr6, eax
 	mov eax, dr7
-	movzx edx, dl	; type in bits 0-3
+	and edx, 0fh	; type in bits 0-3
 	mov ebx, 0fffffff0h
 	push cx
 	shl cl, 2
@@ -9975,8 +9978,11 @@ setdrx:
 endif
 setHWBps endp
 
+;--- unmap (hard) breakpoints from debug registers
+;--- entry will be patched to NOP NOP if hw bp enabled
+
 resetHWBps proc
-	ret		; will be patched to NOP if hw bp enabled
+	ret
 	mov [bBPhit], 0
 if ?DPMI
 	mov bp, offset pmresethwbp
@@ -9991,10 +9997,11 @@ endif
 nextbp:
 	lodsd
 	lodsb
-	cmp al,-1
-	jz skipbp
+	test al, BP_ACTIVE
+	jz @F
+	and byte ptr [si-1], not BP_ACTIVE
 	call bp
-skipbp:
+@@:
  if ?DPMI
 	lodsw
  endif
@@ -10002,15 +10009,14 @@ skipbp:
 	inc cx
 	cmp cl, MAXHWBP
 	jb nextbp
-done:
 	ret
 
 pmresethwbp:
 	mov bx, [si]
-	mov ax, 0b02h
+	mov ax, 0b02h	; get status
 	int 31h
 	add [bBPhit], al
-	mov ax, 0b01h
+	mov ax, 0b01h	; clear watchpoint
 	int 31h
 	@dprintf "pmresetHWBps hdl=%X", bx
 	retn
@@ -10043,9 +10049,19 @@ if RING0
 	call checksegm
 	mov dx, offset segerr
 	jc int21ah9
+endif
+
+if USEHWBP
+	call setHWBps
+	mov dx, offset cantwritebp
+	jc int21ah9
+endif
+
+if RING0
 	mov al, 0
 	call srscratch	; restore scratch GDT entry
 endif
+
 	call seteq		;set CS:E/IP to '=' address
 
 ;--- set debuggee context
@@ -10065,10 +10081,6 @@ if LCMDFILE
 endif
 if ?DPMI
 	call setdbeexc0d0e
-endif
-
-if USEHWBP
-	call setHWBps
 endif
 
 if FLATSS
@@ -10428,9 +10440,9 @@ bc_cmd:
 	jnb b_err
 	imul ax, sizeof HWBPSTRUCT
 	mov bx, ax
-	mov al, -1
+	mov al, 0
 	xchg al,[bx][HWBps].bType
-	cmp al, -1
+	test al, BP_USED
 	mov dx, offset bp_not_set
 	jz b_errmsg
 	ret
@@ -10453,7 +10465,7 @@ bp_cmd:
 	mov di, offset HWBps
 	mov cx, MAXHWBP-1
 @@:
-	cmp [di].HWBPSTRUCT.bType, -1
+	test [di].HWBPSTRUCT.bType, BP_USED
 	jz hwbp_free
 	add di, sizeof HWBPSTRUCT
 	loop @B
@@ -10497,6 +10509,7 @@ endif
 	stosd
 	mov al, dl
 	and al, 0fh		; type is 4 bits only
+	or al, BP_USED
 	stosb
 	ret
 
@@ -10508,7 +10521,7 @@ nextbp:
 	xchg edx, eax
 	lodsb
 	@dprintf "bp: cx=%X, edx=%lX, ax=%X", cx, edx, ax
-	cmp al, -1
+	test al, BP_USED
 	jz skipbp
 	mov di, offset line_out
 	push cx
@@ -11444,6 +11457,11 @@ parse_pt endp
 ;   Uses AH,BX,CX,(E)DX.
 
 parseql proc
+
+if USEHWBP
+;--- clear the internal HW bp in case it was set; may happen if last G/P/T caused a fault before "run" 
+	mov [HWBps.HWBPSTRUCT.bType][(MAXHWBP-1)*sizeof HWBPSTRUCT], 0
+endif
 	mov bx,[regs.rCS]	;default segment
 	mov [eqflag],al
 	cmp al,'='
@@ -13654,8 +13672,9 @@ endif
 if USEHWBP 
 	cmp [bUseHWBP],1
 	jnz @F
-	mov byte ptr [setHWBps], 90h	; patch code RET -> NOP
-	mov byte ptr [resetHWBps], 90h	; patch code RET -> NOP
+	mov ax, 9090h
+	mov word ptr [setHWBps], ax		; patch code to NOPs
+	mov byte ptr [resetHWBps], al
 	mov [wStoreBP], offset storebpx
  if BCMD
 	mov [bcmdv], offset b_cmd	;activate b cmd (requires 80386)

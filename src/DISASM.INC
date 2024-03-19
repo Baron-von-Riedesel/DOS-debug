@@ -53,7 +53,7 @@ sizeloc dw 0		;address of size words in output line
 preflags db 0		;flags for prefixes found so far
 preused	db 0		;flags for prefixes used so far
 
-instru	db 0		;the main instruction byte
+bInstr	db 0		;the main instruction byte
 rmsize	db 0		;<0 or 0 or >0 means mod r/m is 8 or 16 or 32
 segmnt	db 0		;segment determined by prefix (or otherwise)
 disflags db 0		;flags for the disassembler
@@ -222,7 +222,7 @@ endif
 da1:
 	call disgetbyte
 da2:
-	mov [instru],al	;save away the instruction
+	mov [bInstr],al	;save away the instruction
 	mov ah,0
 
 ;--- Now we have the sequence number of the instruction in AX.  Look it up.
@@ -258,7 +258,7 @@ da3:
 
 da_twobyte:
 	call disgetbyte
-	mov [instru],al
+	mov [bInstr],al
 	mov ah,0
 	add ax,SPARSE_BASE
 	ret
@@ -368,7 +368,7 @@ da14:
 	cmp al,OP_1632
 	jae da15				;if word or dword
 	mov ah,-1
-	test [instru],1
+	test [bInstr],1
 	jz da17					;if byte
 da15:
 	or [preused],PRE32D		;mark this flag as used
@@ -658,12 +658,17 @@ da32:
 	jmp da32z		;done
 
 ;--- Dump referenced memory location.
+;--- Better skip this if instruction is LEA!
 
 da32f:
 	mov al,[disflags]
 	xor al,DIS_F_SHOW + DIS_I_SHOW
 	test al,DIS_F_SHOW + DIS_I_SHOW
 	jnz da32z		;if there is no memory location to show
+
+	cmp [bInstr], 8Dh	; v2.03: don't show mem contents for lea!
+	jz da32z
+
 ife RING0			; for DebugR, FS/GS memory contents aren't skipped
 	cmp [segmnt],3 
 	ja da32z		;if FS or GS
@@ -993,7 +998,7 @@ dop_regmmx:
 ;--- Register number embedded in the instruction (OP_R_ADD)
 
 dop_r_add:
-	mov al,[instru]
+	mov al,[bInstr]
 	jmp dop_r1
 
 ;--- AL or AX or EAX (OP_AX)
@@ -1368,7 +1373,7 @@ showsqreg32 endp
 
 showsizeop proc
 ;--- for PUSH imm8 add D/W to opcode if size differs from default (WORD/DWORD)
-	cmp [instru],6ah
+	cmp [bInstr],6ah
 	jnz sso_skip
 	call dischk32d
 if ?PM

@@ -164,6 +164,9 @@ intrtnr proc
 
 	cli					;just in case
 	pop cs:[regs.rIP]	;recover things from stack
+if ?PM
+	mov word ptr cs:[regs.rIP+2],0
+endif
 	pop cs:[regs.rCS]
 	pop cs:[regs.rFL]
 intrtn_progtrm::		;<--- int 22h
