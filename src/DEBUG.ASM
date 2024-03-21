@@ -6523,6 +6523,7 @@ if ?DPMI
 
 ;--- this proc is called in pmode only
 ;--- DS is unknown!
+;--- called by L/W cmds.
 
 isextenderavailable proc
 	.286
@@ -6685,7 +6686,7 @@ if BOOTDBG
 
 l_cmd proc
 	call parselw	;returns AL=drive, BX=packet
-	jz cmd_error	;must be a full command
+	jz cmd_error	;Z means max 1 arg; must be a full command
 	call readsect
 	jnc @F
 	call int21ah9
@@ -6700,7 +6701,7 @@ elseife RING0
 l_cmd proc
 	call parselw	;parse it, addr in bx:(e)dx
  if LCMDFILE
-	jz ll1			;if request to read program
+	jz ll1			;Z if max 1 argument (read program)
  else
 	jz cmd_error
  endif
@@ -6762,7 +6763,8 @@ endif
 if LCMDFILE
 
 ;--- load (any) file (if not .EXE or .COM, load at BX:DX)
-;--- open file and get length
+;--- open file and get length.
+;--- in protected-mode, this will work with a DOS extender only.
 
 loadfile proc
 	mov si,bx		;save destination address, segment
@@ -6795,7 +6797,7 @@ loadfile proc
 	jz @F
 	mov dx,offset nopmsupp
 	call int21ah9
-	jmp ll12
+	jmp cl_exit	; close file and exit
 @@:
  endif
 
@@ -6837,7 +6839,7 @@ ll9:
 	pop si
 	mov dx,offset doserr8	;not enough memory
 	call int21ah9	;print string
-	jmp ll12
+	jmp cl_exit
 
 ll10:
 	pop bx
@@ -6886,7 +6888,7 @@ ll11:
 
 ;--- Close the file and finish up.
 
-ll12:
+cl_exit:
 	mov ah,3eh		;close file
 	int 21h
 	push ss			;restore ds
@@ -6913,7 +6915,7 @@ setespefl endp
 loadpgm proc
 
 ;--- file is .EXE or .COM
-;--- Close the file
+;--- bx=file handle, dx:ax=file size
 
 	push ax
 	mov ah,3eh		;close file
@@ -9168,7 +9170,7 @@ endif
 if WCMDFILE
 
 ;--- Write to file.  First check the file extension.
-;--- size of file is in client's BX:CX, 
+;--- size of file to be written is in client's BX:CX, 
 ;--- default start address is DS:100h
 
 write_file proc
@@ -9176,21 +9178,22 @@ write_file proc
 	test al,EXT_EXE + EXT_HEX
 	jz @F				;if not EXE or HEX
 	mov dx,offset nowhexe
-	jmp ww6
+	jmp exitwithmsg
 @@:
 	cmp al,0
 	jnz ww7		;if extension exists
 	mov dx,offset nownull
-ww6:
+exitwithmsg:
 	jmp int21ah9
 
 ;--- File extension is OK; write it.  First, create the file.
+;--- bx:e/dx = start address
 
 ww7:
 if ?DPMI
 	call ispm_dbg
 	jz @F
-	mov dx,offset nopmsupp	;cant write it in protected-mode
+	mov dx,offset nopmsupp	;cmd rejected in protected-mode
 	jmp int21ah9
 @@:
 endif
@@ -9214,7 +9217,7 @@ endif
 	mov dx,offset wwmsg1
 	call int21ah9	;print string
 	mov ax,[regs.rBX]
-	cmp ax,10h
+	cmp ax,10h		;max size = 0fffffh
 	jb @F			;if not too large
 	xor ax,ax		;too large:  zero it out
 @@:

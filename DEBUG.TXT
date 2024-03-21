@@ -371,10 +371,11 @@
  parameter specifies the load address. The default load address is
  CS:100 for all files other than EXE files, for which information in
  the file header determines the load address. After DEBUG loads the
- file it sets BX:CX to the file size in bytes. Recent versions of
- DEBUG display "Extended Error 1282" if the specified file cannot be
- found. Note that if a debuggee is active when a L command is about
- to run, it will be terminated.
+ file it sets BX:CX to the file size in bytes.
+  A load address can be specified if the file extension is not .COM
+ or .EXE. Note that if a debuggee is active when a L command is about
+ to run, and the file extension is .COM/.EXE, the debuggee will be
+ terminated.
 
  Syntax: L [address]
 
@@ -384,7 +385,13 @@
 
  Syntax: L address drive startsector numberofsectors
 
- [ENH: L with logical sectors on Windows XP will work for DebugX only.]
+ [ENH: L with logical sectors on Windows XP will work for DebugX only
+  and requires a socalled VDD (Virtual DOS Driver) named DEBXXVDD.DLL
+  to be loaded.
+   While in protected-mode, loading non-program files is rejected;
+  if sectors are to be loaded, DEBUG will accept the command only if a
+  DOS extender is active.
+ ]
  ---
 
  The Move command (M) copies a memory region to another location. If
@@ -636,7 +643,12 @@
  WARNING: You should know what you are doing when using this command.
  If used inappropriately, W can cause severe data losses.
 
- [ENH: W with logical sectors on Windows XP will work for DebugX only.]
+ [ENH: W with logical sectors on Windows XP will work for DebugX only,
+  with the help of VDD DEBXXVDD.DLL.
+   While in protected-mode, writing files is rejected; if sectors are
+  to be written, DEBUG checks if a DOS extender is active and if yes,
+  the command is executed.
+ ]
  ---
 
 
