@@ -726,11 +726,13 @@ u_addr	dw 0,0,0	;address for last U command; must follow d_addr
 if USEHWBP
 ;--- bits in bType:
 ;---   0-3: type
-;---   6: 1=bp active
-;---   7: 1=bp used
+;---   5: 1=bp is temp
+;---   6: 1=bp is active
+;---   7: 1=bp is used
+BP_TEMP   equ 20h
 BP_ACTIVE equ 40h
-BP_ACTIVEBIT equ 6
 BP_USED   equ 80h
+BP_ACTIVEBIT equ 6
 
 HWBPSTRUCT struct
 dwLinAd dd ?
@@ -740,11 +742,7 @@ wHdl	dw ?	; DPMI only
  endif
 HWBPSTRUCT ends
 
- if BCMD
 MAXHWBP equ 4
- else
-MAXHWBP equ 1
- endif
 HWBps HWBPSTRUCT MAXHWBP dup (<0,0>)
 endif
 
@@ -4491,8 +4489,12 @@ if RING0
 ;---       C if error
 ;--- other registers preserved
 
-getlinearbaseDT proc
 	.386
+
+getlinearbaseDT proc
+	lar ax, bx
+	stc
+	jnz done
 if FLATSS
 	sub esp, 6
 	sgdt [esp]
@@ -6000,59 +6002,6 @@ is_pm2:
 	retn
 
 resetbpsEx endp
-
-endif
-
-if USEHWBP
-
-;--- set a bp at bx:edx;
-;--- bx and edx must be preserved.
-;--- this proc is called only if cpu is 80386+
-;--- and hw debug registers are accessible.
-
-	.386
-
-sethwbptmp proc
- if RING0
-	push edx
-	call getlinearbaseDT; EAX=base of descriptor table for BX
-	jc nohwbp
-	call getlinearbaseBX; EAX=base of selector BX in descriptor table EAX
-	@dprintf "sethwbptmp: base cs=%lx", eax
-	pop edx
- else
-  if ?DPMI
-	call ispm_dbg		; in protected-mode?
-	jz rmbase
-	push dx
-	mov ax, 6
-	int 31h
-	push cx
-	push dx
-	pop eax
-	pop dx
-	jc nohwbp
-	jmp setbase
-  endif
-rmbase:
-	smsw ax		; currently no hw bps in v86-mode!
-	test al,1
-	stc
-	jnz nohwbp
-	movzx eax, bx
-	shl eax, 4
- endif
-setbase:
-	add eax, edx
-	@dprintf "sethwbptmp: linear=%lX (cs:eip=%X:%lX)", eax, bx, edx
-	mov [HWBps][(MAXHWBP-1) * sizeof HWBPSTRUCT].dwLinAd, eax
-	mov [HWBps][(MAXHWBP-1) * sizeof HWBPSTRUCT].bType, 0 or BP_USED
-	clc
-nohwbp:
-	ret
-sethwbptmp endp
-
-	.8086
 
 endif
 
@@ -9873,7 +9822,7 @@ WPENABLE equ 1	;local wp enable
 ;--- bit 18-19: len (0=1 byte, 1=2 byte, 2=8 byte, 3=4 byte )
 
 ;--- map (hard) breakpoints to debug registers
-;--- entry will be patched to NOP NOP if hw bp enabled
+;--- entry will be patched to NOP NOP if hw bp enabled!
 
 setHWBps proc
 	clc
@@ -9982,7 +9931,7 @@ endif
 setHWBps endp
 
 ;--- unmap (hard) breakpoints from debug registers
-;--- entry will be patched to NOP NOP if hw bp enabled
+;--- entry will be patched to NOP if hw bp enabled!
 
 resetHWBps proc
 	ret
@@ -10001,10 +9950,15 @@ nextbp:
 	lodsd
 	lodsb
 	test al, BP_ACTIVE
+	jz skipbp
+	and al, not BP_ACTIVE
+	test al, BP_TEMP
 	jz @F
-	and byte ptr [si-1], not BP_ACTIVE
-	call bp
+	mov al, 0
 @@:
+	and [si-1], al
+	call bp
+skipbp:
  if ?DPMI
 	lodsw
  endif
@@ -10409,6 +10363,80 @@ checkgfx:
 endif
 intrtn endp
 
+if USEHWBP
+
+;--- set a hw bp at bx:edx;
+;--- bx and edx must be preserved.
+;--- this proc is called only if cpu is 80386+
+;--- and hw debug registers are accessible.
+
+	.386
+
+sethwbptmp proc
+	push edx
+	call findfreehwbp
+	pop edx
+	jc @F
+	add eax, edx
+	@dprintf "sethwbptmp: linear=%lX (cs:eip=%X:%lX)", eax, bx, edx
+	stosd
+	mov al, 0 or BP_USED or BP_TEMP
+	stosb
+@@:
+	ret
+sethwbptmp endp
+
+;--- find a free place in hw bp table
+;--- bx=segment/selector
+;--- out: C if error
+;---     NC ok, then
+;---     EAX= bx base
+;---     DI = free entry in hw bp table
+
+	.386
+
+findfreehwbp proc
+	mov di, offset HWBps
+	mov cx, MAXHWBP
+@@:
+	test [di].HWBPSTRUCT.bType, BP_USED
+	jz @F
+	add di, sizeof HWBPSTRUCT
+	loop @B
+	stc
+	ret
+@@:
+ if RING0
+	call getlinearbaseDT	; eax=base of descriptor table for BX
+	jc @F
+	call getlinearbaseBX	; eax=base of BX
+@@:
+ elseif ?DPMI
+	call ispm_dbg		; in protected-mode?
+	jz rmbase
+	mov ax, 6
+	int 31h
+	jc @F				; can't get base of BX
+	push cx
+	push dx
+	pop eax
+@@:
+	ret
+rmbase:
+	smsw ax		; currently no hw bps in v86-mode!
+	shr al,1
+	jc @F
+	movzx eax, bx
+	shl eax, 4
+@@:
+ endif
+	ret
+findfreehwbp endp
+	
+	.8086
+
+endif
+
 if BCMD
 
 CONST segment
@@ -10464,50 +10492,10 @@ bp_cmd:
 	call chkeol
 @@:
 	push dx
-
-	mov di, offset HWBps
-	mov cx, MAXHWBP-1
-@@:
-	test [di].HWBPSTRUCT.bType, BP_USED
-	jz hwbp_free
-	add di, sizeof HWBPSTRUCT
-	loop @B
-	add sp, 2+4
-	mov dx, offset no_free_bp
-b_errmsg:
-	jmp int21ah9
-b_cmderr::
-	mov dx, offset b_inactive
-	jmp b_errmsg
-
-
-;--- bx=segment/selector, [sp]=type, [sp+2]=offset
-
-hwbp_free:
-if RING0
-	lar ax, bx
-	jnz b_err
-	call getlinearbaseDT	; eax=base of descriptor table for BX
-	call getlinearbaseBX	; eax=base of BX
-else
-	movzx eax, bx
-	shl eax, 4
- if ?DPMI
-	call ispm_dbg
-	jz @F
-	lar ax, bx
-	jnz b_err
-	mov ax, 6
-	int 31h
-	jc b_err			; can't get base of BX
-	push cx
-	push dx
-	pop eax
-@@:
- endif
-endif
+	call findfreehwbp
 	pop dx		; restore type
 	pop ecx		; get offset
+	jc @F
 	add eax, ecx
 	stosd
 	mov al, dl
@@ -10515,6 +10503,13 @@ endif
 	or al, BP_USED
 	stosb
 	ret
+@@:
+	mov dx, offset no_free_bp
+b_errmsg:
+	jmp int21ah9
+b_cmderr::
+	mov dx, offset b_inactive
+	jmp b_errmsg
 
 bp_disp:
 	mov si, offset HWBps
@@ -11461,10 +11456,6 @@ parse_pt endp
 
 parseql proc
 
-if USEHWBP
-;--- clear the internal HW bp in case it was set; may happen if last G/P/T caused a fault before "run" 
-	mov [HWBps.HWBPSTRUCT.bType][(MAXHWBP-1)*sizeof HWBPSTRUCT], 0
-endif
 	mov bx,[regs.rCS]	;default segment
 	mov [eqflag],al
 	cmp al,'='

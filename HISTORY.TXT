@@ -309,13 +309,13 @@
        - fix: disassembled line after register dump won't show memory contents
          for LEA instruction anymore.
        - DebugR(L): Q cmd may be activated for this variant.
-       - cmds bp/bc accept up to 3 permanent breakpoints.
+       - cmds bp/bc accept up to 4 permanent breakpoints.
        - cmds bp/bc implemented, but inactive for Debug & DebugX; activated in
          DebugXg & DebugXv variants.
-       - DebugX, DebugR(L), G/T/P cmds: if possible, a 386 debug register
-         will be used to set a breakpoint; for DebugX, in both real-mode and
-         protected-mode.
-       - all Debug variants that may use hardware breakpoints got new cmdline
-         option /s to disable this feature.
+       - DebugX, DebugR(L), G/T/P cmds: if possible, 386 debug registers will
+         be used to set temporary breakpoints; for DebugX, in both real-mode
+         and protected-mode.
+       - all debugger variants that may use hardware breakpoints got new
+         cmdline option /s to disable this feature.
        - g cmd: if a breakpoint cannot be written, the cmd is aborted.
 

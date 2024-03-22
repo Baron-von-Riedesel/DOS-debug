@@ -148,15 +148,16 @@
 
  ---
 [ENH:
- The Breakpoint commands (BP and BC) are activated for DebugR only, but
- may be activated for all Debug variants as well. The commands use the
- 80386+ debug capabilities. Up to 3 breakpoints may be set ( the hardware
- allows 4 breakpoints, but one is used internally for the G, T and P
- commands ). The feature works in protected-mode and real-mode only;
- support for v86-mode isn't implemented.
- Without argument, BP will display the currently active breakpoints. Although
- the breakpoints may be entered in the usual format ( segment:offset ), BP
- displays the linear address of the breakpoints only.
+  The Breakpoint commands (BP/BC) are activated for DebugXg, DebugXv and DebugR
+ only, but may be activated for all Debug variants as well. The commands use
+ the 80386+ debug capabilities to set up to 4 "permanent" breakpoints. If not
+ all 4 are used, the rest may be used internally by the G, T and P commands to
+ set temporary breakpoints. The feature works in protected-mode and real-mode
+ only; support for v86-mode isn't implemented.
+  Without argument, BP will display the currently active breakpoints. Although
+ the breakpoints may be entered in the usual format ( segment:offset ), they
+ are stored internally just as linear addresses, and so BP will display this
+ linear address only.
  The type argument consists of 2 bitfields. Bits 0-1 define the type:
 
   0 code breakpoint
@@ -174,11 +175,11 @@
  watchpoints may be rejected by the DPMI host; in any case they require
  bit DE to be set in register CR4.
 
- WinNT platforms and DosEmu don't allow access to the debug registers, hence
- it's inactive there.
-
  Command BC is used to clear a previously set breakpoint.
  
+ WinNT platforms and DosEmu don't allow access to the debug registers, hence
+ BP/BC are inactive there.
+
  Syntax: BP [[address] type]
          BC bp#
  ---]
@@ -337,7 +338,7 @@
 
  Syntax: G [=address] [break0 break1...]
 
- [ENH: DebugX will use a debug watchpoint to set the first breakpoint.
+ [ENH: if available, DebugX will use debug watchpoints to set breakpoints.
  Should always work in real-mode; in protected-mode this must be supported
  by the DPMI host; in v86-mode, it's inactive for now, since it requires
  the VCPI API, which is only available in true DOS environments. The feature
@@ -940,11 +941,10 @@
 
  Commands G, T and P: since support for 80386+ hardware debug registers is
  active, it may be used by those commands in case a breakpoint is to be set. 
- Unlike DebugX, this can't fail for DebugR. As for the G command this applies
- to the first breakpoint only - any further breakpoints will still be set by
- writing INT 3 to the location. One shouldn't set a breakpoint that may be
- triggered in real-mode - DebugR is, unlike DebugX, not bimodal and hence
- won't be notified in such cases!
+ If no more free breakpoints are available - of if cmdline option -s has been
+ set -, the debugger will switch back to "soft" breakpoints. One shouldn't set
+ a breakpoint that may be triggered in real-mode - DebugR is, unlike DebugX,
+ not bimodal and hence won't be notified in such cases!
 
   At the debugger prompt, when an address is to be parsed, the prefix '%' will
  tell the debugger to interpret the following offset as linear address.

@@ -101,8 +101,8 @@
      Be aware that Int 15h, ah=87h most likely will disable "unreal"-mode
      if it was enabled. This may be an unwanted side effect during debugging.
 
-   - 'g','p','t': the 80386+ debug registers may be used if a breakpoint
-     is to be set. This allows setting breakpoints in code that is read-only.
+   - 'g','p','t': the 80386+ debug registers may be used if breakpoints are
+     to be set. This allows setting breakpoints in code that is read-only.
      The feature may be switched off by cmdline option /s. It's never active
      if DebugX runs on NTVDM or DosEmu, since the debug registers aren't
      accessible there.
@@ -129,8 +129,8 @@
      Run file makex.bat to create them; you'll need the JWasm assembler
      for a successful run. The additional versions are:
   
-   - DebugXd.COM: a version which doesn't hook int 01 and int 03. This
-     allows to debug this version with a "normal" version of Debug(X).
+   - DebugXd.COM: a version that doesn't hook int 01 and int 03. This
+     allows to debug this variant with a "normal" version of Debug(X).
 
    - DebugXe.COM: a version which hooks interrupts 06, 0Ch and 0Dh in
      real-mode. This is for - rare - cases when such exceptions may
@@ -143,21 +143,25 @@
 
    - DebugXg.EXE: a version that is in DOS device driver format. This
      variant can be used to debug other device drivers. There are a
-     few peculiarities: commands N and Q are rejected, commands
-     R and W can't be used to read/write files and interrupt 06 (invalid
-     opcode exception) is hooked.
+     few peculiarities:
+     + commands N and Q are rejected;
+     + commands R and W can't be used to read/write files;
+     + interrupt 06 (invalid opcode exception) is hooked;
+     + commands BP/BC to manage permanent breakpoints are activated.
 
    - DebugXu.COM: a version that uses "unreal" mode to access extended
      memory for the DX command. This is useful to debug applications
      that set/use "unreal" mode themselves, because DebugXU will not
      change the current "unreal" state by its DX command.
 
-   - DebugXv.COM: a version that takes care that screen output of
-     debuggee and debugger are strictly separated - the new 'v'
-     command is provided to watch the debuggee screen while the
-     debugger is active. Additionally, the SysReq key is detected and
-     will activate the debugger. This debug version is useful to debug
-     fullscreen text mode programs.
+   - DebugXv.COM: a variant that has a few nice features activated
+     compared to the standard DebugX:
+     + takes care that screen output of debuggee and debugger are strictly
+       separated; the 'v' command may be used to watch the debuggee screen
+       while the debugger is active.
+     + the SysReq key is detected and will activate the debugger.
+     + the BP/BC commands are active, allowing permanent breakpoints.
+     DebugXv is intended to help debugging fullscreen text mode programs.
 
    - DebugB.BIN: a version that is supposed to be loaded during the
      boot process, before DOS is loaded. Has to be installed in "free"
