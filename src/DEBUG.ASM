@@ -761,7 +761,7 @@ bInit	db 0		;0=ensure a valid opcode is at debuggee's CS:IP
 if ?PM
 scratchsel dw 0		;scratch selector ( used by cmds a,c,e,f,g,m,p,t )
 bCSAttr db 0		;current code attribute (D bit).
-bAddr32 db 0		;Address attribute. if 1, hiword(edx) is valid
+bAddr32 db 0		;1=offset is 32-bit ( segment limit > 0ffffh )
 bFlagsPM db 0		;bit 0: 0=no default set for A cmd 
  if RING0
 ;--- exceptions trapped ( modified by VC/VT )
@@ -4292,13 +4292,20 @@ aagr3:
 	ret
 aagetreg endp
 
+if ?PM
+IsOfs32 proc
+	cmp cs:[bAddr32],0
+	ret
+IsOfs32 endp
+endif
+
 ;--- C command - compare bytes.
 
 c_cmd proc
 	call parsecm		;parse arguments (sets DS:e/si, ES:e/di, e/cx)
 ;--- note: DS unknown here
 if ?PM
-	cmp cs:[bAddr32],0
+	call IsOfs32
 	jz $+3
 	db 66h	;inc ecx
 endif
@@ -4312,7 +4319,7 @@ if INT2324
 	pop ds
 endif
 if ?PM
-	cmp cs:[bAddr32],0
+	call IsOfs32
 	jz $+3
 	db 67h	;repe cmpsb ds:[esi],es:[edi]
 endif
@@ -4324,7 +4331,7 @@ endif
 ;--- mov dl,[esi-1]: 67 8A 56 FF
 
 if ?PM
-	cmp cs:[bAddr32],0
+	call IsOfs32
 	jz @F
 	.386
 	mov dl,[esi-1]
@@ -4367,7 +4374,7 @@ if ?PM
 	mov ax,si
 	sizeprf		;inc esi
 	inc si
-	cmp cs:[bAddr32],0
+	call IsOfs32
 	jz @F
 	mov bp,offset hexdword
 @@:
@@ -4415,7 +4422,7 @@ endif
 	pop es
 	pop cx
 if ?PM
-	cmp cs:[bAddr32],0
+	call IsOfs32
 	jz $+3
 	db 67h	;jecxz cc2
 endif
@@ -5556,7 +5563,7 @@ e_cmd proc
 	mov ax,cx
 	dec ax
 if ?PM
-	cmp [bAddr32],0	;v1.29: if limit is > 64kB, skip test
+	call IsOfs32	;v1.29: if limit is > 64kB, skip test
 	jnz @F
 endif
 	add ax,di
@@ -5569,7 +5576,7 @@ if ?PM
 endif
 	mov es, bx
 if ?PM
-	cmp [bAddr32],0
+	call IsOfs32
 	jz @F
 	.386
 	mov dx,di		;dx was destroyed
@@ -5606,7 +5613,7 @@ if REDIRECT
 endif
 	mov bp,offset hexword
 if ?PM
-	cmp [bAddr32],0
+	call IsOfs32
 	jz @F
 	mov bp,offset hexdword
 @@:
@@ -5702,6 +5709,7 @@ ee10:
 	jmp e_nextc
 e_minus:
 	call stdoutal
+	call storebyte
 	sizeprfX		;dec edx
 	dec dx			;decrement offset part
 	mov di,offset line_out
@@ -5716,33 +5724,7 @@ e_bs:
 ;--- We have a byte (if CX != 0).
 
 e_spcr:
-	jcxz ee14		;if no change for this byte
-	mov [si],al		;terminate the string
-	sub si,cx		;point to beginning
-	push ax			;v1.29: save/restore value of AL to avoid stop if 'D' is entered
-	push cx
-	push dx
-	lodsb
-	call getbyte	;convert byte to binary (DL)
-	mov al,dl
-	pop dx
-	pop cx
-	call dohack		;set debuggee's int 23/24
-if ?PM
-	push bx			;bx may be changed by writemem in pm
-endif
-	call writemem	;write AL at BX:(E)DX
-if ?PM
-	pop bx
-endif
-	pop ax
-if INT2324
-	mov di,offset run2324	;debuggee's int 23/24
-	call prehak1	;copy IVT 23/24 to di ( real-mode only )
-	call unhack		;set debugger's int 23/24
-endif
-
-ee14:
+	call storebyte
 	sizeprfX		;inc edx
 	inc dx			;increment offset
 	mov di,offset line_out
@@ -5763,6 +5745,41 @@ e_newline:
 
 e_done:
 	jmp putsline	;call putsline and return
+
+;--- byte has been entered (1 or 2 chars)
+;--- si->behind byte
+;--- cx=#chars
+;--- bx:e/dx: address to store byte
+;--- ax preserved
+
+storebyte:
+	jcxz sb_done	;if no change for this byte
+	mov [si],al		;terminate the string
+	sub si,cx		;point to beginning
+	push ax			;v1.29: save/restore value of AL to avoid stop if 'D' is entered
+	push cx
+	push dx
+	lodsb
+	call getbyte	;convert byte to binary (DL)
+	mov al,dl
+	pop dx
+	pop cx
+	call dohack		;set debuggee's int 23/24
+if ?PM
+	push bx			;bx may be changed by writemem in pm
+endif
+	call writemem	;write AL at BX:(E)DX
+if ?PM
+	pop bx
+endif
+if INT2324
+	mov di,offset run2324	;debuggee's int 23/24
+	call prehak1	;copy IVT 23/24 to di ( real-mode only )
+	call unhack		;set debugger's int 23/24
+endif
+	pop ax
+sb_done:
+	ret
 e_cmd endp
 
 ;--- F command - fill memory
@@ -5771,7 +5788,7 @@ e_cmd endp
 f_cmd proc
 	call getrangeDS	;get address range into bx:(e)dx/(e)cx
 if ?PM
-	cmp [bAddr32],0
+	call IsOfs32
 	jz @F
 	.386
 	sub ecx, edx
@@ -5796,7 +5813,7 @@ if ?PM
 endif
 	mov es, bx
 if ?PM
-	cmp [bAddr32],0
+	call IsOfs32
 	jz fill_16
 	.386
 	movzx ecx, cx
@@ -7122,7 +7139,7 @@ if ?PM
 	pop es
  endif
 	call IsWriteableBX	; expects DS(,ES)=dgroup
-	cmp [bAddr32],0
+	call IsOfs32
 	pop ds
 	mov es, bx
 	jz m3_1
@@ -8423,7 +8440,7 @@ endif
 	sub di,offset line_out	;di = number of bytes to look for
 	dec di			;     minus one
 if ?PM
-	cmp [bAddr32],0
+	call IsOfs32
 	jz @F
 	.386
 	@dprintf "s_cmd: bx:edx=%X:%lX, ecx=%lX, di=%X", bx, edx, ecx, di
@@ -8451,7 +8468,7 @@ sss1:				;<---- search next occurance
 	mov si,offset line_out	;si = address of search string
 	lodsb			;first character in al
 if ?PM
-	cmp [bAddr32],0
+	call IsOfs32
 	jz sss1_16
 ;	@dprintf "s_cmd scasb: es:edi=%X:%lX, ecx=%lX ax=%X", es, edi, ecx, ax
 	.386
@@ -8513,7 +8530,7 @@ displaypos:
 	mov al,':'
 	stosb
 if ?PM
-	cmp [bAddr32],0
+	call IsOfs32
 	jz @F
 	.386
 	lea eax,[esi-1]
@@ -11243,7 +11260,7 @@ parsecm proc
 	call getrangeDS	;get address range into bx:(e)dx bx:(e)cx
 	push bx			;save segment first address ( src for m cmd )
 if ?PM
-	cmp [bAddr32],0
+	call IsOfs32
 	jz @F
 	.386
 	sub ecx,edx
@@ -11263,7 +11280,7 @@ pc_01:
 
 	mov bx,[regs.rDS]	; DS = default for "destination"
 if ?PM
-	cmp [bAddr32],0
+	call IsOfs32
 	jz pc_1
 	.386
 	call getaddr		;get address into bx:(e)dx
@@ -11570,7 +11587,7 @@ getrangeDS endp
 
 getrange proc		; used by c, d, m, s, u cmds
 	push cx
-	call getaddr	;get address into bx:(e)dx (sets bAddr32)
+	call getaddr	;get address into bx:(e)dx (sets bAddr32 if ?PM)
 	push si
 	call skipcomm0
 	cmp al,' '
@@ -11579,7 +11596,7 @@ getrange proc		; used by c, d, m, s, u cmds
 	pop cx
 	jcxz errorj10	;if a range is mandatory
 if ?PM
-	cmp [bAddr32],0	;can be 1 only on a 80386+
+	call IsOfs32	;can be NZ only on a 80386+
 	jz @F
 	.386
 	dec ecx

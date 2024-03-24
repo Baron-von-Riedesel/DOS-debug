@@ -320,3 +320,4 @@
        - g cmd: if a breakpoint cannot be written, the cmd is aborted.
        - DebugX fix e cmd, prompt mode: segment part changed after first line
          in protected-mode if it was a code selector.
+       - fix e cmd, prompt mode: '-' after byte input won't skip that input.
