@@ -195,7 +195,9 @@ INT22      = 0
 INT2324    = 0
 elseif RING0
 CATCHINT06 = 1
+ ifndef CATCHINT0C ; may be activated with cmdline option
 CATCHINT0C = 0
+ endif
 CATCHINT0D = 1
 CATCHINT41 = 0
 LCMD       = 0
@@ -4492,9 +4494,6 @@ if RING0
 	.386
 
 getlinearbaseDT proc
-	lar ax, bx
-	stc
-	jnz done
 if FLATSS
 	sub esp, 6
 	sgdt [esp]
@@ -4510,23 +4509,22 @@ endif
 	pop dx
 	pop eax
 	test bl, 4
-	jz @F
+	jz isgdt
 	push bx
 	sldt bx
 	@dprintf "getlinearbaseDT: ldt=%X", bx
-	and bx,bx
-	stc
-	jz noldt
 	call getlinearbaseBX
 	@dprintf "getlinearbaseDT: eax=%lX", eax
-	clc
-noldt:
 	pop bx
-@@:
+isgdt:
+	push ax
+	lar ax, bx
+	setnz al
+	shr al,1
+	pop ax
 ife FLATSS
 	pop bp
 endif
-done:
 	ret
 getlinearbaseDT endp
 
@@ -4537,7 +4535,7 @@ getlinearbaseDT endp
 getlinearbaseBX proc
 	movzx edx, bx
 	and dl, 0f8h
-	add eax, edx	; now eax -> LDT descriptor
+	add eax, edx	; now eax -> GDT/LDT descriptor
 	push ds
 	mov ds, [wFlat]
 	mov dl, [eax+4]
@@ -5599,52 +5597,57 @@ if INT2324
 endif
 	ret
 
-;--- Prompt mode.
+;--- Prompt mode. BX:E/DX=addr, DI=line_out
 
 ee1:
 	@dprintf "e: bx:edx=%X:%lX", bx, edx
 if REDIRECT
 	mov [bufnext], si  ; update buffer ptr in case stdin is file
 endif
-
-;--- Begin loop over lines.
-
-ee2:				;<--- next line
-	mov ax,bx		;print out segment and offset
-	call hexword
-	mov al,':'
-	stosb
 	mov bp,offset hexword
 if ?PM
 	cmp [bAddr32],0
 	jz @F
 	mov bp,offset hexdword
-	db 66h	;mov eax,edx
 @@:
 endif
+
+;--- Begin loop over lines.
+
+e_nextl:			;<--- next line
+	mov ax,bx		;print out segment and offset
+	call hexword
+	mov al,':'
+	stosb
+	sizeprfX		;mov eax,edx
 	mov ax,dx
 	call bp
 
 ;--- Begin loop over bytes.
 
-ee3:				;<--- next byte
-	mov ax,'  '		;print old value of byte
-	stosw
-	call dohack		;set debuggee's int 23/24
-	call readmem	;read mem at BX:(E)DX
-	call unhack		;set debugger's int 23/24
-	call hexbyte
-	mov al,'.'
-	stosb
+e_nextb:			;<--- next byte
 	push bx
 	push dx
+	mov ax,'  '
+	stosw
+	call dohack		;set debuggee's int 23/24
+	call readmem	;read byte at BX:(E)DX
+	call unhack		;set debugger's int 23/24
+	call hexbyte	;print old value of byte
+	mov al,'.'
+	stosb
 	call puts
 	pop dx
 	pop bx
 	mov si,offset line_out+16	;address of buffer for characters
 	xor cx,cx		;number of characters so far
 
-ee4:				;<--- get next char
+;--- get a byte (2 chars)
+;--- this is a simple "editor" that allows max 2 chars as input:
+;--- + 0-9 or A-F
+;--- + control chars SPACE, CR, BS, '-'
+
+e_nextc:			;<--- get next char
 if REDIRECT
 	test [fStdin], AT_DEVICE
 	jnz ee9			;jmp if it's a tty
@@ -5681,45 +5684,38 @@ endif
 
 ee10:
 	cmp al,' '
-	je ee13			;if done with this byte
+	je e_spcr		;if done with this byte
 	cmp al,CR
-	je ee13			;ditto
+	je e_spcr		;ditto
 	cmp al,BS
-	je ee11			;if backspace
+	je e_bs			;if backspace
 	cmp al,'-'
-	je ee112		;if '-'
+	je e_minus		;if '-'
 	cmp cx,2		;otherwise, it should be a hex character
-	jae ee4			;if we have a full byte already
+	jae e_nextc		;if we have a full byte already
 	mov [si],al
 	call getnyb
-	jc ee4			;if it's not a hex character
+	jc e_nextc		;if it's not a hex character
 	inc cx
 	lodsb			;get the character back
-	jmp ee12
-ee112:
 	call stdoutal
-if ?PM
-	cmp [bAddr32],0
-	jz @F
-	db 66h			;dec edx
-@@:
-endif
+	jmp e_nextc
+e_minus:
+	call stdoutal
+	sizeprfX		;dec edx
 	dec dx			;decrement offset part
 	mov di,offset line_out
-	jmp ee15
-ee11:
-	jcxz ee4		;if nothing to backspace over
+	jmp e_newline
+e_bs:
+	jcxz e_nextc	;if nothing to backspace over
 	dec cx
 	dec si
 	call fullbsout
-	jmp ee4
-ee12:
-	call stdoutal
-	jmp ee4			;back for more
+	jmp e_nextc
 
 ;--- We have a byte (if CX != 0).
 
-ee13:
+e_spcr:
 	jcxz ee14		;if no change for this byte
 	mov [si],al		;terminate the string
 	sub si,cx		;point to beginning
@@ -5732,40 +5728,40 @@ ee13:
 	pop dx
 	pop cx
 	call dohack		;set debuggee's int 23/24
+if ?PM
+	push bx			;bx may be changed by writemem in pm
+endif
 	call writemem	;write AL at BX:(E)DX
+if ?PM
+	pop bx
+endif
 	pop ax
 if INT2324
 	mov di,offset run2324	;debuggee's int 23/24
 	call prehak1	;copy IVT 23/24 to di ( real-mode only )
 	call unhack		;set debugger's int 23/24
 endif
-;--- End the loop over bytes.
 
 ee14:
-if ?PM
-	cmp [bAddr32],0
-	jz @F
-	db 66h			;inc edx
-@@:
-endif
+	sizeprfX		;inc edx
 	inc dx			;increment offset
 	mov di,offset line_out
 	cmp al,CR
-	je ee16			;if done
+	je e_done		;if done
 	test dl,7
-	jz ee15			;if new line
+	jz e_newline	;if new line
 	not cx
 	add cx,4		;compute 3 - cx
 	mov al,' '
 	rep stosb		;store that many spaces
-	jmp ee3			;back for more
+	jmp e_nextb		;back for more
 
-ee15:
+e_newline:
 	mov ax,LF * 256 + CR;terminate this line
 	stosw
-	jmp ee2			;back for a new line
+	jmp e_nextl		;back for a new line
 
-ee16:
+e_done:
 	jmp putsline	;call putsline and return
 e_cmd endp
 
@@ -7729,33 +7725,25 @@ writemem endp
 ;--- in:  BX:(E)DX=address
 ;--- out: AL=byte
 ;--- used by e_cmd prompt mode
+;--- BX may be modified
 
 readmem proc
 if ?PM
-;	cmp [bAddr32],0
 	call getseglimit	;attribute of selector in BX, Z if limit is <= 0ffffh
 endif
 	push ds
 	mov ds,bx
-;--- 14.2.2021: the assumption that the address prefix 67h
-;--- will change "mov al,[bx]" to "mov al,[ebx]" was somewhat "obvious",
-;--- but nevertheless WRONG; the first is encoded 8A 07, the latter 67 8A 03!
-;	sizeprfX	;mov ebx,edx
-;	mov bx,dx
 if ?PM
-;	jz $+3
-;	db 67h		;mov al,[ebx]
 	jz @F
 	.386
 	mov al,[edx]
 	.8086
-	jmp readmem_1
+	pop ds
+	ret
 @@:
 endif
-	xchg bx,dx
+	mov bx, dx
 	mov al,[bx]
-	xchg bx,dx
-readmem_1:
 	pop ds
 	ret
 readmem endp
