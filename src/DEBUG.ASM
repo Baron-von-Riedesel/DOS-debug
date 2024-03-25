@@ -5597,9 +5597,9 @@ ee0a::
 	push ds			;restore es
 	pop es
 if INT2324
-;--- prehak1 is called after debuggee memory has been written (just e cmd)
+;--- store2324 is called after debuggee memory has been written (just e cmd)
 	mov di,offset run2324	;debuggee's int 23/24 values
-	call prehak1	;copy IVT 23/24 to di ( real-mode only )
+	call store2324	;copy IVT 23/24 to di ( real-mode only )
 	call unhack		;set debugger's int 23/24
 endif
 	ret
@@ -5707,41 +5707,37 @@ ee10:
 	lodsb			;get the character back
 	call stdoutal
 	jmp e_nextc
-e_minus:
-	call stdoutal
-	call storebyte
-	sizeprfX		;dec edx
-	dec dx			;decrement offset part
-	mov di,offset line_out
-	jmp e_newline
 e_bs:
 	jcxz e_nextc	;if nothing to backspace over
 	dec cx
 	dec si
 	call fullbsout
 	jmp e_nextc
-
-;--- We have a byte (if CX != 0).
+e_minus:
+	call stdoutal
+	call storebyte
+	sizeprfX		;dec edx
+	dec dx			;decrement offset part
+	mov di,offset line_out
+e_newline:
+	mov ax,LF * 256 + CR;terminate this line
+	stosw
+	jmp e_nextl		;back for another line
 
 e_spcr:
-	call storebyte
+	call storebyte	;store byte if CX != 0
 	sizeprfX		;inc edx
 	inc dx			;increment offset
 	mov di,offset line_out
 	cmp al,CR
-	je e_done		;if done
+	je e_done
 	test dl,7
-	jz e_newline	;if new line
+	jz e_newline
 	not cx
 	add cx,4		;compute 3 - cx
 	mov al,' '
 	rep stosb		;store that many spaces
 	jmp e_nextb		;back for more
-
-e_newline:
-	mov ax,LF * 256 + CR;terminate this line
-	stosw
-	jmp e_nextl		;back for a new line
 
 e_done:
 	jmp putsline	;call putsline and return
@@ -5774,7 +5770,7 @@ if ?PM
 endif
 if INT2324
 	mov di,offset run2324	;debuggee's int 23/24
-	call prehak1	;copy IVT 23/24 to di ( real-mode only )
+	call store2324	;copy IVT 23/24 to di ( real-mode only )
 	call unhack		;set debugger's int 23/24
 endif
 	pop ax
@@ -6061,7 +6057,7 @@ storebpdef2:
 	mov bp, offset storebpdef
 endif
 storebpdef::
-	@dprintf "std int3 bp, cs:eip=%X:%lX", bx, edx
+	@dprintf "std int3 bp, cs:eip=%X:%lX di=%X lo=%X", bx, edx, di, offset line_out
 	sizeprfX		;xchg eax,edx
 	xchg ax,dx		;mov ax,dx
 	sizeprfX		;stosd
@@ -10374,10 +10370,12 @@ if USEHWBP
 ;--- bx and edx must be preserved.
 ;--- this proc is called only if cpu is 80386+
 ;--- and hw debug registers are accessible.
+;--- modifies DI!
 
 	.386
 
 sethwbptmp proc
+	push di
 	push edx
 	call findfreehwbp
 	pop edx
@@ -10388,6 +10386,7 @@ sethwbptmp proc
 	mov al, 0 or BP_USED or BP_TEMP
 	stosb
 @@:
+	pop di
 	ret
 sethwbptmp endp
 
@@ -10938,7 +10937,7 @@ if INT2324
 	jnz @F					;if hack status error
 	push di
 	mov di,offset sav2324	;debugger's Int2324
-	call prehak1			;copy IVT 23/24 to di (real-mode only)
+	call store2324			;copy IVT 23/24 to di (real-mode only)
 	pop di
 	ret
 @@:                         ;this is actually a programming error!
@@ -10962,7 +10961,7 @@ CONST ends
 ;--- get current int 23/24, store them at ES:DI
 ;--- DI is either sav2324 (debugger's) or run2324 (debuggee's)
 
-prehak1 proc
+store2324 proc
  if ?DPMI
 	call ispm_dbg
 	jnz _ret		;nothing to do if in PM
@@ -10980,7 +10979,7 @@ prehak1 proc
 	pop ds
 _ret:
 	ret
-prehak1 endp
+store2324 endp
 
 endif
 
