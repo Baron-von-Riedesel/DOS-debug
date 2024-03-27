@@ -51,7 +51,7 @@ sizeloc dw 0		;address of size words in output line
 
 ;--- preflags and preused must be consecutive
 preflags db 0		;flags for prefixes found so far
-preused	db 0		;flags for prefixes used so far
+preused  db 0		;flags for prefixes used so far
 
 bInstr	db 0		;the main instruction byte
 rmsize	db 0		;<0 or 0 or >0 means mod r/m is 8 or 16 or 32
@@ -191,17 +191,9 @@ if ?PM
 	mov bx,[u_addr+4]
 	call getseldefsize
 	mov [bCSAttr],al
- if 0
-;--- ?PM v2.01: don't preset opsize/adrsize prefixes if D bit is set;
-;--- those prefixes toggle just once.
-	jz @F
-	or [preflags], PRE32D or PRE32A
-;	or [preused], PRE32D or PRE32A
-@@:
- endif
 endif
 	mov [segmnt],3			;initially use DS segment
-	mov [rmsize],80h		;don't display any memory
+	mov [rmsize],80h		;signed byte (-128): don't display any memory
 	mov word ptr [ai.dismach],0;no special machine needed, so far
 	call disgetbyte			;get a byte of the instruction
 	cmp al,9bh				;wait instruction (must be the first prefix)
@@ -308,11 +300,6 @@ endif
 	test bl,[preflags]
 	jnz disbad0		;if there are duplicates
 	or [preflags],bl
-if 0	; v2.01: removed - opsize/adrsize prefixes "toggle" just once
-	mov bl,al
-	and al,PRE32D or PRE32A
-	xor [preflags],al
-endif
 	test bl,PRESEG
 	jz @F			;if not a segment
 	mov [segmnt],bh	;save the segment
@@ -418,58 +405,129 @@ da20:
 ;--- now check and loop for unused prefixes:
 ;--- OPSIZE (66h), ADDRSIZE (67h), WAIT, segment, REP[N][Z], LOCK
 
+;--- v2.03: the string instructions may have both 66h & 67h prefixes.
+;--- a 67h prefix will now be shown as a comment behind the opcode.
+
+CONST segment
+tabxx:
+	db PREWAIT			; a WAIT prefix hanging
+	db N_WTAB
+	db 2*N_WTAB-2
+	dw offset wtab1
+	db PRE32D			; opsize 66h
+	db N_LTABO
+	db 2*N_LTABO-2
+	dw offset ltabo1
+	db PRE32A			; adrsize 67h
+	db N_LTABA
+	db 2*N_LTABA-2
+	dw offset ltaba1
+CONST ends
+
+;--- v2.03: the contents of [preflags] is a bit of a mess,
+;--- so far as flags PRE32A and PRE32O for 32-bit code segments are involved.
+;--- that's why text macro 'AHgetpreflags' has been introduced.
+
+if ?PM
+getrealpreflags:
+	mov ah, [preflags]
+	test [bCSAttr], 40h
+	jz @F
+	xor ah, PRE32D or PRE32A
+@@:
+	ret
+@AHgetpreflags textequ <call getrealpreflags>
+else
+@AHgetpreflags textequ <mov ah,[preflags]>
+endif
+
 da21:
+	@AHgetpreflags	; get "true" status of [preflags] in AH
 	mov al,[preused]
 	not al
-	and al,[preflags]
+	and al,ah
 	jnz @F			;if some flags remain unused
 	jmp da_done		;if all flags were used
 @@:
-	mov cx,N_WTAB
-	mov bx,offset wtab1
-	mov dx,2*N_WTAB-2
-	mov ah,PREWAIT
-	test al,ah
-	jnz @F			;if there's a WAIT prefix hanging
-
-;--- todo: the string instructions may have both 66h&67h prefixes
-
-	mov cx,N_LTABO
-	mov bx,offset ltabo1
-	mov dx,2*N_LTABO-2
-	mov ah,PRE32D
-	test al,ah
-	jnz @F			;if it's not a 66h prefix that's hanging
-
-	mov cx,N_LTABA
-	mov bx,offset ltaba1
-	mov dx,2*N_LTABA-2
-	mov ah,PRE32A
-	test al,ah
-	jnz @F			;if it's not a 67h prefix that's hanging
+	mov cx,3
+	mov bx,offset tabxx
+@@:
+	test al,[bx+0]
+	jnz @F
+	add bx,5
+	loop @B
 	jmp da_chkseg
 @@:
-	or [preused],ah	;mark this prefix as used
+	mov dl,[bx+0]
+	or [preused],dl	;mark this prefix as used
 	push di
-	mov di,bx
-	mov bl,ah
+	mov di,[bx+3]
+	mov cl,[bx+1]	;ch is 00
 	mov ax,[idxins]
 	repne scasw
 	jne da23_1		;if not found in the list
-	add di,dx		;replace the mnemonic with the 32-bit name
+	mov al,[bx+2]
+	cbw
+	add di,ax		;replace the mnemonic with the 32-bit name
 	mov si,[di]
 	add si,offset mnlist
 	call showop		;copy op mnemonic
 da23_0:
 	pop di
 	jmp da21
+
 da23_1:
-if ?PM
-	test bl,PRE32A or PRE32D	;is a 66/67 prefix unhandled?
+
+;--- handle prefixes that are still "unused".
+;--- v2.03: previously, in 32-bit code, any still unused 66/67 prefixes
+;--- were silently ignored.
+;--- Now we handle the 67h prefix for string instructions, by adding
+;--- a comment that the address size differs from default.
+;--- this new code perhaps is a bit overly complicated - to be improved...
+
+	test dl,PRE32A or PRE32D	;is a 66/67 prefix unhandled?
 	jz disbad2
-	test [bCSAttr],40h		;32bit code segment?
-	jnz da23_0				;then ignore those. 
-endif
+	cmp ah, 0	; just to be sure
+	jnz disbad2
+
+	@AHgetpreflags
+	@dprintf "da23_1: dx=%X, ax=%X, preflags/used=%X",dx, ax, word ptr preflags
+	and dl, ah
+	cmp dl, PRE32A 
+	jnz da23_0
+
+;--- scan the string instruction table
+
+	mov di, offset strinstr
+	mov cx, 14
+	repnz scasb
+	jnz disbad2
+
+;--- found; now copy the comment behind the opcode
+
+	mov si,offset szA32
+ if ?PM
+	test [bCSAttr],40h
+	jz @F
+	mov si,offset szA16
+@@:
+ endif
+	pop di
+	movsw
+	movsw
+	jmp da21
+
+CONST segment
+strinstr label byte
+	db 6ch,6dh,6eh,6fh		; ins, outs
+	db 0A4h,0A5h,0A6h,0A7h	; movs, cmps, lods, scas, stos
+	db 0AAh,0ABh,0ACh,0ADh,0AEh,0AFh
+szA32 db ";A32"
+szA16 db ";A16"
+CONST ends
+
+;--- v2.03: end of the "address size prefix for string instructions" addition
+
 disbad2:
 	jmp disbad
 
@@ -658,7 +716,7 @@ da32:
 	jmp da32z		;done
 
 ;--- Dump referenced memory location.
-;--- Better skip this if instruction is LEA!
+;--- v2.03: skip this if instruction is LEA!
 
 da32f:
 	mov al,[disflags]
@@ -1147,7 +1205,7 @@ if FLATSS
 else
 	mov sp,[run_sp]		;pop junk off stack
 endif
-	mov ax,offset da13
+	mov ax,offset da13	; the address where we "return" to
 	push ax
 	mov [dis_n],0
 	mov word ptr [preflags],0		;clear preflags and preused

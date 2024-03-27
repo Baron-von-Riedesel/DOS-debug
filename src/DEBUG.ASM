@@ -183,7 +183,11 @@ NOEXTENDER equ 0
  ifndef BCMD
 BCMD       equ 0
  endif
-USEHWBP    equ BCMD
+ if BCMD
+USEHWBP    equ 1
+ elseifndef USEHWBP
+USEHWBP    equ 0
+ endif
 endif
 
 if DRIVER
@@ -6079,7 +6083,7 @@ gg_parsebp_done:
 
 ;--- Store breakpoint bytes in the given locations.
 
-;--- v2.03: abort g like t/p if bp can't be written
+;--- v2.03: abort g as in t/p if bp can't be written
 ;	mov bp, offset _ret	; ignore write errors for g
 	mov bp, offset bp_writeerr
 gg_1::				; <--- called by p/t ( run an int/call/... - set 1 bp )
@@ -10415,7 +10419,8 @@ findfreehwbp proc
 	jc @F
 	call getlinearbaseBX	; eax=base of BX
 @@:
- elseif ?DPMI
+ else
+  if ?DPMI
 	call ispm_dbg		; in protected-mode?
 	jz rmbase
 	mov ax, 6
@@ -10427,12 +10432,11 @@ findfreehwbp proc
 @@:
 	ret
 rmbase:
-	smsw ax		; currently no hw bps in v86-mode!
-	shr al,1
-	jc @F
+  endif
 	movzx eax, bx
 	shl eax, 4
-@@:
+v86patch::
+	nop
  endif
 	ret
 findfreehwbp endp
@@ -10471,7 +10475,7 @@ bc_cmd:
 	call getbyte	; get byte into DL
 	call chkeol
 	movzx ax, dl
-	cmp al, 3
+	cmp al, MAXHWBP
 	jnb b_err
 	imul ax, sizeof HWBPSTRUCT
 	mov bx, ax
@@ -12858,10 +12862,14 @@ line_out	equ line_in+LINE_IN_LEN+1;length = 1 + 263
 real_end	equ line_in+LINE_IN_LEN+1+264
 
 if USEHWBP
+
+HWBP_ACTIVE equ 1
+HWBP_V86    equ 2
+
  if RING0
-bUseHWBP db 1
+bHWBPflgs db HWBP_ACTIVE
  else
-bUseHWBP db 0
+bHWBPflgs db 0
  endif
 endif
 
@@ -12952,7 +12960,10 @@ imsg1 db DBGNAME,' version ',@CatStr(!',%VERSION,!'),CR,LF,LF
 	db '  /2: use alternate video adapter for output if available',CR,LF
   endif
   if USEHWBP
-	db '  /s: use software breakpoints only',CR,LF
+	db '  /s: hardware breakpoints switched off',CR,LF
+   ife RING0
+	db '  /v: allow hardware breakpoints in v86 mode',CR,LF
+   endif
   endif
  endif
 	db ' progname: (executable) file to debug or examine',CR,LF
@@ -13220,7 +13231,7 @@ ife RING0
 ;   It is now safe to use 32-bit opcode/operands.
 
  if USEHWBP
-	inc [bUseHWBP]
+	inc [bHWBPflgs]	; bit 0=1 (HWBP_ACTIVE)
  endif
 
 endif
@@ -13397,7 +13408,7 @@ ife (BOOTDBG or RING0)
 	cmp bx,3205h	; NTVDM?
 	jnz @F
   if USEHWBP
-	mov bUseHWBP,0	; not for NTVDM
+	mov bHWBPflgs,0	; no hwbp for NTVDM
   endif
 	mov si,offset szDebxxVdd	;DS:SI->"DEBXXVDD.DLL"
 	mov bx,offset szDispatch	;DS:BX->"Dispatch"
@@ -13544,9 +13555,16 @@ noopt2:
  if USEHWBP
 	cmp al,'s'
 	jnz @F
-	mov [bUseHWBP],0
+	mov [bHWBPflgs],0
 	jmp contparse
 @@:
+  ife RING0
+	cmp al,'v'
+	jnz @F
+	or [bHWBPflgs],HWBP_V86
+	jmp contparse
+@@:
+  endif
  endif
 
  if MCLOPT and ( CATCHINT0C or CATCHINT0D )
@@ -13652,12 +13670,12 @@ if ?DPMI
 	mov si,offset dDosEmuDate
 	mov cx,4
 	repe cmpsw		;running in DosEmu?
-	jz no2fhook2
+	jz no2fhook_dosemu
  endif
 	jmp dpmihostchecked
-no2fhook2:
+no2fhook_dosemu:
  if USEHWBP
-	mov [bUseHWBP],0; disable hw bps for DosEmu
+	mov [bHWBPflgs],0; disable hw bps for DosEmu
  endif
 no2fhook:
 	inc [bNoHook2F]
@@ -13668,14 +13686,26 @@ endif
 ;--- setup hardware bp usage
 
 if USEHWBP 
-	cmp [bUseHWBP],1
-	jnz @F
+	test [bHWBPflgs],HWBP_ACTIVE
+	jz @F
 	mov ax, 9090h
 	mov word ptr [setHWBps], ax		; patch code to NOPs
 	mov byte ptr [resetHWBps], al
 	mov [wStoreBP], offset storebpx
  if BCMD
 	mov [bcmdv], offset b_cmd	;activate b cmd (requires 80386)
+ endif
+ ife RING0
+;--- debug register access in v86 may be supported by v86-monitor
+;--- jemm & qemm are ok; MS emm386 & Win3x/9x are not.
+	.286
+	smsw ax
+	.8086
+	test al,1
+	jz @F				; if in real-mode
+	test [bHWBPflgs],HWBP_V86
+	jnz @F				; if cmdline option /v
+	mov byte ptr v86patch,0F9h	; patch to STC, disables hwbp in v86
  endif
 @@:
 endif
