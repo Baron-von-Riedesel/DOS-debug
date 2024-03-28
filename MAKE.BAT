@@ -1,4 +1,5 @@
 @echo off
+if not exist build\NUL mkdir build
 echo creating debug.com
 jwasm -nologo -bin -Fobuild\DEBUG.COM -Flbuild\DEBUG.LST src\debug.asm
 echo creating debugx.com

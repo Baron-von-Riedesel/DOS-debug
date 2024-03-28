@@ -1,5 +1,6 @@
 
 ;--- disassembler 32bit string cmds
+;--- assemble: jwasm -mz str32.asm
 
 	.286
 	.model tiny
@@ -9,6 +10,9 @@
 
 	.code
 
+main:
+	int 3
+	ret
 	cmpsb ds:[esi], es:[edi]
 	lodsb ds:[esi]
 	movsb es:[edi], ds:[esi]
@@ -45,7 +49,18 @@
 	repnz scasd es:[edi]
 	rep   stosd es:[edi]
 
+	repnz cmpsb cs:[esi], es:[edi]
+	rep   lodsb cs:[esi]
+	rep   movsb es:[edi], cs:[esi]
+	repnz cmpsw cs:[esi], es:[edi]
+	rep   lodsw cs:[esi]
+	rep   movsw es:[edi], cs:[esi]
+	repnz cmpsd cs:[esi], es:[edi]
+	rep   lodsd cs:[esi]
+	rep   movsd es:[edi], cs:[esi]
+
 start:
+	call main
 	mov ah,4Ch
 	int 21h
 

@@ -320,8 +320,6 @@
        - DebugX, DebugR(L), G/T/P cmds: if possible, 386 debug registers will
          be used to set temporary breakpoints; for DebugX, in both real-mode
          and protected-mode.
-       - new cmdline option /s for all debugger variants that may use hardware
-         breakpoints.
-       - new cmdline option /v for all debugger variants that may use hardware
-         breakpoints in v86 mode.
+       - new cmdline options /s and /v for debugger variants that may use
+         hardware breakpoints ( option /v not for DebugR(L) variant ).
        - g cmd: if a breakpoint cannot be written, the cmd is aborted.

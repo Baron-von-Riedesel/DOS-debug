@@ -61,7 +61,8 @@
 
 [ENH: DebugX accepts further options:
     /2 : use an alternate (monochrome) adapter if available.
-    /s : tells debugger not to use hardware breakpoints.
+    /s : debugger won't use hardware breakpoints.
+    /v : debugger may use hardware breakpoints even in v86-mode.
 ]
 
 
@@ -343,12 +344,20 @@
 
  Syntax: G [=address] [break0 break1...]
 
- [ENH: if available, DebugX will use debug watchpoints to set breakpoints.
+ [ENH: Debug/X will additionally gain control in all modes if an
+ exception 00 (divide error) occurs. DebugX will additionally gain
+ control if exceptions 0Ch, 0Dh or 0Eh occur in protected-mode. Be
+ aware, however, that Debug/X doesn't check if the debuggee modifies
+ any of those vectors on its own - if this is the case, the debugger
+ won't be notified.
+  If available, DebugX will use debug watchpoints to set breakpoints.
  This feature may be generally switched off by the /s cmdline option; on
- Windows NT platforms and DosEmu it's always off.
-  If active, it should always work in real-mode; in protected-mode it has
- to be supported by the DPMI host; in v86-mode, it's inactive, but may
- be explicitely switched on by cmdline option /v.
+ Windows NT platforms and DosEmu it's always off. If enabled, it should
+ always work in real-mode; in protected-mode it has to be supported by
+ the DPMI host; in v86-mode, it's inactive, but may be explicitely switched
+ on by cmdline option /v.
+  Finally, Debug/X accepts more than 10 temporary breakpoints - they're
+ limited just by the max. line length.
  ]
  ---
 
@@ -465,7 +474,8 @@
  Syntax: P [=address] [number]
 
  [DebugX: see the remark at the T(race) command about DebugX's possible
-  usage of the 80386 debug registers in protected-mode and real-mode.
+  usage of the 80386 debug registers in protected-mode and real-mode. As
+  for regaining control, see the remarks at the G(o) command.
  ]
 
  ---
@@ -835,8 +845,8 @@
  For this to achieve DebugX has to intrude into the DPMI host's address
  space when a new DPMI client starts. This is the first obstacle for
  DebugX and whether it works smoothly depends on the DPMI host. NT's
- DOSX.EXE works pretty well; the same is true for HDPMI. Less good work
- the hosts implemented in Windows 9X or DOSEMU; in these environments
+ DOSX.EXE works pretty well; the same is true for HDPMI or CWSDPMI. Less
+ good work the hosts implemented in Windows 9X or DOSEMU; on those platforms
  it's required that DebugX traces through the initial switch to protected-
  mode, else it will loose control of its debuggee.
 
@@ -866,10 +876,10 @@
  its output to that device via the /2 cmdline option. This gives DebugX
  the ability to debug graphics applications.
 
-  The HX PE loader DPMILD32 may set pages of code sections to readonly
- if certain conditions are met. This reliably prevents DebugX from setting
- its breakpoints. There should exist an option to make DPMILD32 not modify
- those page attributes - see the docs supplied with DPMILD32 for details.
+  Some DOS extenders may set code section pages to readonly. Up to v2.03
+ this did pretty reliably prevent DebugX from setting its breakpoints. Since
+ v2.03, Debug/X may prefer to use hardware breakpoints - and thus avoid
+ such problems.
 
 
  9. Installing and Initializing DebugB

@@ -1,5 +1,6 @@
 @echo off
 rem create special DEBUG versions with JWasm
+if not exist build\NUL mkdir build
 
 echo creating debugxD - debug version of debugx
 jwasm -nologo -bin -Fo build\DEBUGXD.COM -Fl=build\DEBUGXD.LST -D?DPMI=1 -DCATCHINT01=0 -DCATCHINT03=0 -DPROMPT=] src\debug.asm

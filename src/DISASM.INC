@@ -1,7 +1,7 @@
 
 ;   Here is the start of the disassembly part of the program.
 
-;--- flags variables preflags/preused
+;--- flag bits preflags/preused
 
 PRESEG	equ 1		;segment prefix
 PREREP	equ 2		;rep prefixes
@@ -10,7 +10,7 @@ PRELOCK	equ 8		;lock prefix
 PRE32D	equ 10h		;flag for operand size (66h)
 PRE32A	equ 20h		;flag for address size (67h)
 PREWAIT	equ 40h		;prefix wait (not really a prefix)
-GOTREGM	equ 80h		;set if we have the reg/mem part
+GOTREGM	equ 80h		;preused only: set if we have the reg/mem part
 
 ;--- equates for disflags:
 
@@ -52,6 +52,9 @@ sizeloc dw 0		;address of size words in output line
 ;--- preflags and preused must be consecutive
 preflags db 0		;flags for prefixes found so far
 preused  db 0		;flags for prefixes used so far
+if ?PM
+realpre32x db 0		;real PRE32D/PRE32A state, differ from preflags if CS is 32-bit
+endif
 
 bInstr	db 0		;the main instruction byte
 rmsize	db 0		;<0 or 0 or >0 means mod r/m is 8 or 16 or 32
@@ -311,13 +314,17 @@ disbad0:
 	jmp disbad		;we don't allow duplicate prefixes
 
 
-da13pre:
+da13pre::
 
 if ?PM ; v2.01: update opsize/adrsize prefixes if D bit set AFTER prefixes have been read
+	mov al, 0
 	test [bCSAttr], 40h
 	jz @F
+	mov al, [preflags]
 	xor [preflags], PRE32D or PRE32A
+	and al, PRE32D or PRE32A
 @@:
+	mov [realpre32x], al
 endif
 
 ;   OK.  Here we go.  This is an actual instruction.
@@ -325,7 +332,7 @@ endif
 ;   SI=offset of operand list in oplists
 ;   First print the op mnemonic.
 
-da13::
+da13:
 	push si
 	lea si,[mnlist+bx]	;offset of mnemonic
 	cmp si,offset mnlist+MN_BSWAP
@@ -402,144 +409,194 @@ da20:
 	jmp da14			;another operand
 
 ;--- all operands done.
+
+;-------------------------------------------------------------------
 ;--- now check and loop for unused prefixes:
 ;--- OPSIZE (66h), ADDRSIZE (67h), WAIT, segment, REP[N][Z], LOCK
 
 ;--- v2.03: the string instructions may have both 66h & 67h prefixes.
 ;--- a 67h prefix will now be shown as a comment behind the opcode.
+;--- this code has been reworked.
 
 CONST segment
-tabxx:
+
+txflags label byte
 	db PREWAIT			; a WAIT prefix hanging
-	db N_WTAB
-	db 2*N_WTAB-2
-	dw offset wtab1
 	db PRE32D			; opsize 66h
-	db N_LTABO
-	db 2*N_LTABO-2
-	dw offset ltabo1
 	db PRE32A			; adrsize 67h
+	db PRESEG
+	db PREREP or PREREPZ
+	db PRELOCK
+
+txsize label byte	; items in txtabs tables
+	db N_WTAB
+	db N_LTABO
 	db N_LTABA
-	db 2*N_LTABA-2
+	db N_PRFXTAB
+	db N_REPNC
+	db N_LOCK
+
+txtabs label word
+	dw offset wtab1
+	dw offset ltabo1
 	dw offset ltaba1
-CONST ends
+	dw offset prfxtab
+	dw offset replist
+	dw offset locktab
 
-;--- v2.03: the contents of [preflags] is a bit of a mess,
-;--- so far as flags PRE32A and PRE32O for 32-bit code segments are involved.
-;--- that's why text macro 'AHgetpreflags' has been introduced.
+txprocs label word
+	dw hdl_wait
+	dw hdl_d32
+	dw hdl_a32
+	dw hdl_seg
+	dw hdl_rep
+	dw hdl_lock
 
-if ?PM
-getrealpreflags:
-	mov ah, [preflags]
-	test [bCSAttr], 40h
-	jz @F
-	xor ah, PRE32D or PRE32A
-@@:
-	ret
-@AHgetpreflags textequ <call getrealpreflags>
-else
-@AHgetpreflags textequ <mov ah,[preflags]>
-endif
-
-da21:
-	@AHgetpreflags	; get "true" status of [preflags] in AH
-	mov al,[preused]
-	not al
-	and al,ah
-	jnz @F			;if some flags remain unused
-	jmp da_done		;if all flags were used
-@@:
-	mov cx,3
-	mov bx,offset tabxx
-@@:
-	test al,[bx+0]
-	jnz @F
-	add bx,5
-	loop @B
-	jmp da_chkseg
-@@:
-	mov dl,[bx+0]
-	or [preused],dl	;mark this prefix as used
-	push di
-	mov di,[bx+3]
-	mov cl,[bx+1]	;ch is 00
-	mov ax,[idxins]
-	repne scasw
-	jne da23_1		;if not found in the list
-	mov al,[bx+2]
-	cbw
-	add di,ax		;replace the mnemonic with the 32-bit name
-	mov si,[di]
-	add si,offset mnlist
-	call showop		;copy op mnemonic
-da23_0:
-	pop di
-	jmp da21
-
-da23_1:
-
-;--- handle prefixes that are still "unused".
-;--- v2.03: previously, in 32-bit code, any still unused 66/67 prefixes
-;--- were silently ignored.
-;--- Now we handle the 67h prefix for string instructions, by adding
-;--- a comment that the address size differs from default.
-;--- this new code perhaps is a bit overly complicated - to be improved...
-
-	test dl,PRE32A or PRE32D	;is a 66/67 prefix unhandled?
-	jz disbad2
-	cmp ah, 0	; just to be sure
-	jnz disbad2
-
-	@AHgetpreflags
-	@dprintf "da23_1: dx=%X, ax=%X, preflags/used=%X",dx, ax, word ptr preflags
-	and dl, ah
-	cmp dl, PRE32A 
-	jnz da23_0
-
-;--- scan the string instruction table
-
-	mov di, offset strinstr
-	mov cx, 14
-	repnz scasb
-	jnz disbad2
-
-;--- found; now copy the comment behind the opcode
-
-	mov si,offset szA32
- if ?PM
-	test [bCSAttr],40h
-	jz @F
-	mov si,offset szA16
-@@:
- endif
-	pop di
-	movsw
-	movsw
-	jmp da21
-
-CONST segment
 strinstr label byte
 	db 6ch,6dh,6eh,6fh		; ins, outs
 	db 0A4h,0A5h,0A6h,0A7h	; movs, cmps, lods, scas, stos
 	db 0AAh,0ABh,0ACh,0ADh,0AEh,0AFh
 szA32 db ";A32"
+if ?PM
 szA16 db ";A16"
+endif
 CONST ends
 
-;--- v2.03: end of the "address size prefix for string instructions" addition
+;--- preflags:
+;--- CS 16-bit: if PRE32x == 1, a prefix has been found.
+;--- + PRE32D == 0: nothing done
+;--- + PRE32D == 1: CS=32: scan opc table, fnd: switch opcode, notfnd:bad prefix
+;--- + PRE32A == 0: nothing done
+;--- + PRE32A == 1: CS=32, scan opc table, fnd: switch opcode, notfnd: check str instr
+;--- CS 32-bit: if PRE32x == 1, no prefix has been found. Since all cases require work
+;---            realpre32x (contains unmodified PRE32x state) is also to check!
+;--- + PRE32D == 0, CS=16: scan opc table, fnd: exit, notfnd: bad prefix
+;--- + PRE32D == 1, CS=32: scan opc table, fnd: switch opcodes, notfnd: exit
+;--- + PRE32A == 0, CS=16: scan opc table, fnd: exit, notfnd: check str instr
+;--- + PRE32A == 1, CS=32: scan opc table, fnd: switch opcodes, notfnd: check str instr
+
+;--- note: a prefix might be marked as "used" already. In this case it must be skipped!
+
+;--- di=current output in line_out
+;--- may be changed by the prefix loop if a prefix has to be inserted.
+
+da21:
+	@dprintf "da21, di=%X", di
+	xor bx, bx
+nextflag:
+	mov ax, word ptr [preflags]	; ah=preused
+	not ah
+	and al, ah			;skip flags that are set in preused
+if ?PM
+	or al, [realpre32x]	; if CS is 32bit, checks must be done in any case
+endif
+	test al,[bx][txflags]
+	jz @F
+	mov ax,[idxins]
+	mov cl,[bx][txsize]
+	mov ch,0
+	push bx
+	shl bx,1
+	mov dx,[bx][txtabs]
+	call [bx][txprocs]
+	pop bx
+	mov al,[bx][txflags]
+	or [preused], al	;mark this prefix as used
+@@:
+	inc bx
+	cmp bx, 6
+	jb nextflag
+	@dprintf "da21 done: preflags=%X", word ptr preflags
+	jmp da_done
+
+hdl_scan_table:
+	push di
+	mov di, dx
+	push cx
+	repne scasw
+	pop cx
+	jnz @F
+	dec cx
+	shl cx, 1
+	add di,cx		;position DI for opcode replacement
+	mov si,[di]
+	add si,offset mnlist
+	xor cx, cx		;ZF=1
+@@:
+	pop di
+	ret
+
+ife ?PM
+hdl_d32:
+endif
+hdl_wait:
+	call hdl_scan_table
+	jnz disbad2
+	jmp hdl_showop		;copy op mnemonic, preserve di
+
+if ?PM
+hdl_d32:
+	test [bCSAttr],40h	; nothing special if CS is 16-bit
+	jz hdl_wait
+	@dprintf "hdl_d32, scan opcode tab, preflags=%X", word ptr [preflags]
+	call hdl_scan_table
+	jnz @F
+	@dprintf "hdl_d32, CS=32: opcode found"
+	test [preflags], PRE32D	; CS 32bit?
+	jz hdl_d32_ex			; if no, do nothing
+	jmp hdl_showop
+@@:
+	@dprintf "hdl_d32, opcode not found"
+	test [preused], PRE32D		; already marked as used?
+	jnz hdl_d32_ex
+	test [realpre32x], PRE32D	; real 66h prefix?
+	jnz disbad2
+hdl_d32_ex:
+	ret
+endif
+
+hdl_a32:
+	call hdl_scan_table
+	jnz @F
+	@dprintf "hdl_a32, opcode found"
+if ?PM
+	test [preflags], PRE32A	; CS 32bit?
+	jz hdl_a32_ex			; if no, do nothing
+endif
+	jmp hdl_showop			; switch opcode if found
+@@:
+	@dprintf "hdl_a32, opcode not found"
+if ?PM
+	test [realpre32x], PRE32A	; a true 67h prefix in code stream?
+	jz hdl_a32_ex				; if no, do nothing
+endif
+	@dprintf "hdl_a32, true 67h prefix, testing string instr"
+	push di
+	mov di, offset strinstr
+	mov cx, 14
+	repnz scasb
+	pop di
+	jnz disbad2
+	mov si,offset szA32
+if ?PM
+	test [bCSAttr],40h
+	jz @F
+	mov si,offset szA16
+@@:
+endif
+	movsw
+	movsw
+hdl_a32_ex:
+	ret
 
 disbad2:
 	jmp disbad
 
-da_chkseg:
-	test al,PRESEG
-	jz da_chkrep	;if not because of a segment prefix
-	mov ax,[idxins]
+hdl_seg:
 	cmp ah,0
 	jnz disbad2		;if index > 256
 	push di
-	mov cx,P_LEN
-	mov di,offset prfxtab
+	mov di,dx
 	repne scasb
 	pop di
 	jne disbad2		;if it's not on the list
@@ -551,64 +608,55 @@ da_chkseg:
 	mov al,':'
 	stosb
 	pop di
-	or [preused],PRESEG		;mark it as used
-	jmp da21
+;	or [preused],PRESEG		;mark it as used
+	ret
 
-da_chkrep:
-	test al,PREREP
-	jz da_chklock	;if not a REP prefix
-	and al,PREREP+PREREPZ
-	or [preused],al
-	mov ax,[idxins]
+;--- ax=instr, cx=items in table, dx=offset table
+
+hdl_rep:
 	cmp ah,0
 	jnz disbad2		;if not in the first 256 bytes
 	and al,not 1	;clear bit0 (MOVSW -> MOVSB)
 	push di
-	mov di,offset replist
-	mov cx,N_REPNC	;scan those for REP first
+	mov di,dx		;scan those for REP first
 	repne scasb
 	mov si,offset mnlist+MN_REP
-	je da27			;if one of the REP instructions
+	je hdl_insprf	;if one of the REP instructions
 	mov cl,N_REPALL - N_REPNC
 	repne scasb
 	jne disbad2		;if not one of the REPE/REPNE instructions
 	mov si,offset mnlist+MN_REPE
-	test [preused],PREREPZ
-	jnz da27		;if REPE
+;	test [preused],PREREPZ		; v2.03: isn't set yet with the new code,
+	test [preflags],PREREPZ		; but we may use [preflags].
+	jnz hdl_insprf	;if REPE
 	mov si,offset mnlist+MN_REPNE
-	jmp da27		;it's REPNE
+	jmp hdl_insprf	;it's REPNE
 
-disbad3:
-	jmp disbad
-
-da_chklock:
-	test al,PRELOCK
-	jz disbad3		;if not a lock prefix, either
+hdl_lock:
 	push di
-	mov ax,[idxins]
-	mov di,offset locktab
-	mov cx,N_LOCK
+	mov di,dx
 	repne scasw
-	jne disbad3		;if not in the approved list
+	jne disbad2		;if not in the approved list
 	test [preused],PRESEG
-	jz disbad3		;if memory was not accessed
+	jz disbad2		;if memory was not accessed
 	mov si,offset mnlist+MN_LOCK
-	or [preused],PRELOCK
+;	or [preused],PRELOCK
 
 ;--- Slip in another mnemonic: REP/REPE/REPNE/LOCK.
 ;--- SI = offset of mnemonic, what should be
 ;--- DI is on the stack.
 
-da27:
+hdl_insprf:
 	pop di
 	mov cx,8
 	push si
 	call moveover
 	pop si
+hdl_showop:
 	push di
 	call showop
 	pop di
-	jmp da21
+	ret
 
 ;--- Done with instruction.  Erase the size indicator, if appropriate.
 
@@ -1205,7 +1253,7 @@ if FLATSS
 else
 	mov sp,[run_sp]		;pop junk off stack
 endif
-	mov ax,offset da13	; the address where we "return" to
+	mov ax,offset da13pre	; the address where we "return" to
 	push ax
 	mov [dis_n],0
 	mov word ptr [preflags],0		;clear preflags and preused
@@ -1217,7 +1265,7 @@ endif
 	mov cx,N_PREFIX
 	repne scasb
 	je @F			;if it's a named prefix
-	dec [dis_n]
+	dec [dis_n]		;reset cnt to 0 again
 	mov bx,MN_DB	;offset of 'DB' mnemonic
 	mov si,OPLIST_26+OPTYPES_BASE;this says OP_IMM8
 	ret
@@ -1690,6 +1738,7 @@ endif
 disshowbytes endp
 
 ;   MOVEOVER - Move the line to the right - disassembler subfunction.
+;   used to insert prefixes - called by code in the "prefix loop" only.
 ;   Entry   DI  Last address + 1 of line so far
 ;   Exit    CX  Number of bytes to move
 ;   DI  Updated

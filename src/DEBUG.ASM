@@ -1445,7 +1445,7 @@ OP_STR equ OP_1		;first "string" op
 ;--- (outsb/w, movsb/w, cmpsb/w, lodsb/w, xlat).
 
 prfxtab	db 06eh,06fh, 0a4h,0a5h, 0a6h,0a7h, 0ach,0adh, 0d7h
-P_LEN	equ $ - prfxtab
+N_PRFXTAB equ $ - prfxtab
 
 ;--- Instructions that can be used with REP/REPE/REPNE.
 
@@ -3386,7 +3386,7 @@ ac14:
 	cmp ax,0ffh
 	ja ac11				;if it's not a 1 byte instruction - error
 	mov di,offset prfxtab
-	mov cx,P_LEN
+	mov cx,N_PRFXTAB
 	repne scasb
 	jnz ac11			;if it's not in the list - error
 @@:
@@ -8930,71 +8930,43 @@ endif
 ;--- U command - disassemble.
 
 u_cmd proc
-;	mov [lastcmd],offset lastuu
 	mov [lastcmd],offset u_cmd
-	cmp al,CR
-	je lastuu		;if no address was given
 	mov cx,20h		;default length
+	cmp al,CR
+	je uuloop		;if no address was given
 	mov bx,[regs.rCS]
-	call getrange	;get address range into bx:(e)dx
+	call getrange	;get address range into bx:(e)dx/(e)cx
 	call chkeol		;expect end of line here
 	sizeprfX		;mov [u_addr+0],edx
 	mov [u_addr+0],dx
 	mov [u_addr+4],bx
-	@dprintf "u_cmd: u_addr=%X:%lX, ecx=%lX", bx, edx, ecx
-	jmp u_cxset
-
-lastuu:
-	sizeprfX	; mov ecx, [u_addr]
-	mov cx, [u_addr]
-	sizeprfX	; add ecx, 1fh
-	add cx,1fh
-	jnc @F		; if no overflow
-	sizeprfX	; or ecx, -1
-	or cx,-1
-@@:
-
-;--- At this point, e/cx holds the last address, and e/dx the address.
-
-u_cxset:
-	sizeprfX
+	sizeprfX		;inc ecx
 	inc cx
-if ?PM
-	mov bx,[u_addr+4]
-	call getseldefsize
- if LMODE
-	test al, 40h or 20h
- endif
-	jz uu_16
-	.386
-uuloop32:
-	push ecx
-	push edx
-	call disasm1
-	pop ebx
-	pop ecx
-	mov eax,dword ptr [u_addr]
-	mov edx,eax
-	sub eax,ecx		;current position - end
-	sub ebx,ecx		;previous position - end
-	cmp eax,ebx
-	jnb uuloop32	;if we haven't reached the goal
-	ret
-	.8086
-uu_16:
-endif
-uuloop16:
+	sizeprfX		;sub ecx, edx
+	sub cx, dx
+	@dprintf "u_cmd: u_addr=%X:%lX, ecx=%lX", bx, edx, ecx
+
+;--- At this point, e/cx holds the size
+;--- the disassembler won't use any registers as parameters,
+;--- it always disassembles the code at [u_addr] and updates
+;--- that variable accordingly.
+
+uuloop:
+	sizeprfX		;push ecx
 	push cx
-	push dx
-	call disasm1	;do it
-	pop bx
+	call disasm1	;disassemble one instruction
+	sizeprfX		;pop ecx
 	pop cx
-	mov ax,[u_addr]
-	mov dx,ax
-	sub ax,cx		;current position - end
-	sub bx,cx		;previous position - end
-	cmp ax,bx
-	jnb uuloop16	;if we haven't reached the goal
+if ?PM
+	mov bx, [dis_n]	;bytes disassembled
+	sizeprfX		;movzx ebx, bx
+	lea bx, [bx]   
+	sizeprfX		;sub ecx, ebx
+	sub cx, bx
+else
+	sub cx, [dis_n]
+endif
+	ja uuloop		;if we haven't reached the goal
 	ret
 u_cmd endp
 
