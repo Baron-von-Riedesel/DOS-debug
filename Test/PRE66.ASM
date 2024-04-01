@@ -1,5 +1,7 @@
 
-;--- disassembler: opcode that change due to 66h prefix
+;--- disassembler:
+;--- 1. opcodes that change due to 66h prefix
+;--- 2. register names that change due to 66h prefix
 ;--- assemble: jwasm -mz pre66.asm
 
 	.286
@@ -58,7 +60,9 @@ main proc c
 	retw 4
 	scasw
 	stosw
-	ret
+	mov eax, 1
+	mov ds, eax
+	lea ebx,[bx]
 
 main endp
 

@@ -1,10 +1,16 @@
 
-;--- disassembler: opcode that change due to 67h prefix
-;--- assemble: jwasm pre67d.asm
-;--- link: jwlink format win pe hx f pre67d.obj op stub=loadpe.bin,stack=0x1000
+;--- disassembler:
+;---- 1. opcodes that change due to 67h prefix
+;---- 2. address sizes that change due to 67h prefix
+;--- assemble: jwasm -mz pre67d.asm
 
 	.386
-	.MODEL flat
+	.MODEL tiny
+	.stack 1024
+	.dosseg
+
+_DATA16 segment use16 public 'DATA'
+_DATA16 ends
 
 	.code
 
@@ -23,15 +29,25 @@ main proc c
 	loopw @B
 	loopew @B
 	loopnew @B
-	ret
+
+	assume ds:_DATA16
+	mov al,ds:[0]
+	mov ax,ds:[0]
+	mov eax,ds:[0]
+	mov al,[si]
+	mov ax,[si]
+	mov eax,[si]
+	assume ds:DGROUP
 
 main endp
 
-start proc
+start32 proc
 	call main
 	mov ax,4c00h
 	int 21h
-start endp
+start32 endp
+
+	include initpm.inc
 
 	END start
 

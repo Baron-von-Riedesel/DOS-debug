@@ -1,10 +1,13 @@
 
-;--- disassembler: opcode that change due to 66h prefix
-;--- assemble: jwasm pre66d.asm
-;--- link: jwlink format win pe hx f pre66d.obj op stub=loadpe.bin,stack=0x1000
+;--- disassembler:
+;--- 1. opcodes that change due to 66h prefix
+;--- 2. register names that change due to 66h prefix
+;--- assemble: jwasm -mz pre66d.asm
 
 	.386
-	.MODEL flat
+	.MODEL tiny
+	.stack 1024
+	.dosseg
 
 	.data?
 xxx db 200 dup (?)
@@ -49,22 +52,27 @@ main proc c
 	movsw
 	outsw
 	popaw
-	popf	; should be pushfw
+	popf	; should be popfw
 	pusha	; should be pushaw
 	pushf	; should be pushfw
 	retw	; should be retfw (masm 6.15 wrongly generates a 66h prefix here!)
 	retw 4
 	scasw
 	stosw
-	ret
+
+	mov ax, 1
+	lea bx, [bx]
+	mov ds, ax
 
 main endp
 
-start proc
+start32 proc
 	call main
 	mov ax,4c00h
 	int 21h
-start endp
+start32 endp
+
+	include initpm.inc
 
 	END start
 

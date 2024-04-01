@@ -1,10 +1,12 @@
 
 ;--- disassembler: handling of "bad" prefixes
-;--- assemble: jwasm prebad.asm
-;--- link: jwlink format win pe hx f prebad.obj op stub=loadpe.bin,stack=0x1000
+;--- assemble: jwasm -mz prebad.asm
 
+	.286
+	.model small
+	.stack 256
+	.dosseg
 	.386
-	.MODEL flat
 
 	.code
 
@@ -12,7 +14,12 @@ main proc c
 
 	int 3
 	ret
-	db 67h,68h,74h,20h,28h,43h	; assembles to "push 43282074h" with "bad" prefix 67h
+	db 67h
+	push 2074h
+	db 66h
+	mov al,ds:[0]
+	db 26h
+	xchg al, ah
 
 main endp
 

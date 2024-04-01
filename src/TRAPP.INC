@@ -120,7 +120,7 @@ rendercr2:
 	push es
 	push di
 	push eax
-	mov es, cs:[pspdbg]
+	mov es, cs:[wDgroup]
 	mov di, offset exc0Ecr2
 	mov eax, cr2
 	call hexdword
@@ -283,7 +283,7 @@ novm86:
 	pop ecx		; eip
 	pop edx		; cs
   endif
-	mov ss, cs:[pspdbg]
+	mov ss, cs:[wDgroup]
 	mov sp, cs:[top_sp]
   if EXCCSIP
    if EXCCSEIP
@@ -327,7 +327,7 @@ if CHKIOPL
 endif
 
 	push ds
-	mov ds, cs:[pspdbg]
+	mov ds, cs:[wDgroup]
 	pop [regs.rDS]
 	add esp, 2		; skip return addr
 	pop [run_intw]
@@ -356,7 +356,7 @@ endif
 	mov [regs.rSS], ss
 	mov [regs.r0SS], ss
 intrtn_r0:
-	mov ss, [pspdbg]
+	mov ss, [wDgroup]
 	mov esp, offset regs.rSS
 	.8086
 	mov ds, [regs.rDS]

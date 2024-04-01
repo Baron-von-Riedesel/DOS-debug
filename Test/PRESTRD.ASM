@@ -1,10 +1,11 @@
 
 ;--- disassembler: 16-bit string instructions in 32-bit code
-;--- assemble: jwasm str16.asm
-;--- link: jwlink format win pe hx f str16.obj op stub=loadpe.bin,stack=0x1000
+;--- assemble: jwasm -mz prestrd.asm
 
 	.386
-	.MODEL FLAT, stdcall
+	.MODEL tiny
+	.stack 1024
+	.dosseg
 
 _DATA16 segment use16 public 'DATA'
 _DATA16 ends
@@ -103,7 +104,6 @@ main proc c
 	scasb es:[edi]
 	scasw es:[edi]
 	scasd es:[edi]
-	ret
 
 main endp
 
@@ -113,5 +113,7 @@ start32 proc c public
 	int 21h
 start32 endp
 
-	END start32
+	include initpm.inc
+
+	END start
 

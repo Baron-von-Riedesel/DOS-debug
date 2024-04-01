@@ -1,11 +1,12 @@
 
 ;--- disassembler: handling of unused segment prefixes
-;--- assemble: jwasm -mz presegd.asm
+;--- assemble: jwasm -mz preseg.asm
 
-	.386
-	.MODEL tiny
-	.stack 1024
+	.286
+	.model small
+	.stack 256
 	.dosseg
+	.386
 
 	.code
 
@@ -14,17 +15,15 @@ main proc c
 	int 3
 	ret
 	db 26h,2eh,36h,3eh,64h,65h
-	movsd
+	movsw
 
 main endp
 
-start32 proc
+start proc
 	call main
 	mov ax,4c00h
 	int 21h
-start32 endp
-
-	include initpm.inc
+start endp
 
 	END start
 

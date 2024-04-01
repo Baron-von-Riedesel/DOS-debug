@@ -110,7 +110,7 @@ exc0d:
 exc0e:
 	push EXC0EMSG
 exc_xx:
-	cmp cs:[dpmi32],0
+	test cs:[dpmi32],1
 	jz excxx_16
 
 	.386

@@ -98,7 +98,7 @@ rendercr2:
 	push es
 	push di
 	push eax
-	mov es, cs:[pspdbg]
+	mov es, cs:[wDgroup]
 	mov di, offset exc0Ecr2
 	mov eax, cr2
 	call hexdword
@@ -226,7 +226,7 @@ nostop:
 	push bx
 	mov bx,[esp+2].EXCFR.wOfsOld
 	push ds
-	mov ds, cs:[pspdbg]
+	mov ds, cs:[wDgroup]
 	push dword ptr [bx]
 	pop  dword ptr [jmpv64]
 	pop ds
@@ -256,7 +256,7 @@ intrtnp proc
 	add esp, 4	; skip high32 of rip
 	pop dx
   endif
-;	mov ss, cs:[pspdbg]
+;	mov ss, cs:[wDgroup]
 ;	mov sp, cs:[top_sp]
 	mov ss, cs:[wFlat]
 	mov esp, cs:[top_sp]
@@ -301,7 +301,7 @@ if CHKIOPL
 endif
 
 	push ds
-	mov ds, cs:[pspdbg]
+	mov ds, cs:[wDgroup]
 	pop [regs.rDS]
 	pop [run_intw]
 
@@ -324,7 +324,7 @@ endif
 
 	mov [regs.r0Esp], esp
 	mov [regs.r0SS], ss
-	mov ss, [pspdbg]
+	mov ss, [wDgroup]
 	mov esp, offset regs.rSS
 	mov ds, [regs.rDS]
 

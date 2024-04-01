@@ -311,8 +311,12 @@
        - DebugX fix e cmd, prompt mode: segment part changed after first line
          in protected-mode if it was a code selector.
        - fix e cmd, prompt mode: '-' after byte input won't skip that input.
-       - fix u cmd: address size prefix 67h now handled correctly for string
-         instructions.
+       - fix u cmd: address size prefix 67h for string instructions.
+       - fix n cmd: names > 128 chars may have modified debug's code seg.
+       - fix l & q cmd: failure of debuggee termination was ignored and the
+         command continued, leaving an orphaned debuggee in memory.
+       - fix a cmd: regression since v1.18: "call/jmp [mem_ref]" without a size
+         given did default to a far call/jmp.
        - DebugR(L): Q cmd may be activated for this variant.
        - cmds bp/bc accept up to 4 permanent breakpoints.
        - cmds bp/bc implemented, but inactive for Debug & DebugX; activated in
@@ -323,3 +327,4 @@
        - new cmdline options /s and /v for debugger variants that may use
          hardware breakpoints ( option /v not for DebugR(L) variant ).
        - g cmd: if a breakpoint cannot be written, the cmd is aborted.
+       - Debug & DebugX may now be created in .exe file format.

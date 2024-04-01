@@ -443,10 +443,20 @@
  PSP as a buffer, it can also be used to enter command line arguments
  and/or switches for the program being debugged.
 
- Be aware that the N command alters the value of the AX register!
+ Be aware that the N command alters the value of the AX register, even
+ if entered without arguments. Also, Debug converts the input to uppercase,
+ and the size of filespec + arguments is limited to 79 characters.
 
  Syntax: N filespec [arguments]
 
+ [ENH: Debug/X allows 126 characters for filespec + arguments. The input
+ buffer is larger, but anything entered beyond char 126 is truncated.
+  Generally, Debug/X's N cmd works a bit differently than MS Debug's: the
+ command modifies the debugger's PSP only. The command tail is copied
+ by DOS to the debuggee's PSP when DOS function "load program" is executed.
+ If a file with an extension other than .COM or .EXE is loaded, the
+ command tail won't be copied.
+ ]
  ---
 
  The Output command (O) causes DEBUG to write the byte specified by

@@ -52,9 +52,6 @@ sizeloc dw 0		;address of size words in output line
 ;--- preflags and preused must be consecutive
 preflags db 0		;flags for prefixes found so far
 preused  db 0		;flags for prefixes used so far
-if ?PM
-realpre32x db 0		;real PRE32D/PRE32A state, differ from preflags if CS is 32-bit
-endif
 
 bInstr	db 0		;the main instruction byte
 rmsize	db 0		;<0 or 0 or >0 means mod r/m is 8 or 16 or 32
@@ -152,11 +149,11 @@ dis_jmp1 label word
 ;   See orders of asm_jmp1 and bittab.
 
 dis_optab label word
-	dw dop_m64,  dop_mfloat, dop_mdouble, dop_m80	;00-03
-	dw dop_mxx,  dop_farmem, dop_farimm,  dop_rel8	;04-07
-	dw dop_rel1632, dop_st1, dop_sti,     dop_cr	;08-11
-	dw dop_dr,   dop_tr,     dop_segreg,  dop_imms8	;12-15
-	dw dop_imm8, dop_mmx,    dop_shosiz				;16-18
+	dw dop_m64, dop_mfloat, dop_mdouble, dop_m80, dop_mxx,  dop_farmem	;00-05
+	dw dop_farimm, dop_rel8, dop_rel1632								;06-08
+	dw dop_st1, dop_sti,     dop_cr										;09-11
+	dw dop_dr,   dop_tr,     dop_segreg,  dop_imms8						;12-15
+	dw dop_imm8, dop_mmx,    dop_shosiz									;16-18
 ;--- string items OP_1 .. OP_SS
 	db '1',0	;19
 	db '3',0	;20
@@ -317,14 +314,10 @@ disbad0:
 da13pre::
 
 if ?PM ; v2.01: update opsize/adrsize prefixes if D bit set AFTER prefixes have been read
-	mov al, 0
-	test [bCSAttr], 40h
+	test [bCSAttr], CS32
 	jz @F
-	mov al, [preflags]
 	xor [preflags], PRE32D or PRE32A
-	and al, PRE32D or PRE32A
 @@:
-	mov [realpre32x], al
 endif
 
 ;   OK.  Here we go.  This is an actual instruction.
@@ -365,9 +358,9 @@ da14:
 	test [bInstr],1
 	jz da17					;if byte
 da15:
-	or [preused],PRE32D		;mark this flag as used
+	or [preused], PRE32D	;mark this flag as used
 	mov ah,[preflags]
-	and ah,PRE32D			;this will be 10h for dword, 00h for word
+	and ah, PRE32D			;this will be 10h for dword, 00h for word
 	jmp da17				;done
 
 da16:
@@ -468,8 +461,7 @@ CONST ends
 ;--- + PRE32D == 1: CS=32: scan opc table, fnd: switch opcode, notfnd:bad prefix
 ;--- + PRE32A == 0: nothing done
 ;--- + PRE32A == 1: CS=32, scan opc table, fnd: switch opcode, notfnd: check str instr
-;--- CS 32-bit: if PRE32x == 1, no prefix has been found. Since all cases require work
-;---            realpre32x (contains unmodified PRE32x state) is also to check!
+;--- CS 32-bit: if PRE32x == 1, no prefix has been found.
 ;--- + PRE32D == 0, CS=16: scan opc table, fnd: exit, notfnd: bad prefix
 ;--- + PRE32D == 1, CS=32: scan opc table, fnd: switch opcodes, notfnd: exit
 ;--- + PRE32A == 0, CS=16: scan opc table, fnd: exit, notfnd: check str instr
@@ -481,15 +473,20 @@ CONST ends
 ;--- may be changed by the prefix loop if a prefix has to be inserted.
 
 da21:
-	@dprintf "da21, di=%X", di
+;	@dprintf "da21, di=%X", di
 	xor bx, bx
 nextflag:
 	mov ax, word ptr [preflags]	; ah=preused
+if ?PM
+	test [bCSAttr], CS32
+	jz @F
+;--- if CS is 32bit, checks for A32 must be done in any case.
+;--- to detect unused 66h prefixes, PRE32D is to be set as well.
+	or al, PRE32A or PRE32D
+@@:
+endif
 	not ah
 	and al, ah			;skip flags that are set in preused
-if ?PM
-	or al, [realpre32x]	; if CS is 32bit, checks must be done in any case
-endif
 	test al,[bx][txflags]
 	jz @F
 	mov ax,[idxins]
@@ -506,7 +503,7 @@ endif
 	inc bx
 	cmp bx, 6
 	jb nextflag
-	@dprintf "da21 done: preflags=%X", word ptr preflags
+;	@dprintf "da21 done: preflags=%X", word ptr preflags
 	jmp da_done
 
 hdl_scan_table:
@@ -536,39 +533,40 @@ hdl_wait:
 
 if ?PM
 hdl_d32:
-	test [bCSAttr],40h	; nothing special if CS is 16-bit
+	test [bCSAttr], CS32		; nothing special if CS is 16-bit
 	jz hdl_wait
 	@dprintf "hdl_d32, scan opcode tab, preflags=%X", word ptr [preflags]
 	call hdl_scan_table
 	jnz @F
 	@dprintf "hdl_d32, CS=32: opcode found"
-	test [preflags], PRE32D	; CS 32bit?
-	jz hdl_d32_ex			; if no, do nothing
-	jmp hdl_showop
+	test [preflags], PRE32D	; 66h prefix in CS32 code?
+	jz hdl_d32_ex			; if yes: exit
+	jmp hdl_showop			; if no: switch opcode to 32-bit
 @@:
 	@dprintf "hdl_d32, opcode not found"
-	test [preused], PRE32D		; already marked as used?
-	jnz hdl_d32_ex
-	test [realpre32x], PRE32D	; real 66h prefix?
-	jnz disbad2
+	test [preflags], PRE32D	; 66h prefix in CS32 code?
+	jz disbad2				; if yes: bad 66h prefix
 hdl_d32_ex:
 	ret
 endif
 
 hdl_a32:
-	call hdl_scan_table
+	call hdl_scan_table		; check for the few opcodes that change with 67h prefix (LOOPx,JCXZ)
 	jnz @F
 	@dprintf "hdl_a32, opcode found"
 if ?PM
-	test [preflags], PRE32A	; CS 32bit?
+	test [preflags], PRE32A	; CS32?
 	jz hdl_a32_ex			; if no, do nothing
 endif
 	jmp hdl_showop			; switch opcode if found
 @@:
 	@dprintf "hdl_a32, opcode not found"
 if ?PM
-	test [realpre32x], PRE32A	; a true 67h prefix in code stream?
-	jz hdl_a32_ex				; if no, do nothing
+	test [bCSAttr], CS32
+	jz @F
+	test [preflags], PRE32A	; 32bit and a true 67h prefix in code stream?
+	jnz hdl_a32_ex			; if no, do nothing
+@@:
 endif
 	@dprintf "hdl_a32, true 67h prefix, testing string instr"
 	push di
@@ -579,7 +577,7 @@ endif
 	jnz disbad2
 	mov si,offset szA32
 if ?PM
-	test [bCSAttr],40h
+	test [bCSAttr], CS32
 	jz @F
 	mov si,offset szA16
 @@:
@@ -693,16 +691,7 @@ da28b:
 	stosb
 	sizeprfX			;mov eax,[u_addr+0]
 	mov ax,[u_addr+0]
-if ?PM
-	mov si,hexword
-	test [bCSAttr], CS32ATTR
-	jz @F
-	mov si,hexdword
-@@:
-	call si
-else
-	call hexword
-endif
+	call DispOfs
 	mov al,' '
 	stosb
 	mov bx,[dis_n]
@@ -868,8 +857,8 @@ dop06:					;<--- used by OP_MOFFS, OP_MXX, OP_MFLOAT, OP_MDOUBLE
 @@:
 	mov al,[ai.regmem]
 	and al,0c7h
-	or [preused],PRE32A
-	test [preflags],PRE32A
+	or [preused], PRE32A
+	test [preflags], PRE32A
 	jz @F
 	jmp dop18		;if 32-bit addressing
 @@:
@@ -1060,7 +1049,7 @@ dop_r_mod:
 dop_moffs:
 	call showsize	;print the size and save various things
 	mov al,5
-	test [preflags],PRE32A
+	test [preflags], PRE32A
 	jnz @F			;if 32-bit addressing
 	inc ax
 @@:
@@ -1304,7 +1293,7 @@ dop_rel1632::
 	jz dop_rel16	;if not 32-bit distance
 	push ax
 if ?PM
-	test [bCSAttr],CS32ATTR	;for 32bit code segments
+	test [bCSAttr], CS32	;for 32bit code segments
 	jnz @F			;no need to display "DWORD "
 endif
 	call showdwd	;"DWORD PTR "
@@ -1322,7 +1311,7 @@ endif
 
 dop_rel16:			;16-bit distance
 if ?PM
-	test [bCSAttr], CS32ATTR
+	test [bCSAttr], CS32
 	jnz @F
 endif
 	add ax,[u_addr]
@@ -1491,12 +1480,12 @@ else
 	mov ah,0
 endif
 	mov al,'W'
-	test ah,PRE32D
+	test ah, PRE32D
 	jnz @F
 	mov al,'D'
 @@:
 	xor ah,[preflags]
-	test ah,PRE32D
+	test ah, PRE32D
 	jz sso_skip
 	mov [di-4],al
 sso_skip:
@@ -1506,8 +1495,8 @@ showsizeop endp
 ;--- DISCHK32D - Check for 32 bit operand size prefix (66h).
 
 dischk32d proc
-	or [preused],PRE32D
-	test [preflags],PRE32D
+	or [preused], PRE32D
+	test [preflags], PRE32D
 	ret
 dischk32d endp
 
@@ -1639,7 +1628,7 @@ showsize endp
 disgetbyte proc
 	push ds
 if ?PM
-	test [bCSAttr], CS32ATTR
+	test [bCSAttr], CS32
 	jnz @F
 endif
 	push si
@@ -1674,7 +1663,7 @@ disgetbyte endp
 disgetword proc
 	push ds
 if ?PM
-	test [bCSAttr], CS32ATTR
+	test [bCSAttr], CS32
 	jnz @F
 endif
 	push si
@@ -1708,7 +1697,7 @@ disgetword endp
 
 disshowbytes proc
 if ?PM
-	test [bCSAttr], CS32ATTR
+	test [bCSAttr], CS32
 	jnz dissb_1
 endif
 	mov si,[u_addr]

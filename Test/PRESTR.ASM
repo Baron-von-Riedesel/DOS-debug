@@ -1,9 +1,9 @@
 
-;--- disassembler 32bit string cmds
-;--- assemble: jwasm -mz str32.asm
+;--- disassembler: 32bit string instructions in 16-bit code
+;--- assemble: jwasm -mz prestr.asm
 
 	.286
-	.model tiny
+	.model small
 	.stack 256
 	.dosseg
 	.386
@@ -13,6 +13,7 @@
 main:
 	int 3
 	ret
+;--- 32bit variants
 	cmpsb ds:[esi], es:[edi]
 	lodsb ds:[esi]
 	movsb es:[edi], ds:[esi]
@@ -58,6 +59,53 @@ main:
 	repnz cmpsd cs:[esi], es:[edi]
 	rep   lodsd cs:[esi]
 	rep   movsd es:[edi], cs:[esi]
+
+;--- 16bit variants
+	cmpsb
+	lodsb
+	movsb
+	scasb
+	stosb
+
+	cmpsw
+	lodsw
+	movsw
+	scasw
+	stosw
+
+	cmpsd
+	lodsd
+	movsd
+	scasd
+	stosd
+
+	repnz cmpsb
+	rep   lodsb
+	rep   movsb
+	repnz scasb
+	rep   stosb
+
+	repnz cmpsw
+	rep   lodsw
+	rep   movsw
+	repnz scasw
+	rep   stosw
+
+	repnz cmpsd
+	rep   lodsd
+	rep   movsd
+	repnz scasd
+	rep   stosd
+
+	repnz cmpsb cs:[si], es:[di]
+	rep   lodsb cs:[si]
+	rep   movsb es:[di], cs:[si]
+	repnz cmpsw cs:[si], es:[di]
+	rep   lodsw cs:[si]
+	rep   movsw es:[di], cs:[si]
+	repnz cmpsd cs:[si], es:[di]
+	rep   lodsd cs:[si]
+	rep   movsd es:[di], cs:[si]
 
 start:
 	call main

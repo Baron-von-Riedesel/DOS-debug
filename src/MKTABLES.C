@@ -846,6 +846,7 @@ void dumptables(FILE *f2)
 
 	fputs( "\n;--- Operand type lists.\n"
 		";--- They were read from file INSTR.KEY.\n\n"
+		";--- They are referenced thru table opindex.\n\n"
 		"oplists label byte\n\topl\t;void - for instructions without operands\n", f2 );
 	for ( i = 0; i < n_ol_types; ++i ) {
 #if 0
@@ -1001,6 +1002,7 @@ void dumptables(FILE *f2)
 	fputs( ";--- Disassembler: compressed table of the opcode types."
 		"\n;--- If the item has the format OT(xx), it refers to table 'oplists'."
 		"\n;--- Otherwise it's an offset for internal table 'disjmp'."
+		"\n\nOTDATA segment"
 		"\n\noptypes label byte", f2);
 	auxstr = "\n\tdb ";
 	tblptr = tblcomments;
@@ -1054,7 +1056,7 @@ void dumptables(FILE *f2)
 			} else
 				auxstr = ",";
 		}
-	fputs( "\n", f2 );
+	fputs( "\n\nOTDATA ends\n", f2 );
 
 	/* Print out opinfo[]. */
 

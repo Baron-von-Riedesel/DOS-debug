@@ -1,10 +1,12 @@
 
 ;--- disassembler: handling of rep prefixes
-;--- assemble: jwasm prerep.asm
-;--- link: jwlink format win pe hx f prerep.obj op stub=loadpe.bin,stack=0x1000
+;--- assemble: jwasm -mz prerep.asm
 
+	.286
+	.model small
+	.stack 256
+	.dosseg
 	.386
-	.MODEL flat
 
 	.code
 
@@ -12,11 +14,16 @@ main proc c
 
 	int 3
 	ret
-	rep movsb
+	rep   movsb
 	repnz cmpsb
-	repz scasb
+	repz  scasb
 	repne cmpsb
-	repe scasb
+	repe  scasb
+	rep   movsb [edi],[esi]
+	repnz cmpsb [esi],[edi]
+	repz  scasb [edi]
+	repne cmpsb [esi],[edi]
+	repe  scasb [edi]
 
 main endp
 

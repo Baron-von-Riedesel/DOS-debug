@@ -1,6 +1,6 @@
 
-;--- disassembler: handling of unused segment prefixes
-;--- assemble: jwasm -mz presegd.asm
+;--- disassembler: handling of "bad" prefixes
+;--- assemble: jwasm -mz prebadd.asm
 
 	.386
 	.MODEL tiny
@@ -13,8 +13,12 @@ main proc c
 
 	int 3
 	ret
-	db 26h,2eh,36h,3eh,64h,65h
-	movsd
+	db 67h
+	push 12345678h
+	db 66h
+	mov al,ds:[0]
+	db 26h
+	xchg al, ah
 
 main endp
 

@@ -1369,6 +1369,8 @@ end_mnlist label byte
 ;--- If the item has the format OT(xx), it refers to table 'oplists'.
 ;--- Otherwise it's an offset for internal table 'disjmp'.
 
+OTDATA segment
+
 optypes label byte
 	db OT(04),OT(04),OT(05),OT(05),OT(01),OT(01),OT(40),OT(40)	; 00 - 07 (main opcode part)
 	db OT(04),OT(04),OT(05),OT(05),OT(01),OT(01),OT(41),  002h	; 08 - 0f
@@ -1453,6 +1455,8 @@ endif
 	db OT(0B),OT(0F),OT(34),OT(02),OT(00),OT(00),OT(00),OT(00)	;70
 	db OT(00),OT(00),OT(00),OT(00),OT(00),OT(00),OT(00),OT(00)	;78
 	db OT(1E)
+
+OTDATA ends
 
 P186	equ 1000h
 P286	equ 2000h
