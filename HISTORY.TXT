@@ -306,8 +306,8 @@
     2.03 []
        - DebugR fix: debugger assumed a 32-bit ring0 SS register on init;
          if this wasn't true, a crash may have occured.
-       - fix: disassembled line after register dump won't show memory contents
-         for LEA instruction anymore.
+       - fix r cmd: the disassembler tried to show memory contents for the LEA
+         instruction - this may have caused a GPF.
        - DebugX fix e cmd, prompt mode: segment part changed after first line
          in protected-mode if it was a code selector.
        - fix e cmd, prompt mode: '-' after byte input won't skip that input.
@@ -317,6 +317,9 @@
          command continued, leaving an orphaned debuggee in memory.
        - fix a cmd: regression since v1.18: "call/jmp [mem_ref]" without a size
          given did default to a far call/jmp.
+       - fix u cmd: operand size prefix 66h for 8/16/32-bit relative jmps.
+       - u cmd, call far [mem]: qualifiers "FAR"/"DWORD FAR" changed to
+         "FAR16"/"FAR32".
        - DebugR(L): Q cmd may be activated for this variant.
        - cmds bp/bc accept up to 4 permanent breakpoints.
        - cmds bp/bc implemented, but inactive for Debug & DebugX; activated in
@@ -328,3 +331,4 @@
          hardware breakpoints ( option /v not for DebugR(L) variant ).
        - g cmd: if a breakpoint cannot be written, the cmd is aborted.
        - Debug & DebugX may now be created in .exe file format.
+       - mktables.c: creates ASMTBL.INC/DISTBL.INC instead of DEBUGTBL.INC.

@@ -8,7 +8,7 @@
  *                  operand list types
  *      instr.ord   Ordering relations to enforce on the operands
  *
- * The output tables are written to DEBUGTBL.INC, which is
+ * The output tables are written to ASMTBL.INC/DISTBL.INC, which are
  * included into DEBUG.ASM.
  */
 
@@ -39,26 +39,29 @@ typedef char    Boolean;
 
 #define NUMBER(x)   (sizeof(x) / sizeof(*x))
 
-char line[LINELEN];
-const char *filename;
-int lineno;
+#define AsmTbl "asmtbl"
+#define DisTbl "distbl"
 
-int n_keys = 0;
+static char line[LINELEN];
+static const char *filename;
+static int lineno;
+
+static int n_keys = 0;
 struct keytab {
  short key;  /* */
  short value;
  short width;
 };
 
-int n_ol_types = 0;
-struct keytab olkeydict[MAX_OL_TYPES];
-char *olnames[MAX_OL_TYPES];  // containes lines of INSTR.KEY
-int oloffset[MAX_OL_TYPES];
+static int n_ol_types = 0;
+static struct keytab olkeydict[MAX_OL_TYPES];
+static char *olnames[MAX_OL_TYPES];  /* containes lines of INSTR.KEY */
+static int oloffset[MAX_OL_TYPES];
 
-int n_ords = 0;
-struct keytab *keyord1[MAX_N_ORDS];
-struct keytab *keyord2[MAX_N_ORDS];
-Boolean ordsmall[MAX_OL_TYPES];
+static int n_ords = 0;
+static struct keytab *keyord1[MAX_N_ORDS];
+static struct keytab *keyord2[MAX_N_ORDS];
+static Boolean ordsmall[MAX_OL_TYPES];
 
 /*
  * Equates for the assembler table.
@@ -80,8 +83,8 @@ Boolean ordsmall[MAX_OL_TYPES];
 #define ASM_MACH6   0xf3
 #define ASM_MACH0   0xed
 
-int n_asm_tab = 0;
-unsigned char asmtab[MAX_ASM_TAB];
+static int n_asm_tab = 0;
+static unsigned char asmtab[MAX_ASM_TAB];
 
 struct mnrec {
 	struct mnrec *next;
@@ -91,31 +94,31 @@ struct mnrec {
 	short asmoffset; /* offset in asmtab */
 };
 
-int num_mnrecs;
-struct mnrec mnlist[MAX_MNRECS];
-struct mnrec *mnhead;
+static int num_mnrecs;
+static struct mnrec mnlist[MAX_MNRECS];
+static struct mnrec *mnhead;
 
-int n_saved_mnems = 0;
-int saved_mnem[MAX_SAVED_MNEMS];
+static int n_saved_mnems = 0;
+static int saved_mnem[MAX_SAVED_MNEMS];
 
-int n_slash_entries;
-int slashtab_seq[MAX_SLASH_ENTRIES];
-int slashtab_mn[MAX_SLASH_ENTRIES];
+static int n_slash_entries;
+static int slashtab_seq[MAX_SLASH_ENTRIES];
+static int slashtab_mn[MAX_SLASH_ENTRIES];
 
-int n_hash_entries;
-int hashtab_seq[MAX_HASH_ENTRIES];
-int hashtab_mn[MAX_HASH_ENTRIES];
+static int n_hash_entries;
+static int hashtab_seq[MAX_HASH_ENTRIES];
+static int hashtab_mn[MAX_HASH_ENTRIES];
 
-int n_star_entries;
-int startab_seq[MAX_STAR_ENTRIES];
-int startab_mn[MAX_STAR_ENTRIES];
+static int n_star_entries;
+static int startab_seq[MAX_STAR_ENTRIES];
+static int startab_mn[MAX_STAR_ENTRIES];
 
-int n_locktab;
-int locktab[MAX_LOCKTAB_ENTRIES];
+static int n_locktab;
+static int locktab[MAX_LOCKTAB_ENTRIES];
 
-int n_agroups;
-int agroup_i[MAX_AGROUP_ENTRIES];
-int agroup_inf[MAX_AGROUP_ENTRIES];
+static int n_agroups;
+static int agroup_i[MAX_AGROUP_ENTRIES];
+static int agroup_inf[MAX_AGROUP_ENTRIES];
 
 /*
  * Data and setup stuff for the disassembler processing.
@@ -123,7 +126,7 @@ int agroup_inf[MAX_AGROUP_ENTRIES];
 
 /* Data on coprocessor groups */
 
-unsigned int fpgrouptab[] = {0xd9e8, 0xd9f0, 0xd9f8};
+static unsigned int fpgrouptab[] = {0xd9e8, 0xd9f0, 0xd9f8};
 
 #define NGROUPS     9
 
@@ -155,7 +158,7 @@ unsigned int fpgrouptab[] = {0xd9e8, 0xd9f0, 0xd9f8};
 
 /* Sparse coprocessor groups */
 
-unsigned int sp_fpgrouptab[] = {
+static unsigned int sp_fpgrouptab[] = {
 	0xd9d0, 0xd9e0, 0xdae8, 0xdbe0, 0xded8, 0xdfe0 };
 
 #define NSGROUPS 5
@@ -164,15 +167,15 @@ unsigned int sp_fpgrouptab[] = {
 #define SFPGROUP(i)	(SPARSE_BASE + 256 + 8 * NSGROUPS + 8 * (i))
 #define NOPS		(SPARSE_BASE + 256 + 8 * NSGROUPS + 8 * NUMBER(sp_fpgrouptab))
 
-int optype[NOPS];
-int opinfo[NOPS];
-unsigned char opmach[NOPS];
+static int optype[NOPS];
+static int opinfo[NOPS];
+static unsigned char opmach[NOPS];
 
 /*
  * Here are the tables for the main processor groups.
  */
 
-struct {
+static struct {
 	int seq;	/* sequence number of the group */
 	int info;	/* which group number it is */
 } grouptab[]= {
@@ -194,7 +197,7 @@ struct {
 
 /* #define NGROUPS 9 (this was done above) */
 
-struct { /* sparse groups */
+static struct { /* sparse groups */
 	int seq; /* sequence number of the group */
 	int info; /* which group number it is */
 } sp_grouptab[] = {
@@ -210,7 +213,7 @@ struct { /* sparse groups */
 
 /* strings to put into comment fields */
 
-struct inforec {
+static struct inforec {
 	int seqno;
 	char *string;
 } tblcomments[] = {
@@ -234,14 +237,15 @@ struct inforec {
 	{ -1, NULL }
 };
 
-char *spectab[] = { "WAIT", "ORG", "DD", "DW", "DB" };
-char *spectab2[] = { "LOCKREP", "SEG" };
+static char *spectab[] = { "WAIT", "ORG", "DD", "DW", "DB" };
+static char *spectab2[] = { "LOCKREP", "SEG" };
 
 /*
  * terminate program with error msg.
  */
 
-volatile void fail( const char *message, ... )
+static volatile void fail( const char *message, ... )
+/////////////////////////////////////////////////////
 {
 	va_list args;
 
@@ -252,7 +256,8 @@ volatile void fail( const char *message, ... )
 	exit( 1 );
 }
 
-FILE * openread( const char *path )
+static FILE * openread( const char *path )
+//////////////////////////////////////////
 {
 	FILE *f;
 
@@ -266,7 +271,8 @@ FILE * openread( const char *path )
 	return f;
 }
 
-volatile void linenofail( const char *message, ... )
+static volatile void linenofail( const char *message, ... )
+///////////////////////////////////////////////////////////
 {
 	va_list args;
 
@@ -278,7 +284,8 @@ volatile void linenofail( const char *message, ... )
 	exit( 1 );
 }
 
-void * xmalloc( unsigned int len, const char *why )
+static void * xmalloc( unsigned int len, const char *why )
+//////////////////////////////////////////////////////////
 {
 	void *ptr = malloc( len );
 
@@ -290,7 +297,8 @@ void * xmalloc( unsigned int len, const char *why )
  * read a line from input file, skip comments and blank lines.
  */
 
-Boolean getline( FILE *ff )
+static Boolean getline( FILE *ff )
+//////////////////////////////////
 {
 	int n;
 
@@ -308,7 +316,8 @@ Boolean getline( FILE *ff )
 	}
 }
 
-short getkey( char **pp )
+static short getkey( char **pp )
+////////////////////////////////
 {
 	short key;
 	char *p = *pp;
@@ -330,7 +339,8 @@ short getkey( char **pp )
  * it (according to instr.ord).
  */
 
-void marksmall( struct keytab *kp )
+static void marksmall( struct keytab *kp )
+//////////////////////////////////////////
 {
 	int i;
 
@@ -346,7 +356,8 @@ void marksmall( struct keytab *kp )
  * somewhere within the mini-assembler.
  */
 
-void add_to_asmtab( unsigned char byte )
+static void add_to_asmtab( unsigned char byte )
+///////////////////////////////////////////////
 {
 	if ( n_asm_tab >= MAX_ASM_TAB )
 		linenofail( "Assembler table overflow." );
@@ -354,7 +365,8 @@ void add_to_asmtab( unsigned char byte )
 }
 
 
-unsigned char getmachine( char **pp )
+static unsigned char getmachine( char **pp )
+////////////////////////////////////////////
 {
 	char *p = *pp;
 	unsigned char value;
@@ -369,7 +381,8 @@ unsigned char getmachine( char **pp )
 	return value;
 }
 
-struct keytab * lookupkey( short key )
+static struct keytab * lookupkey( short key )
+/////////////////////////////////////////////
 {
 	struct keytab *kp;
 
@@ -380,7 +393,8 @@ struct keytab * lookupkey( short key )
 	return NULL;
 }
 
-char * skipwhite( char *p )
+static char * skipwhite( char *p )
+//////////////////////////////////
 {
 	while ( *p == ' ' || *p == '\t' ) ++p;
 	return p;
@@ -390,7 +404,8 @@ char * skipwhite( char *p )
  * Creates an entry in the disassembler lookup table.
  */
 
-void entertable( int i, int type, int info )
+static void entertable( int i, int type, int info )
+///////////////////////////////////////////////////
 {
 	if ( optype[i] != 0 )
 		linenofail( "Duplicate information for index %d", i );
@@ -402,7 +417,8 @@ void entertable( int i, int type, int info )
  * Get a hex nybble from the input line or fail.
  */
 
-int getnybble( char c )
+static int getnybble( char c )
+//////////////////////////////
 {
 	if ( c >= '0' && c <= '9' ) return c - '0';
 	if ( c >= 'a' && c <= 'f' ) return c - 'a' + 10;
@@ -414,7 +430,8 @@ int getnybble( char c )
  * Get a hex byte from the input line and update the pointer accordingly.
  */
 
-int getbyte( char **pp )
+static int getbyte( char **pp )
+///////////////////////////////
 {
 	char *p = *pp;
 	int answer;
@@ -430,7 +447,8 @@ int getbyte( char **pp )
  * accordingly.
  */
 
-int getslash( char **pp )
+static int getslash( char **pp )
+////////////////////////////////
 {
 	char *p = *pp;
 	int answer;
@@ -448,7 +466,8 @@ int getslash( char **pp )
  * enter item into mnlist[].
  */
 
-int entermn(char *str, char *str_end)
+static int entermn(char *str, char *str_end)
+////////////////////////////////////////////
 {
 	char *p;
 
@@ -465,7 +484,7 @@ int entermn(char *str, char *str_end)
 	p = xmalloc( str_end - str + 1, "mnemonic name" );
 	mnlist[num_mnrecs].string = p;
 	mnlist[num_mnrecs].len = str_end - str;
-#if 0
+#ifdef NOSTRUPR
 	while ( str < str_end ) *p++ = toupper( *str++ );
 	*p = 0;
 #else
@@ -481,7 +500,8 @@ int entermn(char *str, char *str_end)
  * Merge sort the indicated range of mnemonic records.
  */
 #if SORTMN
-struct mnrec * mn_sort(struct mnrec *start, int len)
+static struct mnrec * mn_sort(struct mnrec *start, int len)
+///////////////////////////////////////////////////////////
 {
 	struct mnrec *p1, *p2, *answer;
 	struct mnrec **headpp;
@@ -521,7 +541,8 @@ struct mnrec * mn_sort(struct mnrec *start, int len)
  * This reads the main file, "instr.set".
  */
 
-void read_is( FILE *f1 )
+static void read_is( FILE *f1 )
+///////////////////////////////
 {
 	int i;
 
@@ -598,21 +619,21 @@ void read_is( FILE *f1 )
 		pstar = memchr( p0, '*', p - p0 );
 		if ( pslash != NULL ) {
 			mnem = entermn( p0, pslash );
-			add_to_asmtab( ASM_D16 );
-			//++mnlist[mnem].asmoffset;	/* this one isn't 32 bit */
+			add_to_asmtab( (unsigned char)ASM_D16 );
+			/* ++mnlist[mnem].asmoffset;*/	/* this one isn't 32 bit */
 			++pslash;
 			mn_alt = entermn( pslash, p );
-			add_to_asmtab( ASM_D32 );
+			add_to_asmtab( (unsigned char)ASM_D32 );
 		} else if ( phash != NULL ) {
 			mnem = entermn( p0, phash );
-			add_to_asmtab( ASM_D16 );
-			//++mnlist[mnem].asmoffset;	/* this one isn't 32 bit */
+			add_to_asmtab( (unsigned char)ASM_D16 );
+			/* ++mnlist[mnem].asmoffset;*/	/* this one isn't 32 bit */
 			++phash;
 			mn_alt = entermn( phash, p );
-			add_to_asmtab( ASM_D32 );
+			add_to_asmtab( (unsigned char)ASM_D32 );
 		} else if ( pstar != NULL ) {
 			mn_alt = entermn( p0, pstar );	/* note the reversal */
-			add_to_asmtab( ASM_WAIT );
+			add_to_asmtab( (unsigned char)ASM_WAIT );
 			++pstar;
 			mnem = entermn( pstar, p );
 		} else {
@@ -651,7 +672,7 @@ void read_is( FILE *f1 )
 				++p;
 				lockable = True;
 				if ( dis_only == False )
-					add_to_asmtab( ASM_LOCKABLE );
+					add_to_asmtab( (unsigned char)ASM_LOCKABLE );
 			}
 			atab_inf = i = getbyte( &p );
 			if ( i == 0x0f ) {
@@ -703,12 +724,12 @@ void read_is( FILE *f1 )
 				/* none of these are lockable */
 				break;
 			case '*':	/* lock or rep... prefix */
-				add_to_asmtab( ASM_LOCKREP );
+				add_to_asmtab( (unsigned char)ASM_LOCKREP );
 				add_to_asmtab( (unsigned char)atab_inf );	/* special case */
 				atab_addendum = '\0';
 				break;
 			case '&':	/* segment prefix */
-				add_to_asmtab( ASM_SEG );
+				add_to_asmtab( (unsigned char)ASM_SEG );
 				add_to_asmtab( (unsigned char)atab_inf );	/* special case */
 				atab_addendum = '\0';
 				break;
@@ -719,7 +740,7 @@ void read_is( FILE *f1 )
 
 				machine = getmachine(&p);
 				if ( dis_only )
-					; //atab_addendum = '\0';
+					; /*atab_addendum = '\0'; */
 				else {
 					if ( ordsmall[kp - olkeydict] )
 						linenofail( "Variants out of order." );
@@ -781,7 +802,7 @@ void read_is( FILE *f1 )
 				startab_mn[n_star_entries] = mn_alt;
 				++n_star_entries;
 			}
-		} //end while variants
+		} /* end while variants */
 		if ( *p != '\0' )
 			linenofail( "Syntax error." );
 		if ( atab_addendum != '\0' ) {
@@ -792,7 +813,8 @@ void read_is( FILE *f1 )
 
 /* Print a labeled "dw" list; add a newline every 8 items. */
 
-void put_dw( FILE *f2, const char *label, int *datap, int n )
+static void put_dw( FILE *f2, const char *label, int *datap, int n )
+////////////////////////////////////////////////////////////////////
 {
 	const char *initstr;
 	int i;
@@ -811,10 +833,11 @@ void put_dw( FILE *f2, const char *label, int *datap, int n )
 }
 
 /*
- * Print everything onto the file.
+ * Print the assembler infos onto the file.
  */
 
-void dumptables(FILE *f2)
+static void dumptablesAsm(FILE *f2)
+///////////////////////////////////
 {
 	int offset;
 	struct mnrec *mnp;
@@ -847,7 +870,7 @@ void dumptables(FILE *f2)
 	fputs( "\n;--- Operand type lists.\n"
 		";--- They were read from file INSTR.KEY.\n\n"
 		";--- They are referenced thru table opindex.\n\n"
-		"oplists label byte\n\topl\t;void - for instructions without operands\n", f2 );
+		"oplists label byte\n\topl 00\t;void - for instructions without operands\n", f2 );
 	for ( i = 0; i < n_ol_types; ++i ) {
 #if 0
 		unsigned char szKey[4];
@@ -861,19 +884,12 @@ void dumptables(FILE *f2)
 		}
 		fprintf( f2, "\topl %s, %s\t; ofs=%Xh\n", szKey, olnames[i], oloffset[i] );
 #else
-		fprintf( f2, "\topl %s\t; idx=%u, ofs=%Xh\n", olnames[i], i+1, oloffset[i] );
+		fprintf( f2, "\topl %02X,%s\t; idx=%u, ofs=%Xh\n", i+1, olnames[i], i+1, oloffset[i] );
 #endif
 	}
 
-#if 0
-	fprintf( f2, "\nOPLIST_27\tEQU 0%Xh\t; this is the OP_IMM8 key\n",
-			oloffset[lookupkey('27')->value] );
-	fprintf( f2, "OPLIST_41\tEQU 0%Xh\t; this is the OP_ES key\n",
-			oloffset[lookupkey('41')->value] );
-#endif
-
-//	fprintf( f2, "\nASMMOD\tEQU %u\n", n_ol_types+1 );
-	fprintf( f2, "\nASMMOD\tEQU opidx\n" );
+	fprintf( f2, "\nASMMOD\tEQU %0Xh\n", n_ol_types+1 );
+//	fprintf( f2, "\nASMMOD\tEQU opidx\n" );
 
 	/* Dump out agroup_inf. */
 
@@ -892,7 +908,7 @@ void dumptables(FILE *f2)
 		";---   if a >= 0x100 && a < 0x200: two byte \"0F\"-opcode.\n"
 		";---   if a >= 0x200 && a < 0x240: fp instruction.\n"
 		";---   if a >= 0x240: refers to agroups [macro AGRP() is used].\n"
-		";--- variant's 2. argument is index into array opindex.\n\n"
+		";--- variant's 2. argument is index for array opindex.\n\n"
 		"mnlist label byte\n", f2 );
 	for ( mnp = mnhead, offset = 0; mnp != NULL; mnp = mnp->next ) {
 		mnp->offset = offset + 2;
@@ -902,7 +918,7 @@ void dumptables(FILE *f2)
 		i = mnp->asmoffset;
 
 		if ( asmtab[i] == ASM_D16 && asmtab[i+1] == ASM_D32 ) {
-			//fprintf( f2, ", ASM_D16\t; ofs=%04x\n", i );
+			/* fprintf( f2, ", ASM_D16\t; ofs=%04x\n", i ); */
 			fprintf( f2, ", ASM_D16\t; ofs=%Xh\n", i );
 		} else if ( asmtab[i] >= ASM_WAIT ) {
 			fprintf( f2, ", ASM_%s\t; ofs=%Xh\n", spectab[asmtab[i] - ASM_WAIT], i );
@@ -982,26 +998,31 @@ void dumptables(FILE *f2)
 		exit(1);
 	}
 
-#if 0
-	/* Print the opindex array. */
+}
 
-	auxstr = "\n;--- Array of byte offsets for the oplists array (above)."
-		"\n;--- It is used by the assembler to save space.\n"
-		"\nopindex label byte\n\tdb   0,";
-	for (i = 1; i <= n_ol_types; ++i) {
-		fprintf( f2, "%s%3d", auxstr, oloffset[i-1] - OPTYPES);
-		if ((i & 7) == 7)
-			auxstr = "\n\tdb ";
-		else
-			auxstr = ",";
-	}
-#endif
+/*
+ * Print the disassembler infos onto the file.
+ */
+
+static void dumptablesDis(FILE *f2)
+///////////////////////////////////
+{
+	int offset;
+	char *auxstr;
+	struct inforec *tblptr;
+	int i;
+	int j;
+	unsigned int k;
+	unsigned int l;
+	char *pmne;
+
+	fprintf( f2, "\n;--- This file was generated by mktables.exe.\n\n" );
 
 	/* Print out optype[]. */
 
-	fputs( ";--- Disassembler: compressed table of the opcode types."
+	fputs( ";--- compressed table of the opcode types."
 		"\n;--- If the item has the format OT(xx), it refers to table 'oplists'."
-		"\n;--- Otherwise it's an offset for internal table 'disjmp'."
+		"\n;--- Otherwise it's an offset for internal table 'dis_jmp2'."
 		"\n\nOTDATA segment"
 		"\n\noptypes label byte", f2);
 	auxstr = "\n\tdb ";
@@ -1036,7 +1057,7 @@ void dumptables(FILE *f2)
 	auxstr = "\n;--- The rest of these are squeezed.\n" "\tdb      0,";
 	for ( i = SPARSE_BASE, k=1; i < NOPS; ++i )
 		if ( ( j = optype[i] ) != 0 ) {
-			int y = 0;
+			/* int y = 0; */
 			if ( j >= OPTYPES ) {
 				int y = 0;
 				if ( j > OPTYPES )
@@ -1066,8 +1087,10 @@ void dumptables(FILE *f2)
 
 	fputs( "\n\talign 2\n", f2 );
 
-	fputs( "\n;--- Disassembler: compressed table of additional information."
-		"\n;--- Bits 0-11 usually are the offset of the mnemonics table."
+	fputs( "\n;--- compressed table of additional information."
+		"\n;--- Bits 0-11 are the offset of the mnemonics table if"
+		"\n;--- the corresponding item in optypes is defined via OT();"
+		"\n;--- else it's a parameter for the optype processing."
 		"\n;--- Bits 12-15 are the cpu which introduced this opcode."
 		"\n\nopinfo label word\n", f2 );
 
@@ -1107,7 +1130,7 @@ void dumptables(FILE *f2)
 
 	/* Print out sqztab. */
 
-	fputs( "\n;--- Disassembler: table converts unsqueezed numbers to squeezed."
+	fputs( "\n;--- table converts unsqueezed numbers to squeezed."
 		"\n;--- 1E0-2DF are extended opcodes (0F xx).\n"
 		"\n\nsqztab label byte\n", f2);
 
@@ -1130,7 +1153,7 @@ void dumptables(FILE *f2)
 
 	/* Print out the cleanup tables. */
 
-	fputs( "\n;--- Disassembler: table of mnemonics that change in the "
+	fputs( "\n;--- table of mnemonics that change in the "
 		"presence of a WAIT" "\n;--- instruction.\n\n", f2 );
 	put_dw( f2, "wtab1", startab_seq, n_star_entries );
 #if 0
@@ -1144,7 +1167,7 @@ void dumptables(FILE *f2)
 #endif
 	fprintf( f2, "N_WTAB\tequ ($ - wtab2) / 2\n" );
 
-	fputs( "\n;--- Disassembler: table for operands which have a different "
+	fputs( "\n;--- table for operands which have a different "
 		"mnemonic for" "\n;--- their 32 bit versions (66h prefix).\n\n", f2 );
 	put_dw( f2, "ltabo1", slashtab_seq, n_slash_entries );
 #if 0
@@ -1158,7 +1181,7 @@ void dumptables(FILE *f2)
 #endif
 	fprintf( f2, "N_LTABO\tequ ($ - ltabo2) / 2\n" );
 
-	fputs( "\n;--- Disassembler: table for operands which have a different "
+	fputs( "\n;--- table for operands which have a different "
 		"mnemonic for"  "\n;--- their 32 bit versions (67h prefix).\n\n", f2 );
 	put_dw( f2, "ltaba1", hashtab_seq, n_hash_entries );
 #if 0
@@ -1172,22 +1195,26 @@ void dumptables(FILE *f2)
 #endif
 	fprintf( f2, "N_LTABA\tequ ($ - ltaba2) / 2\n" );
 
-	fputs( "\n;--- Disassembler: table of lockable instructions\n\n" , f2 );
+	fputs( "\n;--- table of lockable instructions\n\n" , f2 );
 	put_dw( f2, "locktab label word\n", locktab, n_locktab );
-	fprintf( f2, "N_LOCK\tequ ($ - locktab) / 2\n" );
+	fprintf( f2, "N_LOCK\tequ ($ - locktab) / 2\n\n" );
 
 }
-
 /* main() - read and process files instr.key, instr.ord, instr.set
- * and then dump debugtbl.inc.
+ * and then dump asmtbl.inc and dasmtbl.inc.
  */
 
 int main( int argc, char *argv[] )
+//////////////////////////////////
 {
-	FILE *f1;
-	FILE *f2;
+	FILE *f1; /* input */
+	FILE *f2; /* output */
 	int offset;
 
+	if (argc > 1) {
+		printf("this program reads files instr.* to generate\nassembly include files " AsmTbl ".inc & " DisTbl ".inc\n");
+		return 1;
+	}
 	/* Read in the key dictionary. */
 
 	f1 = openread( "instr.key" );
@@ -1269,30 +1296,41 @@ int main( int argc, char *argv[] )
 	read_is( f1 );
 	fclose( f1 );
 
-	/* Write the file. */
+	/* Write AsmTbl.inc */
 
-	f2 = fopen( "debugtbl.tmp", "w" );
-	if ( f2 == NULL ) {
-		perror( "debugtbl.tmp" );
+	f2 = fopen( AsmTbl ".tmp", "w" );
+	if ( f2  ) {
+		dumptablesAsm( f2 );
+		fclose( f2 );
+		/* Move the file to its original position. */
+		remove( AsmTbl ".old" );
+		if ( rename( AsmTbl ".inc", AsmTbl ".old" ) == -1 ) {
+			perror( "rename " AsmTbl ".inc -> " AsmTbl ".old" );
+		}
+		if ( rename( AsmTbl ".tmp", AsmTbl ".inc" ) == -1 ) {
+			perror( "rename " AsmTbl ".tmp -> " AsmTbl ".inc" );
+		}
+	} else {
+		perror( AsmTbl ".tmp" );
 		exit( 1 );
 	}
 
-	dumptables( f2 );
+	/* Write DisTbl.inc */
 
-	fclose( f2 );
-
-	/* Move the file to its original position. */
-
-//	unlink( "debugtbl.old" );
-	remove( "debugtbl.old" );
-
-	if ( rename( "debugtbl.inc", "debugtbl.old" ) == -1 ) {
-		perror( "rename debugtbl.inc -> debugtbl.old" );
-		//return 1;
-	}
-	if ( rename( "debugtbl.tmp", "debugtbl.inc" ) == -1 ) {
-		perror( "rename debugtbl.tmp -> debugtbl.inc" );
-		return 1;
+	f2 = fopen( DisTbl ".tmp", "w" );
+	if ( f2 ) {
+		dumptablesDis( f2 );
+		fclose( f2 );
+		remove( DisTbl ".old" );
+		if ( rename( DisTbl ".inc", DisTbl ".old" ) == -1 ) {
+			perror( "rename " DisTbl ".inc -> " DisTbl ".old" );
+		}
+		if ( rename( DisTbl ".tmp", DisTbl ".inc" ) == -1 ) {
+			perror( "rename " DisTbl ".tmp -> " DisTbl ".inc" );
+		}
+	} else {
+		perror( DisTbl ".tmp" );
+		exit( 1 );
 	}
 
 	puts( "Done." );

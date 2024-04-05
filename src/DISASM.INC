@@ -22,6 +22,10 @@ DIS_I_SHOWSIZ	equ 10h	;(internal) always show the operand size
 DIS_I_KNOWSIZ	equ 20h	;(internal) we know the operand size of instr.
 DIS_I_MEMACC	equ 80h	;(internal) we're just accessing a mem ref ( dumpreg )
 
+OT macro num
+	exitm <num&h+OPTYPES_BASE>
+endm
+
 ;--- define "general purpose register"
 DefGPR macro regist
 REG_&regist& equ ($ - rgnam816)/2
@@ -62,6 +66,8 @@ disflags2 db 0		;another copy of DIS_I_KNOWSIZ
 _DATA ends
 
 CONST segment
+
+	include <DISTBL.INC>
 
 ;--- table of obsolete-instruction values.
 ;--- instructions are FENI, FDISI, FSETPM, MOV to/from TRx
@@ -242,7 +248,7 @@ da3:
 @@:
 	and bh,0fh			;=and bx,0fffh - remove the machine field
 	cmp si,OPTYPES_BASE
-	jae da13pre			;if this is an actual instruction
+	jae da13			;if this is an actual instruction
 	call [dis_jmp2+si]	;otherwise, do more specific processing
 	jmp da3				;back for more
 
@@ -311,7 +317,16 @@ disbad0:
 	jmp disbad		;we don't allow duplicate prefixes
 
 
-da13pre::
+da13:
+	sub si, OPTYPES_BASE
+
+;--- here: si=index for opindex to scan oplists table
+
+da13a::
+	mov ax, word ptr [opindex][si]
+	mov [bEndOplItem], ah
+	mov ah, 00
+	mov si, ax
 
 if ?PM ; v2.01: update opsize/adrsize prefixes if D bit set AFTER prefixes have been read
 	test [bCSAttr], CS32
@@ -325,7 +340,6 @@ endif
 ;   SI=offset of operand list in oplists
 ;   First print the op mnemonic.
 
-da13:
 	push si
 	lea si,[mnlist+bx]	;offset of mnemonic
 	cmp si,offset mnlist+MN_BSWAP
@@ -336,15 +350,17 @@ da13:
 	call showop			;print out the op code (at line_out+28)
 	mov [sizeloc],0		;clear out this flag
 	pop si				;recover list of operands
-	add si,offset oplists - OPTYPES_BASE
-	cmp byte ptr [si],0
-	je da21				;if we're done
+	add si,offset oplists
 
 ;   Loop over operands.  si -> operand type.
 ;   Fortunately the operands appear in the instruction in the same
 ;   order as they appear in the disassembly output.
 
 da14:
+	mov ax, si
+	sub ax, offset oplists
+	cmp al, [bEndOplItem]
+	jae da21				;if we're done
 	mov [disflags2],0		;clear out size-related flags
 	lodsb					;get the operand type
 	cmp al,OP_SIZE
@@ -391,15 +407,10 @@ da18:
 	jmp da20			;done with operand
 @@:
 	call ax				;otherwise, do something else
-
-;--- operand done, check if there's another one
-
 da20:
-	cmp byte ptr [si],0
-	jz da21				;if we're done
 	mov al,','
 	stosb
-	jmp da14			;another operand
+	jmp da14			;check for another operand
 
 ;--- all operands done.
 
@@ -473,6 +484,10 @@ CONST ends
 ;--- may be changed by the prefix loop if a prefix has to be inserted.
 
 da21:
+	cmp byte ptr [di-1],','	; skip the comma behind the last operand
+	jnz @F
+	dec di
+@@:
 ;	@dprintf "da21, di=%X", di
 	xor bx, bx
 nextflag:
@@ -937,10 +952,12 @@ dop17:
 dop18:
 	cmp al,5
 	jne @F			;if not just a disp32 address
+;--- render "[xxxxxxxx]"
+dop18a:
 	mov al,'['
 	stosb
 	call disp32		;get & display 32bit offset
-	jmp dop27
+	jmp dop17		;last the ']'
 
 @@:
 	push ax
@@ -965,11 +982,13 @@ dop18:
 	call hexbyte
 	jmp dop23		;done
 
-;--- the disassembler displays offsets first;
+;--- for 32-bit, the disassembler displays offsets first;
 ;--- example: mov ax,00001000[ebx][edi]
 
 dop22:
-	call disp32		;get and display 32bit offset
+;--- v2.03: put offset in square brackets: mov ax,[00001000][ebx][edi]
+;    call disp32	;get and display 32bit offset
+    call dop18a		;get and display 32bit offset
 
 dop23:
 	mov al,[ai.regmem]
@@ -1151,15 +1170,19 @@ dop40:
 ;--- this is either a FAR16 (DWORD) or FAR32 (FWORD) pointer
 
 dop_farmem:
+	mov ax,'AF'		;store "FAR"
+	stosw
+	mov al,'R'
+	stosb
+	mov ax,"61"		;FAR16
 	call dischk32d
-	jz @F			;if not dword far
-	call showdwd
-	sub di,4		;erase "PTR "
+	jz @F
+	mov ax,"23"		;FAR32
 @@:
-	mov ax,'AF'		;store "FAR "
 	stosw
-	mov ax,' R'
-	stosw
+	mov al,' '
+	stosb
+;	call showptr
 
 ;--- mem (OP_MXX).
 
@@ -1242,7 +1265,7 @@ if FLATSS
 else
 	mov sp,[run_sp]		;pop junk off stack
 endif
-	mov ax,offset da13pre	; the address where we "return" to
+	mov ax,offset da13a	; the address where we "return" to
 	push ax
 	mov [dis_n],0
 	mov word ptr [preflags],0		;clear preflags and preused
@@ -1256,7 +1279,8 @@ endif
 	je @F			;if it's a named prefix
 	dec [dis_n]		;reset cnt to 0 again
 	mov bx,MN_DB	;offset of 'DB' mnemonic
-	mov si,OPLIST_26+OPTYPES_BASE;this says OP_IMM8
+;	mov si,OPLIST_26+OPTYPES_BASE;this says OP_IMM8
+	mov si,26h		;index 26h: this says OP_IMM8
 	ret
 @@:
 	or [disflags],DIS_I_UNUSED	;print special flag
@@ -1266,10 +1290,12 @@ endif
 	cmp bx,6*2
 	jb @F			;if SEG directive
 	mov bx,[prefixmnem+bx-6*2]
-	mov si,OPTYPES_BASE	;no operand
+;	mov si,OPTYPES_BASE	;no operand
+	mov si,0			;no operand
 	ret
 @@:
-	lea si,[bx+OPLIST_40+OPTYPES_BASE]	;this is OP_ES
+;	lea si,[bx+OPLIST_40+OPTYPES_BASE]	;this is OP_ES
+	lea si,[bx+40h]						;40h is OP_ES
 	mov bx,MN_SEG
 	ret
 disbad endp
@@ -1279,28 +1305,33 @@ disbad endp
 dop_relxx proc
 
 ;--- 8-bit relative jump (OP_REL8)
+;--- v2.03: correctly handle a 8-bit short jmp with a size prefix
 
 dop_rel8::
 	call disgetbyte
 	cbw
-	jmp dop_rel16
+	call dischk32d
+	jz dop_rel16
+	cwd
+	xchg ax, dx
+	jmp dop_dispdwd
+
+dop_rel16:			;16-bit distance ( also used for 8-bit short distances
+	add ax,[u_addr]
+	add ax,[dis_n]
+	jmp hexword		;call hexword and return
 
 ;--- 16/32-bit relative jump (OP_REL1632)
+;--- v2.03: a 16-bit relative call/jmp in 32-bit will clear hiword(eip)!
+;--- to make this evident, display a WORD only!
 
 dop_rel1632::
 	call disgetword
 	call dischk32d
 	jz dop_rel16	;if not 32-bit distance
-	push ax
-if ?PM
-	test [bCSAttr], CS32	;for 32bit code segments
-	jnz @F			;no need to display "DWORD "
-endif
-	call showdwd	;"DWORD PTR "
-	sub di,4		;erase "PTR "
-@@:
-	pop dx
+	xchg ax, dx
 	call disgetword
+dop_dispdwd:		; relative distance in ax:dx
 	mov bx,[u_addr+0]
 	add bx,[dis_n]
 	add dx,bx
@@ -1308,24 +1339,6 @@ endif
 	call hexword
 	xchg ax,dx
 	jmp hexword		;call hexword and return
-
-dop_rel16:			;16-bit distance
-if ?PM
-	test [bCSAttr], CS32
-	jnz @F
-endif
-	add ax,[u_addr]
-	add ax,[dis_n]
-	jmp hexword		;call hexword and return
-if ?PM
-@@:
-	.386
-	cwde	;=movsx eax,ax
-	add eax,dword ptr [u_addr]
-	add eax,dword ptr [dis_n]
-	jmp hexdword
-	.8086
-endif
 
 dop_relxx endp
 

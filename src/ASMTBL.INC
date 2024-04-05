@@ -4,92 +4,94 @@
 ;--- Operand type lists.
 ;--- They were read from file INSTR.KEY.
 
-oplists label byte
-	opl	;void - for instructions without operands
-	opl OP_ALL+OP_AX, OP_ALL+OP_IMM	; idx=1, ofs=Dh
-	opl OP_ALL+OP_RM, OP_ALL+OP_IMM	; idx=2, ofs=10h
-	opl OP_1632+OP_RM, OP_IMMS8	; idx=3, ofs=13h
-	opl OP_ALL+OP_RM, OP_ALL+OP_R	; idx=4, ofs=16h
-	opl OP_ALL+OP_R, OP_ALL+OP_RM	; idx=5, ofs=19h
-	opl OP_16+OP_RM, OP_16+OP_R	; idx=6, ofs=1Ch
-	opl OP_1632+OP_R, OP_1632+OP_M	; idx=7, ofs=1Fh
-	opl OP_1632+OP_R, OP_1632+OP_RM	; idx=8, ofs=22h
-	opl OP_32+OP_R_ADD	; idx=9, ofs=25h
-	opl OP_1632+OP_RM, OP_1632+OP_R	; idx=10, ofs=27h
-	opl OP_1632+OP_RM, OP_IMM8	; idx=11, ofs=2Ah
-	opl OP_REL1632	; idx=12, ofs=2Dh
-	opl OP_FARIMM	; idx=13, ofs=2Fh
-	opl OP_FARMEM	; idx=14, ofs=31h
-	opl OP_M64	; idx=15, ofs=33h
-	opl OP_ALL+OP_RM	; idx=16, ofs=35h
-	opl OP_1632+OP_R_ADD	; idx=17, ofs=37h
-	opl OP_16+OP_IMM, OP_IMM8	; idx=18, ofs=39h
-	opl OP_MFLOAT	; idx=19, ofs=3Ch
-	opl OP_MDOUBLE	; idx=20, ofs=3Eh
-	opl OP_ST, OP_STI	; idx=21, ofs=40h
-	opl OP_STI, OP_ST	; idx=22, ofs=43h
-	opl OP_1CHK, OP_STI, OP_ST	; idx=23, ofs=46h
-	opl OP_32+OP_M	; idx=24, ofs=4Ah
-	opl OP_16+OP_M	; idx=25, ofs=4Ch
-	opl OP_M80	; idx=26, ofs=4Eh
-	opl OP_STI	; idx=27, ofs=50h
-	opl OP_1CHK, OP_STI	; idx=28, ofs=52h
-	opl OP_MXX	; idx=29, ofs=55h
-	opl OP_16+OP_AX	; idx=30, ofs=57h
-	opl OP_1632+OP_R, OP_1632+OP_RM, OP_IMMS8	; idx=31, ofs=59h
-	opl OP_1632+OP_R_MOD, OP_1632+OP_R, OP_IMMS8	; idx=32, ofs=5Dh
-	opl OP_1632+OP_R, OP_1632+OP_RM, OP_1632+OP_IMM	; idx=33, ofs=61h
-	opl OP_1632+OP_R_MOD, OP_1632+OP_R, OP_1632+OP_IMM	; idx=34, ofs=65h
-	opl OP_ALL+OP_AX, OP_IMM8	; idx=35, ofs=69h
-	opl OP_ALL+OP_AX, OP_DX	; idx=36, ofs=6Ch
-	opl OP_3	; idx=37, ofs=6Fh
-	opl OP_IMM8	; idx=38, ofs=71h
-	opl OP_REL8	; idx=39, ofs=73h
-	opl OP_1632+OP_RM	; idx=40, ofs=75h
-	opl OP_16+OP_RM	; idx=41, ofs=77h
-	opl OP_1632+OP_RM, OP_SEGREG	; idx=42, ofs=79h
-	opl OP_SEGREG, OP_1632+OP_RM	; idx=43, ofs=7Ch
-	opl OP_ALL+OP_AX, OP_ALL+OP_MOFFS	; idx=44, ofs=7Fh
-	opl OP_ALL+OP_MOFFS, OP_ALL+OP_AX	; idx=45, ofs=82h
-	opl OP_8+OP_R_ADD, OP_8+OP_IMM	; idx=46, ofs=85h
-	opl OP_1632+OP_R_ADD, OP_1632+OP_IMM	; idx=47, ofs=88h
-	opl OP_1632+OP_R, OP_SHOSIZ, OP_8+OP_RM	; idx=48, ofs=8Bh
-	opl OP_1632+OP_R, OP_SHOSIZ, OP_16+OP_RM	; idx=49, ofs=8Fh
-	opl OP_IMM8, OP_ALL+OP_AX	; idx=50, ofs=93h
-	opl OP_DX, OP_ALL+OP_AX	; idx=51, ofs=96h
-	opl OP_1632+OP_M	; idx=52, ofs=99h
-;	opl OP_SHOSIZ, OP_1632+OP_IMM	; idx=53, ofs=9Bh
-	opl OP_1632+OP_IMM	; idx=53, ofs=9Bh
-	opl OP_SHOSIZ, OP_IMMS8	; idx=54, ofs=9Eh
-	opl OP_ALL+OP_RM, OP_1	; idx=55, ofs=A1h
-	opl OP_ALL+OP_RM, OP_CL	; idx=56, ofs=A4h
-	opl OP_ALL+OP_RM, OP_IMM8	; idx=57, ofs=A7h
-	opl OP_16+OP_IMM	; idx=58, ofs=AAh
-	opl OP_8+OP_RM	; idx=59, ofs=ACh
-	opl OP_1632+OP_RM, OP_1632+OP_R, OP_IMM8	; idx=60, ofs=AEh
-	opl OP_1632+OP_RM, OP_1632+OP_R, OP_CL	; idx=61, ofs=B2h
-	opl OP_1632+OP_AX, OP_1632+OP_R_ADD	; idx=62, ofs=B6h
-	opl OP_1632+OP_R_ADD, OP_1632+OP_AX	; idx=63, ofs=B9h
-	opl OP_ES	; idx=64, ofs=BCh
-	opl OP_CS	; idx=65, ofs=BEh
-	opl OP_SS	; idx=66, ofs=C0h
-	opl OP_DS	; idx=67, ofs=C2h
-	opl OP_FS	; idx=68, ofs=C4h
-	opl OP_GS	; idx=69, ofs=C6h
-	opl OP_32+OP_R_MOD, OP_CR	; idx=70, ofs=C8h
-	opl OP_CR, OP_32+OP_R_MOD	; idx=71, ofs=CBh
-	opl OP_32+OP_R_MOD, OP_DR	; idx=72, ofs=CEh
-	opl OP_DR, OP_32+OP_R_MOD	; idx=73, ofs=D1h
-	opl OP_32+OP_R_MOD, OP_TR	; idx=74, ofs=D4h
-	opl OP_TR, OP_32+OP_R_MOD	; idx=75, ofs=D7h
-if MMXSUPP
-	opl OP_MMX, OP_32+OP_RM	; idx=76, ofs=DAh
-	opl OP_32+OP_RM, OP_MMX	; idx=77, ofs=DDh
-	opl OP_MMX, OP_64+OP_RM	; idx=78, ofs=E0h
-	opl OP_64+OP_RM, OP_MMX	; idx=79, ofs=E3h
-endif
+;--- They are referenced thru table opindex.
 
-ASMMOD	EQU opidx
+oplists label byte
+	opl 00	;void - for instructions without operands
+	opl 01,OP_ALL+OP_AX, OP_ALL+OP_IMM	; idx=1, ofs=Dh
+	opl 02,OP_ALL+OP_RM, OP_ALL+OP_IMM	; idx=2, ofs=10h
+	opl 03,OP_1632+OP_RM, OP_IMMS8	; idx=3, ofs=13h
+	opl 04,OP_ALL+OP_RM, OP_ALL+OP_R	; idx=4, ofs=16h
+	opl 05,OP_ALL+OP_R, OP_ALL+OP_RM	; idx=5, ofs=19h
+	opl 06,OP_16+OP_RM, OP_16+OP_R	; idx=6, ofs=1Ch
+	opl 07,OP_1632+OP_R, OP_1632+OP_M	; idx=7, ofs=1Fh
+	opl 08,OP_1632+OP_R, OP_1632+OP_RM	; idx=8, ofs=22h
+	opl 09,OP_32+OP_R_ADD	; idx=9, ofs=25h
+	opl 0A,OP_1632+OP_RM, OP_1632+OP_R	; idx=10, ofs=27h
+	opl 0B,OP_1632+OP_RM, OP_IMM8	; idx=11, ofs=2Ah
+	opl 0C,OP_REL1632	; idx=12, ofs=2Dh
+	opl 0D,OP_FARIMM	; idx=13, ofs=2Fh
+	opl 0E,OP_FARMEM	; idx=14, ofs=31h
+	opl 0F,OP_M64	; idx=15, ofs=33h
+	opl 10,OP_ALL+OP_RM	; idx=16, ofs=35h
+	opl 11,OP_1632+OP_R_ADD	; idx=17, ofs=37h
+	opl 12,OP_16+OP_IMM, OP_IMM8	; idx=18, ofs=39h
+	opl 13,OP_MFLOAT	; idx=19, ofs=3Ch
+	opl 14,OP_MDOUBLE	; idx=20, ofs=3Eh
+	opl 15,OP_ST, OP_STI	; idx=21, ofs=40h
+	opl 16,OP_STI, OP_ST	; idx=22, ofs=43h
+	opl 17,OP_1CHK, OP_STI, OP_ST	; idx=23, ofs=46h
+	opl 18,OP_32+OP_M	; idx=24, ofs=4Ah
+	opl 19,OP_16+OP_M	; idx=25, ofs=4Ch
+	opl 1A,OP_M80	; idx=26, ofs=4Eh
+	opl 1B,OP_STI	; idx=27, ofs=50h
+	opl 1C,OP_1CHK, OP_STI	; idx=28, ofs=52h
+	opl 1D,OP_MXX	; idx=29, ofs=55h
+	opl 1E,OP_16+OP_AX	; idx=30, ofs=57h
+	opl 1F,OP_1632+OP_R, OP_1632+OP_RM, OP_IMMS8	; idx=31, ofs=59h
+	opl 20,OP_1632+OP_R_MOD, OP_1632+OP_R, OP_IMMS8	; idx=32, ofs=5Dh
+	opl 21,OP_1632+OP_R, OP_1632+OP_RM, OP_1632+OP_IMM	; idx=33, ofs=61h
+	opl 22,OP_1632+OP_R_MOD, OP_1632+OP_R, OP_1632+OP_IMM	; idx=34, ofs=65h
+	opl 23,OP_ALL+OP_AX, OP_IMM8	; idx=35, ofs=69h
+	opl 24,OP_ALL+OP_AX, OP_DX	; idx=36, ofs=6Ch
+	opl 25,OP_3	; idx=37, ofs=6Fh
+	opl 26,OP_IMM8	; idx=38, ofs=71h
+	opl 27,OP_REL8	; idx=39, ofs=73h
+	opl 28,OP_1632+OP_RM	; idx=40, ofs=75h
+	opl 29,OP_16+OP_RM	; idx=41, ofs=77h
+	opl 2A,OP_1632+OP_RM, OP_SEGREG	; idx=42, ofs=79h
+	opl 2B,OP_SEGREG, OP_1632+OP_RM	; idx=43, ofs=7Ch
+	opl 2C,OP_ALL+OP_AX, OP_ALL+OP_MOFFS	; idx=44, ofs=7Fh
+	opl 2D,OP_ALL+OP_MOFFS, OP_ALL+OP_AX	; idx=45, ofs=82h
+	opl 2E,OP_8+OP_R_ADD, OP_8+OP_IMM	; idx=46, ofs=85h
+	opl 2F,OP_1632+OP_R_ADD, OP_1632+OP_IMM	; idx=47, ofs=88h
+	opl 30,OP_1632+OP_R, OP_SHOSIZ, OP_8+OP_RM	; idx=48, ofs=8Bh
+	opl 31,OP_1632+OP_R, OP_SHOSIZ, OP_16+OP_RM	; idx=49, ofs=8Fh
+	opl 32,OP_IMM8, OP_ALL+OP_AX	; idx=50, ofs=93h
+	opl 33,OP_DX, OP_ALL+OP_AX	; idx=51, ofs=96h
+	opl 34,OP_1632+OP_M	; idx=52, ofs=99h
+	opl 35,OP_1632+OP_IMM	; idx=53, ofs=9Bh
+	opl 36,OP_SHOSIZ, OP_IMMS8	; idx=54, ofs=9Dh
+	opl 37,OP_ALL+OP_RM, OP_1	; idx=55, ofs=A0h
+	opl 38,OP_ALL+OP_RM, OP_CL	; idx=56, ofs=A3h
+	opl 39,OP_ALL+OP_RM, OP_IMM8	; idx=57, ofs=A6h
+	opl 3A,OP_16+OP_IMM	; idx=58, ofs=A9h
+	opl 3B,OP_8+OP_RM	; idx=59, ofs=ABh
+	opl 3C,OP_1632+OP_RM, OP_1632+OP_R, OP_IMM8	; idx=60, ofs=ADh
+	opl 3D,OP_1632+OP_RM, OP_1632+OP_R, OP_CL	; idx=61, ofs=B1h
+	opl 3E,OP_1632+OP_AX, OP_1632+OP_R_ADD	; idx=62, ofs=B5h
+	opl 3F,OP_1632+OP_R_ADD, OP_1632+OP_AX	; idx=63, ofs=B8h
+	opl 40,OP_ES	; idx=64, ofs=BBh
+	opl 41,OP_CS	; idx=65, ofs=BDh
+	opl 42,OP_SS	; idx=66, ofs=BFh
+	opl 43,OP_DS	; idx=67, ofs=C1h
+	opl 44,OP_FS	; idx=68, ofs=C3h
+	opl 45,OP_GS	; idx=69, ofs=C5h
+	opl 46,OP_32+OP_R_MOD, OP_CR	; idx=70, ofs=C7h
+	opl 47,OP_CR, OP_32+OP_R_MOD	; idx=71, ofs=CAh
+	opl 48,OP_32+OP_R_MOD, OP_DR	; idx=72, ofs=CDh
+	opl 49,OP_DR, OP_32+OP_R_MOD	; idx=73, ofs=D0h
+	opl 4A,OP_32+OP_R_MOD, OP_TR	; idx=74, ofs=D3h
+	opl 4B,OP_TR, OP_32+OP_R_MOD	; idx=75, ofs=D6h
+if MMXSUPP
+	opl 4C,OP_MMX, OP_32+OP_RM	; idx=76, ofs=D9h
+	opl 4D,OP_32+OP_RM, OP_MMX	; idx=77, ofs=DCh
+	opl 4E,OP_MMX, OP_64+OP_RM	; idx=78, ofs=DFh
+	opl 4F,OP_64+OP_RM, OP_MMX	; idx=79, ofs=E2h
+ASMMOD	EQU 50h
+else
+ASMMOD	EQU 4Ch
+endif
 
 ;--- Assembler: data on groups.
 ;--- If HiByte == 01, it's a "0F-prefix" group.
@@ -985,14 +987,14 @@ endif
 	 variant AGRP(8,3), 41, , ASM_MACH2
 	 endvariant
 	mne MOV	; ofs=4E8h
-	 variant 0a0h, 44       ;mov AL/AX,[]
-	 variant 0a2h, 45       ;mov [],AL/AX
-	 variant 088h, 4        ;mov [],reg
-	 variant 08ah, 5        ;mov reg,[]
-	 variant 08ch, 42       ;mov m16/reg,sreg
-	 variant 08eh, 43       ;mov sreg,m16/reg
-	 variant 0b0h, 46       ;mov reg16,imm
-	 variant 0b8h, 47       ;mov reg8,imm
+	 variant 0a0h, 44
+	 variant 0a2h, 45
+	 variant 088h, 4
+	 variant 08ah, 5
+	 variant 08ch, 42
+	 variant 08eh, 43
+	 variant 0b0h, 46
+	 variant 0b8h, 47
 	 variant AGRP(9,0), 2
 	 variant 120h, 70, , ASM_MACH3
 	 variant 122h, 71, , ASM_MACH3
@@ -1364,398 +1366,4 @@ endif
 	 endvariant
 
 end_mnlist label byte
-
-;--- Disassembler: compressed table of the opcode types.
-;--- If the item has the format OT(xx), it refers to table 'oplists'.
-;--- Otherwise it's an offset for internal table 'disjmp'.
-
-OTDATA segment
-
-optypes label byte
-	db OT(04),OT(04),OT(05),OT(05),OT(01),OT(01),OT(40),OT(40)	; 00 - 07 (main opcode part)
-	db OT(04),OT(04),OT(05),OT(05),OT(01),OT(01),OT(41),  002h	; 08 - 0f
-	db OT(04),OT(04),OT(05),OT(05),OT(01),OT(01),OT(42),OT(42)	; 10 - 17
-	db OT(04),OT(04),OT(05),OT(05),OT(01),OT(01),OT(43),OT(43)	; 18 - 1f
-	db OT(04),OT(04),OT(05),OT(05),OT(01),OT(01),  00Ah,OT(00)	; 20 - 27
-	db OT(04),OT(04),OT(05),OT(05),OT(01),OT(01),  00Ah,OT(00)	; 28 - 2f
-	db OT(04),OT(04),OT(05),OT(05),OT(01),OT(01),  00Ah,OT(00)	; 30 - 37
-	db OT(04),OT(04),OT(05),OT(05),OT(01),OT(01),  00Ah,OT(00)	; 38 - 3f
-	db OT(11),OT(11),OT(11),OT(11),OT(11),OT(11),OT(11),OT(11)	; 40 - 47
-	db OT(11),OT(11),OT(11),OT(11),OT(11),OT(11),OT(11),OT(11)	; 48 - 4f
-	db OT(11),OT(11),OT(11),OT(11),OT(11),OT(11),OT(11),OT(11)	; 50 - 57
-	db OT(11),OT(11),OT(11),OT(11),OT(11),OT(11),OT(11),OT(11)	; 58 - 5f
-	db OT(00),OT(00),OT(07),OT(06),  00Ah,  00Ah,  00Ah,  00Ah	; 60 - 67
-	db OT(35),OT(21),OT(36),OT(1F),OT(00),OT(00),OT(00),OT(00)	; 68 - 6f
-	db OT(27),OT(27),OT(27),OT(27),OT(27),OT(27),OT(27),OT(27)	; 70 - 77
-	db OT(27),OT(27),OT(27),OT(27),OT(27),OT(27),OT(27),OT(27)	; 78 - 7f
-	db   004h,  004h,  000h,  004h,OT(04),OT(04),OT(05),OT(05)	; 80 - 87
-	db OT(04),OT(04),OT(05),OT(05),OT(2A),OT(07),OT(2B),  004h	; 88 - 8f
-	db OT(00),OT(3E),OT(3E),OT(3E),OT(3E),OT(3E),OT(3E),OT(3E)	; 90 - 97
-	db OT(00),OT(00),OT(0D),OT(00),OT(00),OT(00),OT(00),OT(00)	; 98 - 9f
-	db OT(2C),OT(2C),OT(2D),OT(2D),OT(00),OT(00),OT(00),OT(00)	; a0 - a7
-	db OT(01),OT(01),OT(00),OT(00),OT(00),OT(00),OT(00),OT(00)	; a8 - af
-	db OT(2E),OT(2E),OT(2E),OT(2E),OT(2E),OT(2E),OT(2E),OT(2E)	; b0 - b7
-	db OT(2F),OT(2F),OT(2F),OT(2F),OT(2F),OT(2F),OT(2F),OT(2F)	; b8 - bf
-	db   004h,  004h,OT(3A),OT(00),OT(07),OT(07),  004h,  004h	; c0 - c7
-	db OT(12),OT(00),OT(3A),OT(00),OT(25),OT(26),OT(00),OT(00)	; c8 - cf
-	db   004h,  004h,  004h,  004h,OT(26),OT(26),  000h,OT(00)	; d0 - d7
-	db   006h,  006h,  006h,  006h,  006h,  006h,  006h,  006h	; d8 - df
-	db OT(27),OT(27),OT(27),OT(27),OT(23),OT(23),OT(32),OT(32)	; e0 - e7
-	db OT(0C),OT(0C),OT(0D),OT(27),OT(24),OT(24),OT(33),OT(33)	; e8 - ef
-	db   00Ah,  000h,  00Ah,  00Ah,OT(00),OT(00),  004h,  004h	; f0 - f7
-	db OT(00),OT(00),OT(00),OT(00),OT(00),OT(00),  004h,  004h	; f8 - ff
-	db OT(02),OT(02),OT(02),OT(02),OT(02),OT(02),OT(02),OT(02)	; 100 - 107 (Intel group 1)
-	db OT(03),OT(03),OT(03),OT(03),OT(03),OT(03),OT(03),OT(03)	; 108 - 10f
-	db OT(37),OT(37),OT(37),OT(37),OT(37),OT(37),  000h,OT(37)	; 110 - 117 (Intel group 2)
-	db OT(38),OT(38),OT(38),OT(38),OT(38),OT(38),  000h,OT(38)	; 118 - 11f
-	db OT(39),OT(39),OT(39),OT(39),OT(39),OT(39),  000h,OT(39)	; 120 - 127 (Intel group 2a)
-	db OT(02),  000h,OT(10),OT(10),OT(10),OT(10),OT(10),OT(10)	; 128 - 12f (Intel group 3)
-	db OT(10),OT(10),OT(28),OT(0E),OT(28),OT(0E),OT(28),  000h	; 130 - 137 (Intel group 5)
-	db OT(28),OT(29),OT(29),OT(29),OT(29),OT(29),  000h,  000h	; 138 - 13f (Intel group 6)
-	db OT(1D),OT(1D),OT(1D),OT(1D),OT(28),  000h,OT(29),OT(1D)	; 140 - 147 (Intel group 7)
-	db OT(13),OT(13),OT(13),OT(13),OT(13),OT(13),OT(13),OT(13)	; 148 - 14f (Coprocessor d8)
-	db OT(15),OT(15),OT(1C),OT(1C),OT(15),OT(15),OT(15),OT(15)	; 150 - 157
-	db OT(13),  000h,OT(13),OT(13),OT(1D),OT(19),OT(1D),OT(19)	; 158 - 15f (Coprocessor d9)
-	db OT(1B),OT(1C),  008h,  000h,  008h,  008h,  008h,  008h	; 160 - 167
-	db OT(18),OT(18),OT(18),OT(18),OT(18),OT(18),OT(18),OT(18)	; 168 - 16f (Coprocessor da)
-	db OT(15),OT(15),OT(15),OT(15),  000h,  008h,  000h,  000h	; 170 - 177
-	db OT(18),  000h,OT(18),OT(18),  000h,OT(1A),  000h,OT(1A)	; 178 - 17f (Coprocessor db)
-	db OT(15),OT(15),OT(15),OT(15),  008h,OT(1C),OT(1C),  000h	; 180 - 187
-	db OT(14),OT(14),OT(14),OT(14),OT(14),OT(14),OT(14),OT(14)	; 188 - 18f (Coprocessor dc)
-	db OT(16),OT(16),  000h,  000h,OT(16),OT(16),OT(16),OT(16)	; 190 - 197
-	db OT(14),  000h,OT(14),OT(14),OT(1D),  000h,OT(1D),OT(19)	; 198 - 19f (Coprocessor dd)
-	db OT(1B),  000h,OT(1B),OT(1B),OT(1C),OT(1C),  000h,  000h	; 1a0 - 1a7
-	db OT(19),OT(19),OT(19),OT(19),OT(19),OT(19),OT(19),OT(19)	; 1a8 - 1af (Coprocessor de)
-	db OT(17),OT(17),  000h,  008h,OT(17),OT(17),OT(17),OT(17)	; 1b0 - 1b7
-	db OT(19),  000h,OT(19),OT(19),OT(1A),OT(0F),OT(1A),OT(0F)	; 1b8 - 1bf (Coprocessor df)
-	db   000h,  000h,  000h,  000h,  008h,OT(1C),OT(1C),  000h	; 1c0 - 1c7
-	db OT(00),OT(00),OT(00),OT(00),OT(00),OT(00),OT(00),  000h	; 1c8 - 1cf (Coprocessor groups)
-	db OT(00),OT(00),OT(00),OT(00),OT(00),OT(00),OT(00),OT(00)	; 1d0 - 1d7
-	db OT(00),OT(00),OT(00),OT(00),OT(00),OT(00),OT(00),OT(00)	; 1d8 - 1df
-SPARSE_BASE equ $ - optypes
-;--- The rest of these are squeezed. 
-	db      0,  004h,  004h,OT(08),OT(08),OT(00),OT(00),OT(00)	;00
-	db OT(46),OT(48),OT(47),OT(49),OT(4A),OT(4B),OT(00),OT(00)	;08
-	db OT(08),OT(08),OT(08),OT(08),OT(08),OT(08),OT(08),OT(08)	;10
-	db OT(08),OT(08),OT(08),OT(08),OT(08),OT(08),OT(08),OT(08)	;18
-if MMXSUPP
-	db OT(4C),OT(4E),OT(00),OT(4D),OT(4F),OT(0C),OT(0C),OT(0C)	;20
-else
-	db      0,     0,OT(00),     0,     0,OT(0C),OT(0C),OT(0C)	;20
-endif
-	db OT(0C),OT(0C),OT(0C),OT(0C),OT(0C),OT(0C),OT(0C),OT(0C)	;28
-	db OT(0C),OT(0C),OT(0C),OT(0C),OT(0C),OT(3B),OT(3B),OT(3B)	;30
-	db OT(3B),OT(3B),OT(3B),OT(3B),OT(3B),OT(3B),OT(3B),OT(3B)	;38
-	db OT(3B),OT(3B),OT(3B),OT(3B),OT(3B),OT(44),OT(44),OT(00)	;40
-	db OT(0A),OT(3C),OT(3D),OT(45),OT(45),OT(00),OT(0A),OT(3C)	;48
-	db OT(3D),OT(08),OT(04),OT(04),OT(07),OT(0A),OT(07),OT(07)	;50
-	db OT(30),OT(31),  004h,OT(0A),OT(08),OT(08),OT(30),OT(31)	;58
-	db OT(04),OT(04),  004h,OT(09),OT(09),OT(09),OT(09),OT(09)	;60
-	db OT(09),OT(09),OT(09),OT(10),OT(10),OT(0B),OT(0B),OT(0B)	;68
-	db OT(0B),OT(0F),OT(34),OT(02),OT(00),OT(00),OT(00),OT(00)	;70
-	db OT(00),OT(00),OT(00),OT(00),OT(00),OT(00),OT(00),OT(00)	;78
-	db OT(1E)
-
-OTDATA ends
-
-P186	equ 1000h
-P286	equ 2000h
-P386	equ 3000h
-P486	equ 4000h
-P586	equ 5000h
-P686	equ 6000h
-
-	align 2
-
-;--- Disassembler: compressed table of additional information.
-;--- Bits 0-11 usually are the offset of the mnemonics table.
-;--- Bits 12-15 are the cpu which introduced this opcode.
-
-opinfo label word
-	dw  MN_ADD, MN_ADD, MN_ADD, MN_ADD	; 00
-	dw  MN_ADD, MN_ADD, MN_PUSH, MN_POP	; 04
-	dw  MN_OR, MN_OR, MN_OR, MN_OR	; 08
-	dw  MN_OR, MN_OR, MN_PUSH, 01e0h	; 0c
-	dw  MN_ADC, MN_ADC, MN_ADC, MN_ADC	; 10
-	dw  MN_ADC, MN_ADC, MN_PUSH, MN_POP	; 14
-	dw  MN_SBB, MN_SBB, MN_SBB, MN_SBB	; 18
-	dw  MN_SBB, MN_SBB, MN_PUSH, MN_POP	; 1c
-	dw  MN_AND, MN_AND, MN_AND, MN_AND	; 20
-	dw  MN_AND, MN_AND, 0001h, MN_DAA	; 24
-	dw  MN_SUB, MN_SUB, MN_SUB, MN_SUB	; 28
-	dw  MN_SUB, MN_SUB, 0101h, MN_DAS	; 2c
-	dw  MN_XOR, MN_XOR, MN_XOR, MN_XOR	; 30
-	dw  MN_XOR, MN_XOR, 0201h, MN_AAA	; 34
-	dw  MN_CMP, MN_CMP, MN_CMP, MN_CMP	; 38
-	dw  MN_CMP, MN_CMP, 0301h, MN_AAS	; 3c
-	dw  MN_INC, MN_INC, MN_INC, MN_INC	; 40
-	dw  MN_INC, MN_INC, MN_INC, MN_INC	; 44
-	dw  MN_DEC, MN_DEC, MN_DEC, MN_DEC	; 48
-	dw  MN_DEC, MN_DEC, MN_DEC, MN_DEC	; 4c
-	dw  MN_PUSH, MN_PUSH, MN_PUSH, MN_PUSH	; 50
-	dw  MN_PUSH, MN_PUSH, MN_PUSH, MN_PUSH	; 54
-	dw  MN_POP, MN_POP, MN_POP, MN_POP	; 58
-	dw  MN_POP, MN_POP, MN_POP, MN_POP	; 5c
-	dw  P186 + MN_PUSHA, P186 + MN_POPA, P186 + MN_BOUND, P286 + MN_ARPL	; 60
-	dw  P386 + 0401h, P386 + 0501h, P386 + 0010h, P386 + 0020h	; 64
-	dw  P186 + MN_PUSH, P186 + MN_IMUL, P186 + MN_PUSH, P186 + MN_IMUL	; 68
-	dw  P186 + MN_INSB, P186 + MN_INSW, P186 + MN_OUTSB, P186 + MN_OUTSW	; 6c
-	dw  MN_JO, MN_JNO, MN_JB, MN_JAE	; 70
-	dw  MN_JZ, MN_JNZ, MN_JBE, MN_JA	; 74
-	dw  MN_JS, MN_JNS, MN_JPE, MN_JPO	; 78
-	dw  MN_JL, MN_JGE, MN_JLE, MN_JG	; 7c
-	dw  0100h, 0100h, 0000h, 0108h	; 80
-	dw  MN_TEST, MN_TEST, MN_XCHG, MN_XCHG	; 84
-	dw  MN_MOV, MN_MOV, MN_MOV, MN_MOV	; 88
-	dw  MN_MOV, MN_LEA, MN_MOV, 02f8h	; 8c
-	dw  MN_NOP, MN_XCHG, MN_XCHG, MN_XCHG	; 90
-	dw  MN_XCHG, MN_XCHG, MN_XCHG, MN_XCHG	; 94
-	dw  MN_CBW, MN_CWD, MN_CALL, MN_WAIT	; 98
-	dw  MN_PUSHF, MN_POPF, MN_SAHF, MN_LAHF	; 9c
-	dw  MN_MOV, MN_MOV, MN_MOV, MN_MOV	; a0
-	dw  MN_MOVSB, MN_MOVSW, MN_CMPSB, MN_CMPSW	; a4
-	dw  MN_TEST, MN_TEST, MN_STOSB, MN_STOSW	; a8
-	dw  MN_LODSB, MN_LODSW, MN_SCASB, MN_SCASW	; ac
-	dw  MN_MOV, MN_MOV, MN_MOV, MN_MOV	; b0
-	dw  MN_MOV, MN_MOV, MN_MOV, MN_MOV	; b4
-	dw  MN_MOV, MN_MOV, MN_MOV, MN_MOV	; b8
-	dw  MN_MOV, MN_MOV, MN_MOV, MN_MOV	; bc
-	dw  0120h, 0120h, MN_RET, MN_RET	; c0
-	dw  MN_LES, MN_LDS, 0300h, 0300h	; c4
-	dw  P186 + MN_ENTER, P186 + MN_LEAVE, MN_RETF, MN_RETF	; c8
-	dw  MN_INT, MN_INT, MN_INTO, MN_IRET	; cc
-	dw  0110h, 0110h, 0118h, 0118h	; d0
-	dw  MN_AAM, MN_AAD, 0000h, MN_XLATB	; d4
-	dw  0148h, 0158h, 0168h, 0178h	; d8
-	dw  0188h, 0198h, 01a8h, 01b8h	; dc
-	dw  MN_LOOPNZW, MN_LOOPZW, MN_LOOPW, MN_JCXZ	; e0
-	dw  MN_IN, MN_IN, MN_OUT, MN_OUT	; e4
-	dw  MN_CALL, MN_JMP, MN_JMP, MN_JMP	; e8
-	dw  MN_IN, MN_IN, MN_OUT, MN_OUT	; ec
-	dw  0008h, 0000h, 0002h, 0006h	; f0
-	dw  MN_HLT, MN_CMC, 0128h, 0128h	; f4
-	dw  MN_CLC, MN_STC, MN_CLI, MN_STI	; f8
-	dw  MN_CLD, MN_STD, 02e0h, 0130h	; fc
-	dw  MN_ADD, MN_OR, MN_ADC, MN_SBB	; 100
-	dw  MN_AND, MN_SUB, MN_XOR, MN_CMP	; 104
-	dw  MN_ADD, MN_OR, MN_ADC, MN_SBB	; 108
-	dw  MN_AND, MN_SUB, MN_XOR, MN_CMP	; 10c
-	dw  MN_ROL, MN_ROR, MN_RCL, MN_RCR	; 110
-	dw  MN_SHL, MN_SHR, 0000h, MN_SAR	; 114
-	dw  MN_ROL, MN_ROR, MN_RCL, MN_RCR	; 118
-	dw  MN_SHL, MN_SHR, 0000h, MN_SAR	; 11c
-	dw  P186 + MN_ROL, P186 + MN_ROR, P186 + MN_RCL, P186 + MN_RCR	; 120
-	dw  P186 + MN_SHL, P186 + MN_SHR, 0000h, P186 + MN_SAR	; 124
-	dw  MN_TEST, 0000h, MN_NOT, MN_NEG	; 128
-	dw  MN_MUL, MN_IMUL, MN_DIV, MN_IDIV	; 12c
-	dw  MN_INC, MN_DEC, MN_CALL, MN_CALL	; 130
-	dw  MN_JMP, MN_JMP, MN_PUSH, 0000h	; 134
-	dw  P286 + MN_SLDT, P286 + MN_STR, P286 + MN_LLDT, P286 + MN_LTR	; 138
-	dw  P286 + MN_VERR, P286 + MN_VERW, 0000h, 0000h	; 13c
-	dw  P286 + MN_SGDT, P286 + MN_SIDT, P286 + MN_LGDT, P286 + MN_LIDT	; 140
-	dw  P286 + MN_SMSW, 0000h, P286 + MN_LMSW, P486 + MN_INVLPG	; 144
-	dw  MN_FADD, MN_FMUL, MN_FCOM, MN_FCOMP	; 148
-	dw  MN_FSUB, MN_FSUBR, MN_FDIV, MN_FDIVR	; 14c
-	dw  MN_FADD, MN_FMUL, MN_FCOM, MN_FCOMP	; 150
-	dw  MN_FSUB, MN_FSUBR, MN_FDIV, MN_FDIVR	; 154
-	dw  MN_FLD, 0000h, MN_FST, MN_FSTP	; 158
-	dw  MN_FLDENV, MN_FNLDCW, MN_FNSTENV, MN_FNSTCW	; 15c
-	dw  MN_FLD, MN_FXCH, 0308h, 0000h	; 160
-	dw  0310h, 01c8h, 01d0h, 01d8h	; 164
-	dw  MN_FIADD, MN_FIMUL, MN_FICOM, MN_FICOMP	; 168
-	dw  MN_FISUB, MN_FISUBR, MN_FIDIV, MN_FIDIVR	; 16c
-	dw  P686 + MN_FCMOVB, P686 + MN_FCMOVE, P686 + MN_FCMOVBE, P686 + MN_FCMOVU	; 170
-	dw  0000h, 0318h, 0000h, 0000h	; 174
-	dw  MN_FILD, 0000h, MN_FIST, MN_FISTP	; 178
-	dw  0000h, MN_FLD, 0000h, MN_FSTP	; 17c
-	dw  P686 + MN_FCMOVNB, P686 + MN_FCMOVNE, P686 + MN_FCMOVNBE, P686 + MN_FCMOVNU	; 180
-	dw  0320h, P686 + MN_FUCOMI, P686 + MN_FCOMI, 0000h	; 184
-	dw  MN_FADD, MN_FMUL, MN_FCOM, MN_FCOMP	; 188
-	dw  MN_FSUB, MN_FSUBR, MN_FDIV, MN_FDIVR	; 18c
-	dw  MN_FADD, MN_FMUL, 0000h, 0000h	; 190
-	dw  MN_FSUBR, MN_FSUB, MN_FDIVR, MN_FDIV	; 194
-	dw  MN_FLD, 0000h, MN_FST, MN_FSTP	; 198
-	dw  MN_FRSTOR, 0000h, MN_FNSAVE, MN_FNSTSW	; 19c
-	dw  MN_FFREE, 0000h, MN_FST, MN_FSTP	; 1a0
-	dw  P386 + MN_FUCOM, P386 + MN_FUCOMP, 0000h, 0000h	; 1a4
-	dw  MN_FIADD, MN_FIMUL, MN_FICOM, MN_FICOMP	; 1a8
-	dw  MN_FISUB, MN_FISUBR, MN_FIDIV, MN_FIDIVR	; 1ac
-	dw  MN_FADDP, MN_FMULP, 0000h, 0328h	; 1b0
-	dw  MN_FSUBRP, MN_FSUBP, MN_FDIVRP, MN_FDIVP	; 1b4
-	dw  MN_FILD, 0000h, MN_FIST, MN_FISTP	; 1b8
-	dw  MN_FBLD, MN_FILD, MN_FBSTP, MN_FISTP	; 1bc
-	dw  0000h, 0000h, 0000h, 0000h	; 1c0
-	dw  0330h, P686 + MN_FUCOMIP, P686 + MN_FCOMIP, 0000h	; 1c4
-	dw  MN_FLD1, MN_FLDL2T, MN_FLDL2E, MN_FLDPI	; 1c8
-	dw  MN_FLDLG2, MN_FLDLN2, MN_FLDZ, 0000h	; 1cc
-	dw  MN_F2XM1, MN_FYL2X, MN_FPTAN, MN_FPATAN	; 1d0
-	dw  MN_FXTRACT, P386 + MN_FPREM1, MN_FDECSTP, MN_FINCSTP	; 1d4
-	dw  MN_FPREM, MN_FYL2XP1, MN_FSQRT, P386 + MN_FSINCOS	; 1d8
-	dw  MN_FRNDINT, MN_FSCALE, P386 + MN_FSIN, P386 + MN_FCOS	; 1dc
-;--- The rest of these are squeezed.
-	dw  0, 0138h, 0140h, P286 + MN_LAR	;00
-	dw  P286 + MN_LSL, P286 + MN_CLTS, P486 + MN_INVD, P486 + MN_WBINVD	;04
-	dw  P386 + MN_MOV, P386 + MN_MOV, P386 + MN_MOV, P386 + MN_MOV	;08
-	dw  P386 + MN_MOV, P386 + MN_MOV, P586 + MN_WRMSR, P586 + MN_RDMSR	;0C
-	dw  P686 + MN_CMOVO, P686 + MN_CMOVNO, P686 + MN_CMOVB, P686 + MN_CMOVAE	;10
-	dw  P686 + MN_CMOVZ, P686 + MN_CMOVNZ, P686 + MN_CMOVBE, P686 + MN_CMOVA	;14
-	dw  P686 + MN_CMOVS, P686 + MN_CMOVNS, P686 + MN_CMOVPE, P686 + MN_CMOVPO	;18
-	dw  P686 + MN_CMOVL, P686 + MN_CMOVGE, P686 + MN_CMOVLE, P686 + MN_CMOVG	;1C
-if MMXSUPP
-	dw  P586 + MN_MOVD, P586 + MN_MOVQ, P586 + MN_EMMS, P586 + MN_MOVD	;20
-	dw  P586 + MN_MOVQ, P386 + MN_JO, P386 + MN_JNO, P386 + MN_JB	;24
-else
-	dw  0, 0, 0, 0	;20
-	dw  0, P386 + MN_JO, P386 + MN_JNO, P386 + MN_JB	;24
-endif
-	dw  P386 + MN_JAE, P386 + MN_JZ, P386 + MN_JNZ, P386 + MN_JBE	;28
-	dw  P386 + MN_JA, P386 + MN_JS, P386 + MN_JNS, P386 + MN_JPE	;2C
-	dw  P386 + MN_JPO, P386 + MN_JL, P386 + MN_JGE, P386 + MN_JLE	;30
-	dw  P386 + MN_JG, P386 + MN_SETO, P386 + MN_SETNO, P386 + MN_SETB	;34
-	dw  P386 + MN_SETAE, P386 + MN_SETZ, P386 + MN_SETNZ, P386 + MN_SETBE	;38
-	dw  P386 + MN_SETA, P386 + MN_SETS, P386 + MN_SETNS, P386 + MN_SETPE	;3C
-	dw  P386 + MN_SETPO, P386 + MN_SETL, P386 + MN_SETGE, P386 + MN_SETLE	;40
-	dw  P386 + MN_SETG, P386 + MN_PUSH, P386 + MN_POP, P586 + MN_CPUID	;44
-	dw  P386 + MN_BT, P386 + MN_SHLD, P386 + MN_SHLD, P386 + MN_PUSH	;48
-	dw  P386 + MN_POP, P586 + MN_RSM, P386 + MN_BTS, P386 + MN_SHRD	;4C
-	dw  P386 + MN_SHRD, P386 + MN_IMUL, P486 + MN_CMPXCHG, P486 + MN_CMPXCHG	;50
-	dw  P386 + MN_LSS, P386 + MN_BTR, P386 + MN_LFS, P386 + MN_LGS	;54
-	dw  P386 + MN_MOVZX, P386 + MN_MOVZX, 02e8h, P386 + MN_BTC	;58
-	dw  P386 + MN_BSF, P386 + MN_BSR, P386 + MN_MOVSX, P386 + MN_MOVSX	;5C
-	dw  P486 + MN_XADD, P486 + MN_XADD, 02f0h, P486 + MN_BSWAP	;60
-	dw  P486 + MN_BSWAP, P486 + MN_BSWAP, P486 + MN_BSWAP, P486 + MN_BSWAP	;64
-	dw  P486 + MN_BSWAP, P486 + MN_BSWAP, P486 + MN_BSWAP, MN_INC	;68
-	dw  MN_DEC, P386 + MN_BT, P386 + MN_BTS, P386 + MN_BTR	;6C
-	dw  P386 + MN_BTC, P586 + MN_CMPXCHG8B, MN_POP, MN_MOV	;70
-	dw  MN_FNOP, MN_FCHS, MN_FABS, MN_FTST	;74
-	dw  MN_FXAM, P386 + MN_FUCOMPP, MN_FNENI, MN_FNDISI	;78
-	dw  MN_FNCLEX, MN_FNINIT, P286 + MN_FNSETPM, MN_FCOMPP	;7C
-	dw  MN_FNSTSW
-
-;--- Disassembler: table converts unsqueezed numbers to squeezed.
-;--- 1E0-2DF are extended opcodes (0F xx).
-
-sqztab label byte
-	db   1,  2,  3,  4,  0,  0,  5,  0	;1E0
-	db   6,  7,  0,  0,  0,  0,  0,  0	;1E8
-	db   0,  0,  0,  0,  0,  0,  0,  0	;1F0
-	db   0,  0,  0,  0,  0,  0,  0,  0	;1F8
-	db   8,  9, 10, 11, 12,  0, 13,  0	;200
-	db   0,  0,  0,  0,  0,  0,  0,  0	;208
-	db  14,  0, 15,  0,  0,  0,  0,  0	;210
-	db   0,  0,  0,  0,  0,  0,  0,  0	;218
-	db  16, 17, 18, 19, 20, 21, 22, 23	;220
-	db  24, 25, 26, 27, 28, 29, 30, 31	;228
-	db   0,  0,  0,  0,  0,  0,  0,  0	;230
-	db   0,  0,  0,  0,  0,  0,  0,  0	;238
-	db   0,  0,  0,  0,  0,  0,  0,  0	;240
-	db   0,  0,  0,  0,  0,  0, 32, 33	;248
-	db   0,  0,  0,  0,  0,  0,  0, 34	;250
-	db   0,  0,  0,  0,  0,  0, 35, 36	;258
-	db  37, 38, 39, 40, 41, 42, 43, 44	;260
-	db  45, 46, 47, 48, 49, 50, 51, 52	;268
-	db  53, 54, 55, 56, 57, 58, 59, 60	;270
-	db  61, 62, 63, 64, 65, 66, 67, 68	;278
-	db  69, 70, 71, 72, 73, 74,  0,  0	;280
-	db  75, 76, 77, 78, 79, 80,  0, 81	;288
-	db  82, 83, 84, 85, 86, 87, 88, 89	;290
-	db   0,  0, 90, 91, 92, 93, 94, 95	;298
-	db  96, 97,  0,  0,  0,  0,  0, 98	;2A0
-	db  99,100,101,102,103,104,105,106	;2A8
-	db   0,  0,  0,  0,  0,  0,  0,  0	;2B0
-	db   0,  0,  0,  0,  0,  0,  0,  0	;2B8
-	db   0,  0,  0,  0,  0,  0,  0,  0	;2C0
-	db   0,  0,  0,  0,  0,  0,  0,  0	;2C8
-	db   0,  0,  0,  0,  0,  0,  0,  0	;2D0
-	db   0,  0,  0,  0,  0,  0,  0,  0	;2D8
-
-;--- 2E0-307 are 5 sparse groups.
-
-	db 107,108,  0,  0,  0,  0,  0,  0	;2E0  FE, Intel grp 4)
-	db   0,  0,  0,  0,109,110,111,112	;2E8 1BA, Intel grp 8)
-	db   0,113,  0,  0,  0,  0,  0,  0	;2F0 1C7, Intel grp 9)
-	db 114,  0,  0,  0,  0,  0,  0,  0	;2F8  8F
-	db 115,  0,  0,  0,  0,  0,  0,  0	;300  C6/C7
-
-;--- 308-337 are 6 sparse fpu groups.
-SFPGROUPS equ SPARSE_BASE + ( $ - sqztab )
-SFPGROUP3 equ SFPGROUPS + 8 * 3
-	db 116,  0,  0,  0,  0,  0,  0,  0	;308 d9d0
-	db 117,118,  0,  0,119,120,  0,  0	;310 d9e0
-	db   0,121,  0,  0,  0,  0,  0,  0	;318 dae8
-	db 122,123,124,125,126,  0,  0,  0	;320 dbe0
-	db   0,127,  0,  0,  0,  0,  0,  0	;328 ded8
-	db 128,  0,  0,  0,  0,  0,  0,  0	;330 dfe0
-
-;--- Disassembler: table of mnemonics that change in the presence of a WAIT
-;--- instruction.
-
-wtab1	dw 0322h,0321h,0320h,0323h,015dh,019eh,0324h,015fh
-	dw 015eh,0330h,019fh
-wtab2 label word
-	dw MN_FCLEX
-	dw MN_FDISI
-	dw MN_FENI
-	dw MN_FINIT
-	dw MN_FLDCW
-	dw MN_FSAVE
-	dw MN_FSETPM
-	dw MN_FSTCW
-	dw MN_FSTENV
-	dw MN_FSTSW
-	dw MN_FSTSW
-N_WTAB	equ ($ - wtab2) / 2
-
-;--- Disassembler: table for operands which have a different mnemonic for
-;--- their 32 bit versions (66h prefix).
-
-ltabo1	dw 098h,0a7h,099h,015ch,019ch,019eh,015eh,06dh
-	dw 0cfh,0adh,0a5h,06fh,061h,09dh,060h,09ch
-	dw 0cbh,0cah,0afh,0abh
-ltabo2 label word
-	dw MN_CWDE
-	dw MN_CMPSD
-	dw MN_CDQ
-	dw MN_FLDENVD
-	dw MN_FRSTORD
-	dw MN_FSAVED
-	dw MN_FSTENVD
-	dw MN_INSD
-	dw MN_IRETD
-	dw MN_LODSD
-	dw MN_MOVSD
-	dw MN_OUTSD
-	dw MN_POPAD
-	dw MN_POPFD
-	dw MN_PUSHAD
-	dw MN_PUSHFD
-	dw MN_RETFD
-	dw MN_RETFD
-	dw MN_SCASD
-	dw MN_STOSD
-N_LTABO	equ ($ - ltabo2) / 2
-
-;--- Disassembler: table for operands which have a different mnemonic for
-;--- their 32 bit versions (67h prefix).
-
-ltaba1	dw 0e3h,0e2h,0e1h,0e1h,0e0h,0e0h
-ltaba2 label word
-	dw MN_JECXZ
-	dw MN_LOOPD
-	dw MN_LOOPED
-	dw MN_LOOPZD
-	dw MN_LOOPNED
-	dw MN_LOOPNZD
-N_LTABA	equ ($ - ltaba2) / 2
-
-;--- Disassembler: table of lockable instructions
-
-locktab label word
-	dw 010ah,0102h,010h,011h,0108h,0100h,00h,01h
-	dw 010ch,0104h,020h,021h,029bh,02efh,0293h,02eeh
-	dw 028bh,02edh,0290h,0291h,02e1h,0131h,02e0h,0130h
-	dw 012bh,012ah,0109h,0101h,08h,09h,010bh,0103h
-	dw 018h,019h,010dh,0105h,028h,029h,02a0h,02a1h
-	dw 086h,087h,010eh,0106h,030h,031h
-N_LOCK	equ ($ - locktab) / 2
 

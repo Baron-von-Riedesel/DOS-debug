@@ -1,6 +1,169 @@
 
 ;--- A command - tiny assembler.
 
+;--- macros for asmtbl.inc
+
+;--- mne macro, used for the assembler mnemonics table
+
+mne macro val2:REQ, dbytes:VARARG
+ASMDATA segment
+CURROFS = $
+	ifnb <dbytes>
+	 db dbytes
+	endif
+ASMDATA ends
+	dw CURROFS - asmtab
+MN_&val2 equ $ - mnlist
+tmpstr catstr <!">,@SubStr(val2,1,@SizeStr(val2)-1),<!",!'>,@SubStr(val2,@SizeStr(val2)),<!'>,<+80h>
+	db tmpstr
+endm
+
+;--- AGRP: num is the index into agroups, that finally defines the opcode (1 or 2 byte).
+;--- rfld, bits 0-2 of the final value, define bits 3-5 in ai.regmem.
+
+AGRP macro num,rfld
+	exitm <240h + num*8 + rfld>
+endm
+
+variant macro opcode:req, key:req, lockb, machine
+ASMDATA segment
+	ifnb <lockb>
+	 db lockb
+	endif
+	ifnb <machine>
+	 db machine
+	endif
+ainfo = (opcode) * ASMMOD + key
+	db HIGH ainfo, LOW ainfo
+ASMDATA ends
+endm
+
+fpvariant macro opcode, key, addb, lockb, machine
+	variant opcode, key, lockb, machine
+ASMDATA segment
+	db addb
+ASMDATA ends
+endm
+
+endvariant macro
+ASMDATA segment
+	db -1
+ASMDATA ends
+endm
+
+;--- opl macro, used to define operand list types
+;--- the macro defines an EQUate, OPLIST_XX, which
+;--- is refered to by array opindex.
+
+opl macro index, value:VARARG
+OPLIST_&index equ $ - oplists
+	ifnb <value>
+	  db value
+	endif
+endm
+
+;--- flags for instruction operands.
+;--- First the sizes.
+
+OP_ALL	equ 40h		;byte/word/dword operand (could be 30h but ...)
+OP_1632	equ 50h		;word or dword operand
+OP_8	equ 60h		;byte operand
+OP_16	equ 70h		;word operand
+OP_32	equ 80h		;dword operand
+OP_64	equ 90h		;qword operand
+
+OP_SIZE	equ OP_ALL		;the lowest of these
+
+;--- These operand types need to be combined with a size flag..
+;--- order must match items in asm_jmp1, bittab and dis_jmp1
+
+OP_IMM		equ 0		;immediate
+OP_RM		equ 2		;reg/mem
+OP_M		equ 4		;mem (but not reg)
+OP_R_MOD	equ 6		;register, determined from MOD R/M part
+OP_MOFFS	equ 8		;memory offset; e.g., [1234]
+OP_R		equ 10		;reg part of reg/mem byte
+OP_R_ADD	equ 12		;register, determined from instruction byte
+OP_AX		equ 14		;al or ax or eax
+
+;--- These don't need a size.
+;--- order must match items in asm_jmp1, bittab and dis_optab.
+;--- additionally, order of OP_M64 - OP_FARMEM is used
+;--- in table asm_siznum
+
+;--- value 0 is used to terminate an operand list ( see macro opl )
+OP_M64		equ 2		; 0 qword memory (obsolete?)
+OP_MFLOAT	equ 4		; 1 float memory
+OP_MDOUBLE	equ 6		; 2 double-precision floating memory
+OP_M80		equ 8		; 3 tbyte memory
+OP_MXX		equ 10		; 4 memory (size unknown)
+OP_FARMEM	equ 12		; 5 memory far16/far32 pointer 
+OP_FARIMM	equ 14		; 6 far16/far32 immediate
+OP_REL8		equ 16		; 7 byte address relative to IP
+OP_REL1632	equ 18		; 8 word or dword address relative to IP
+OP_1CHK		equ 20		; 9 check for ST(1)
+OP_STI		equ 22		;10 ST(I)
+OP_CR		equ 24		;11 CRx
+OP_DR		equ 26		;12 DRx
+OP_TR		equ 28		;13 TRx
+OP_SEGREG	equ 30		;14 segment register
+OP_IMMS8	equ 32		;15 sign extended immediate byte
+OP_IMM8		equ 34		;16 immediate byte (other args may be (d)word)
+OP_MMX		equ 36		;17 MMx
+OP_SHOSIZ	equ 38		;18 set flag to always show the size
+
+OP_1		equ 40		;19 1 (simple "string" ops from here on)
+OP_3		equ 42		;20 3
+OP_DX		equ 44		;21 DX
+OP_CL		equ 46		;22 CL
+OP_ST		equ 48		;23 ST (top of coprocessor stack)
+OP_CS		equ 50		;24 CS
+OP_DS		equ 52		;25 DS
+OP_ES		equ 54		;26 ES
+OP_FS		equ 56		;27 FS
+OP_GS		equ 58		;28 GS
+OP_SS		equ 60		;29 SS
+
+OP_STR equ OP_1		;first "string" op
+
+CONST segment
+
+;--- Instructions that have an implicit operand subject to a segment override
+;--- (outsb/w, movsb/w, cmpsb/w, lodsb/w, xlat).
+;--- also used by disassembler
+
+prfxtab	db 06eh,06fh, 0a4h,0a5h, 0a6h,0a7h, 0ach,0adh, 0d7h
+N_PRFXTAB equ $ - prfxtab
+
+;--- Instructions that can be used with REP/REPE/REPNE.
+;--- also used by disassembler
+
+replist	db 06ch,06eh,0a4h,0aah,0ach	;REP (INSB, OUTSB, MOVSB, STOSB, LODSB)
+N_REPNC  equ $ - replist
+		db 0a6h,0aeh				;REPE/REPNE (CMPSB, SCASB)
+N_REPALL equ $ - replist
+
+	include <ASMTBL.INC>
+
+;--- opindex array - help array to access operand list items (oplists);
+;--- needed because the operand list items differ in size.
+
+opindex label byte
+	.radix 16t
+opidx = 0
+	repeat ASMMOD
+if opidx lt 10h
+%	db OPLIST_0&@CatStr(%opidx)
+else
+%	db OPLIST_&@CatStr(%opidx)
+endif
+opidx = opidx + 1
+	endm
+	.radix 10t
+	db offset agroups - offset oplists	; size of oplists table, required to find end of last operand list
+
+CONST ends
+
 _DATA segment
 
 asm_mn_flags	db 0	;flags for the mnemonic
@@ -14,6 +177,8 @@ AMF_FSGS	equ 20h		;if FS or GS was encountered
 
 AMF_D16		equ 40h		;16bit opcode/data operand
 AMF_ADDR	equ 80h		;address operand is given
+
+bEndOplItem db 0		;v2.03
 
 ;--- aa_saved_prefix and aa_seg_pre must be consecutive.
 aa_saved_prefix	db 0	;WAIT or REP... prefix
@@ -1125,16 +1290,23 @@ ac05:
 	mov [mneminfo],si	;save si back again
 	mov si,dx
 	@dprintf "ac05: opindex=%X", si
-	mov bl,[opindex+si]
+	mov ax,word ptr [opindex+si]
+	mov bl,al
+	mov [bEndOplItem], ah	; end of oplist item
+
 	lea si,[oplists+bx]		;si = the address of our operand list
 	mov di,offset line_out	;di = array of OPRNDs
 
 ;--- Begin loop over operands.
 
 ac06:               ;<--- next operand
+	mov ax, si
+	sub ax, offset oplists
+	cmp al, [bEndOplItem]
+	jae ac10
 	lodsb			;get next operand byte
-	cmp al,0
-	je ac10			;if end of list
+;	cmp al,0
+;	je ac10			;if end of list
 	cmp [di].OPRND.flags,-1
 	je ac01			;if too few operands were given
 	cmp al,OP_SIZE
