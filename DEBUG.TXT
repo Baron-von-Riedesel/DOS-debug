@@ -149,26 +149,26 @@
 
  ---
 [ENH:
-  The Breakpoint commands (BP/BC) are activated for DebugXg, DebugXv and DebugR
- only, but may be activated for all Debug variants as well. The commands use
+  The Breakpoint commands (BP/BC) are activated for DebugXg, DebugXv and
+ DebugR(L) only, but may be activated for all Debug variants. The commands use
  the 80386+ debug capabilities to set up to 4 "permanent" breakpoints. If not
  all 4 are used, the rest may be used internally by the G, T and P commands to
  set temporary breakpoints.
   The feature is not available on all platforms - on NT platforms and DosEmu,
  it's generally inactive. For other environments and to be sure, it may be
  switched off by cmdline option /s. Else it will be active in protected-mode
- and real-mode; in v86-mode, however, the feature isn't active since the
+ and real-mode; in v86-mode, however, the feature isn't active as default, since
  support of the v86 monitor programs may be unreliable. To make the debugger
  use it even then, cmdline option /v is supplied.
   Without argument, BP will display the currently active breakpoints. Although
  the breakpoints may be entered in the usual format ( segment:offset ), they
  are stored internally just as linear addresses, and so BP will display this
  linear address only.
- The type argument consists of 2 bitfields. Bits 0-1 define the type:
+ The type argument is a combined field of bits. Bits 0-1 define the type:
 
   0 code breakpoint
   1 write watchpoint
-  2 I/O watchpoint ( not allowed by DPMI v0.9/v1.0 )
+  2 I/O watchpoint ( not specified by DPMI v0.9/v1.0 )
   3 read/write watchpoint
 
  while bits 2-3 define the size ( for watchpoints ):
@@ -951,7 +951,7 @@
   Once loaded, DebugR(L) can debug programs running in both ring-0 and ring-3
  protected-mode. Since they don't use DOS or BIOS, a few commands implemented
  in the standard Debug/X aren't available: DM, DX, L, N, Q, W, Xx. OTOH,
- DebugR(L) have some special commands:
+ DebugR(L) have got some special commands:
 
  DG start [count]: display GDT ( Global Descriptor Table )
  DI start [count]: display IDT ( Interrupt Descriptor Table )

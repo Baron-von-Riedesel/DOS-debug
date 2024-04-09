@@ -444,7 +444,7 @@ txtabs label word
 	dw offset wtab1
 	dw offset ltabo1
 	dw offset ltaba1
-	dw offset prfxtab
+	dw offset prfxtab	; movsb/w, outsb/w, cmpsb/w, lodsb/w, xlat
 	dw offset replist
 	dw offset locktab
 
@@ -488,7 +488,7 @@ da21:
 	jnz @F
 	dec di
 @@:
-;	@dprintf "da21, di=%X", di
+	@dprintf "da21, di=%X", di
 	xor bx, bx
 nextflag:
 	mov ax, word ptr [preflags]	; ah=preused
@@ -606,6 +606,7 @@ disbad2:
 	jmp disbad
 
 hdl_seg:
+	@dprintf "hdl_seg, ax=%X dx=%X, cx=%X", ax, dx, cx
 	cmp ah,0
 	jnz disbad2		;if index > 256
 	push di
@@ -1258,6 +1259,10 @@ dop_shosiz:
 
 disasm endp
 
+;--- v2.03: return value in SI has changed 
+;--- up to v2.03, si returned an offset for the oplists table ( + OPTYPES_BASE )
+;--- since v2.03, si returns just an index (for table opindex).
+
 disbad proc
 if FLATSS
 	.386
@@ -1280,22 +1285,23 @@ endif
 	dec [dis_n]		;reset cnt to 0 again
 	mov bx,MN_DB	;offset of 'DB' mnemonic
 ;	mov si,OPLIST_26+OPTYPES_BASE;this says OP_IMM8
-	mov si,26h		;index 26h: this says OP_IMM8
+	mov si,26h		;v2.03: index 26h: this says OP_IMM8
 	ret
 @@:
 	or [disflags],DIS_I_UNUSED	;print special flag
 	mov bx,N_PREFIX-1
 	sub bx,cx
-	shl bx,1
-	cmp bx,6*2
+	cmp bx,6		;the first 6 items are segment prefixes
 	jb @F			;if SEG directive
+	shl bx,1		;prefix wait, lock, repe, repne
 	mov bx,[prefixmnem+bx-6*2]
 ;	mov si,OPTYPES_BASE	;no operand
-	mov si,0			;no operand
+	xor si, si			;v2.03: index 0, first item, no operand
 	ret
 @@:
-;	lea si,[bx+OPLIST_40+OPTYPES_BASE]	;this is OP_ES
-	lea si,[bx+40h]						;40h is OP_ES
+;--- an unused segment prefix
+;	lea si,[bx+OPLIST_40+OPTYPES_BASE]	;OPLIST_40 is OP_ES, size 2
+	lea si,[bx+40h]						;v2.03: 40h is index for OP_ES
 	mov bx,MN_SEG
 	ret
 disbad endp

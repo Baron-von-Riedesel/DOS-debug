@@ -308,9 +308,9 @@
          if this wasn't true, a crash may have occured.
        - fix r cmd: the disassembler tried to show memory contents for the LEA
          instruction - this may have caused a GPF.
-       - DebugX fix e cmd, prompt mode: segment part changed after first line
-         in protected-mode if it was a code selector.
-       - fix e cmd, prompt mode: '-' after byte input won't skip that input.
+       - DebugX fix e cmd, prompt mode: segment part changed to scratch sel
+         after first line in protected-mode if it was a r/o selector.
+       - fix e cmd, prompt mode: '-' after byte input did skip that input.
        - fix u cmd: address size prefix 67h for string instructions.
        - fix n cmd: names > 128 chars may have modified debug's code seg.
        - fix l & q cmd: failure of debuggee termination was ignored and the
@@ -324,9 +324,8 @@
        - cmds bp/bc accept up to 4 permanent breakpoints.
        - cmds bp/bc implemented, but inactive for Debug & DebugX; activated in
          DebugXg & DebugXv variants.
-       - DebugX, DebugR(L), G/T/P cmds: if possible, 386 debug registers will
-         be used to set temporary breakpoints; for DebugX, in both real-mode
-         and protected-mode.
+       - G/T/P cmds: if possible, 386 debug registers will be used to set
+         temporary breakpoints. Active for DebugX, DebugR(L).
        - new cmdline options /s and /v for debugger variants that may use
          hardware breakpoints ( option /v not for DebugR(L) variant ).
        - g cmd: if a breakpoint cannot be written, the cmd is aborted.
