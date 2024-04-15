@@ -1,0 +1,18 @@
+
+; test a(ssemble) cmd
+
+a
+mov cx,1
+movzx cx,cl
+movzx ecx,cl
+mov cx,[0]
+movzx cx,[0]
+movzx ecx,[0]	; should be an error
+movzx ecx,wo [0]
+call far 0:0
+call ne 0       ; should be ok
+cmp [0],0       ; should be an error
+cmp wo [0],0
+
+u 100 l 30
+q

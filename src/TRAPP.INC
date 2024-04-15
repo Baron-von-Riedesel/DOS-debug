@@ -114,7 +114,7 @@ if SAFESS
 endif
 endm
 
-;--- store value of cr2 in exc msg
+;--- store value of cr2/cr3 in exc msg
 rendercr2:
 	cld
 	push es

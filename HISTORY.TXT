@@ -95,9 +95,9 @@
        - DebugX: several bugfixes for A and U handling 32bit code segments.
        - bugfix: U split lines if instruction size exceeded 6.
        - bugfix: M didn't work with "upper bound" ranges.
-       - DebugX change: in 32bit code segments, U displayed ECX as first
-         operand for LOOPx to indicate that ECX is used instead of CX.
-         Now a 'D' is attached to the opcode (LOOPxD, x=Z|NZ|E|NE) instead.
+       - DebugX change: the 32-bit variant of the LOOPx instruction was
+         indicated by displaying ECX as first operand. Now a suffix (W/D)
+         is attached to the opcode instead.
        - bugfix: A didn't choose the short (=signed) form of arith
          instructions (adc, add, ...) if E/AX was first operand.
     1.10 [25 January 2008]
@@ -318,6 +318,8 @@
        - fix a cmd: regression since v1.18: "call/jmp [mem_ref]" without a size
          given did default to a far call/jmp.
        - fix u cmd: operand size prefix 66h for 8/16/32-bit relative jmps.
+       - fix a cmd: NEar qualifier was accepted/ignored for immediate far
+         jmp/call.
        - u cmd, call far [mem]: qualifiers "FAR"/"DWORD FAR" changed to
          "FAR16"/"FAR32".
        - DebugR(L): Q cmd may be activated for this variant.

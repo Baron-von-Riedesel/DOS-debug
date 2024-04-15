@@ -47,7 +47,7 @@
 ;       - better syntax checks for A (so i.e. "mov ax,al" is rejected)
 ;       - add MMX instructions for A and U
 ;       - support loading *.HEX files
-;       - hide debug's IVT vectors 0,1,3? Alternately, init them only when the
+;       - hide debug's IVT vectors 0,1,3 for d(i)? Alternately, init them only when the
 ;         first G/P/T cmd is run, like MS Debug does for 1 & 3?
 
 VERSION    textequ <2.03>
@@ -93,7 +93,8 @@ DGCMD      = 0		; support DG cmd
 DICMD      = 0		; support DI cmd
 DLCMD      = 0		; support DL cmd
 DMCMD      = 1		; support DM cmd
-DPCMD      = 0		; support DP cmd
+DPCMD      = 0		; support DP cmd (dump partition)
+DPCMDR0    = 0		; support DP cmd (dump paging table, ring0 only)
 DTCMD      = 0		; support DT cmd
 DXCMD      = 0		; support DX cmd
 QCMD       = 1		; support Q cmd
@@ -207,6 +208,7 @@ CATCHINT0C = 0
  endif
 CATCHINT0D = 1
 CATCHINT41 = 0
+DPCMDR0    = 0
 LCMD       = 0
 QCMD       = 0	; may be set to 1
 WCMD       = 0
@@ -1049,6 +1051,8 @@ if DMCMD
 endif
 if DPCMD
 	db 'dump partitions', TAB, 'DP physical_disk',CR,LF
+elseif DPCMDR0
+	db 'dump page table', TAB, 'DP [linear_address]',CR,LF
 endif
 if DTCMD
 	db 'dump TSS', TAB, 'DT',CR,LF
@@ -1561,6 +1565,7 @@ initdpmi proc
 	pop edx
 	.286
 	adc al,0
+	jz @F
 	mov cl, 66h
 	mov ah, 4
 @@:
@@ -2189,11 +2194,52 @@ cc2:
 	ret
 c_cmd endp
 
-if DPCMD
+if DPCMD or DPCMDR0
+
+dp_cmd proc
+
+ if DPCMDR0
+
+	.386
+ 
+CONST segment
+szCr3 db "CR3=",0
+szMappedCr3 db ", mapped at ",0
+CONST ends
+
+	mov si, offset szCr3
+	call copystring
+	mov eax, cr3
+	call hexdword
+	mov esi, cr3
+	and si, 0F000h	;esi=physical address
+	mov cx, 4	; cx=size in bytes
+	mov ax, 2	; return linear address (in esi) of physical region
+
+;--- callout int 22h requires to set the host ring0 stack!
+
+	mov bp, sp
+	mov dx, ss
+	lss esp, [r0SSEsp]
+	int 22h		; win396 debugger interface
+	mov ss, dx
+	mov sp, bp
+
+	cmp ax, 1
+	jnz exit
+	push esi
+	mov si, offset szCr3
+	call copystring
+	pop eax
+	call hexdword
+exit:
+	call putsline
+	ret
+
+ else
 
 ;--- DP disk - display partition table of a fixed disk
 
-dp_cmd proc
 	call getbyte		;get byte into DL
 	call chkeol			;expect end of line here
 	mov bp, sp
@@ -2242,6 +2288,7 @@ error:
 	mov sp, bp
 	call int21ah9
 	ret
+ endif
 dp_cmd endp
 endif
 
@@ -3131,7 +3178,7 @@ dcmds label byte
 	@condcmd DICMD,'i',di_cmd
 	@condcmd DLCMD,'l',dgl_cmd
 	@condcmd DMCMD,'m',dm_cmd
-	@condcmd DPCMD,'p',dp_cmd
+	@condcmd DPCMD or DPCMDR0,'p',dp_cmd
 	@condcmd DTCMD,'t',dt_cmd
 	@condcmd DXCMD,'x',dx_cmd
 size_dcmds equ ($ - offset dcmds) / 3

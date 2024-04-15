@@ -83,14 +83,14 @@ oplists label byte
 	opl 49,OP_DR, OP_32+OP_R_MOD	; idx=73, ofs=D0h
 	opl 4A,OP_32+OP_R_MOD, OP_TR	; idx=74, ofs=D3h
 	opl 4B,OP_TR, OP_32+OP_R_MOD	; idx=75, ofs=D6h
-if MMXSUPP
+ife MMXSUPP
+ASMMOD	EQU 76
+else
 	opl 4C,OP_MMX, OP_32+OP_RM	; idx=76, ofs=D9h
 	opl 4D,OP_32+OP_RM, OP_MMX	; idx=77, ofs=DCh
 	opl 4E,OP_MMX, OP_64+OP_RM	; idx=78, ofs=DFh
 	opl 4F,OP_64+OP_RM, OP_MMX	; idx=79, ofs=E2h
-ASMMOD	EQU 50h
-else
-ASMMOD	EQU 4Ch
+ASMMOD	EQU 80
 endif
 
 ;--- Assembler: data on groups.

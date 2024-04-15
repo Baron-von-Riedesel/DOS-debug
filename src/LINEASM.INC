@@ -1,6 +1,11 @@
 
 ;--- A command - tiny assembler.
 
+;--- todo:
+;--- 1. fix regression since v1.09: cmp [x], yy  assumes word operand if no size given
+;--- 2. MS debug accepts call near/far [x], Debug rejects near [x], accepts far [x]
+;--- 3. MS debug accepts call near/far x (adding current cs as seg if far), Debug rejects both
+
 ;--- macros for asmtbl.inc
 
 ;--- mne macro, used for the assembler mnemonics table
@@ -54,6 +59,7 @@ endm
 ;--- opl macro, used to define operand list types
 ;--- the macro defines an EQUate, OPLIST_XX, which
 ;--- is refered to by array opindex.
+;--- v2.03: "terminating" 0 no longer required.
 
 opl macro index, value:VARARG
 OPLIST_&index equ $ - oplists
@@ -90,8 +96,9 @@ OP_AX		equ 14		;al or ax or eax
 ;--- order must match items in asm_jmp1, bittab and dis_optab.
 ;--- additionally, order of OP_M64 - OP_FARMEM is used
 ;--- in table asm_siznum
+;--- v2.03: value 0 was used to terminate an operand list ( macro opl )
+;---        it's free now.
 
-;--- value 0 is used to terminate an operand list ( see macro opl )
 OP_M64		equ 2		; 0 qword memory (obsolete?)
 OP_MFLOAT	equ 4		; 1 float memory
 OP_MDOUBLE	equ 6		; 2 double-precision floating memory
@@ -953,6 +960,13 @@ ab14:
 	jg ab17			;if we can't have a colon here
 	cmp al,':'
 	jne ab17		;if not xxxx:yyyy
+if 1	;v2.03: size for ssss:oooo must be none or far
+	cmp [di].OPRND.sizearg, SIZ_NONE
+	jz @F
+	cmp [di].OPRND.sizearg, SIZ_FAR
+	jnz ab24
+@@:
+endif
 	call skipwhite
 	call aageti
 	mov cx,word ptr [di].OPRND.num+0
@@ -1317,7 +1331,7 @@ ac06:               ;<--- next operand
 ;	shr al,cl		;move bits 0-3 back
 	db 0d4h,10h		;=aam 10h (AX=00XY -> AX=0X0Y)
 	mov [ai.reqsize],ah	;save size away
-	@dprintf "ac08: size requested, AH in AX=%X", ax
+	@dprintf "ac08: di=%X size requested, AH in AX=%X", di, ax
 	jmp ac08
 @@:					;AL = OP_M64 - ...
 	add al,ASM_OPOFF - OP_M64	;adjust for the start entries im asm_jmp1
@@ -1327,7 +1341,7 @@ ac08:
 	mov cx,[asm_jmp1+bx] ;subroutine address
 	shr bx,1
 	mov al,[bittab+bx]
-	@dprintf "ac08: si=%X, offset=%X, func=%X, al=%X", si, bx, cx, ax
+	@dprintf "ac08: di=%X si=%X, offset=%X, func=%X, al=%X", di, si, bx, cx, ax
 	test al,[di].OPRND.flags
 	jz ac09			;if no required bits are present
 	call cx			;call its specific routine
@@ -1709,8 +1723,9 @@ aop_ax:
 
 ao07:               ;<--- entry for OP_RM, OP_M, OP_R_MOD, OP_R, OP_R_ADD...
 	or [ai.varflags],VAR_SIZ_NEED
-	mov al,[ai.reqsize]
-	sub al,5		;OP_1632 >> 4
+	@dprintf "ao07: size check, reqsizeB=%X, sizeargB=%X", word ptr ai.reqsize, word ptr [di].OPRND.sizearg
+	mov al,[ai.reqsize]	;4 OP_ALL, 5 OP_1632, 6 OP_8, 7 OP_16, 8 OP_32, 9 OP_64
+	sub al,5
 	jl ao12			;if OP_ALL
 	jz ao13			;if OP_1632
 ;--- OP_8=1, OP_16=2, OP_32=3, OP_64=4
