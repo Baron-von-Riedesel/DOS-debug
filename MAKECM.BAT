@@ -9,4 +9,5 @@ rem 4) mktables.c
 set MSVC=\msvc
 set LIB=%MSVC%\lib
 %MSVC%\bin\cl -c -nologo -G3 -Fobuild\mktables.obj -I%MSVC%\include src\mktables.c
-%MSVC%\bin\link /NOLOGO build\mktables.obj,build\mktables.exe,build\mktables.map /NON;
+rem %MSVC%\bin\link /NOLOGO build\mktables.obj,build\mktables.exe,build\mktables.map /NON;
+%MSVC%\bin\link build\mktables.obj,build\mktables.exe,build\mktables.map;

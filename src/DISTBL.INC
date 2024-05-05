@@ -73,25 +73,25 @@ SPARSE_BASE	equ $ - optypes
 ;--- The rest of these are squeezed.
 	db      0,  004h,  004h,OT(08),OT(08),OT(00),OT(00),OT(00)	;00
 	db OT(46),OT(48),OT(47),OT(49),OT(4A),OT(4B),OT(00),OT(00)	;08
-	db OT(08),OT(08),OT(08),OT(08),OT(08),OT(08),OT(08),OT(08)	;10
+	db OT(00),OT(08),OT(08),OT(08),OT(08),OT(08),OT(08),OT(08)	;10
 	db OT(08),OT(08),OT(08),OT(08),OT(08),OT(08),OT(08),OT(08)	;18
 if MMXSUPP
-	db OT(4C),OT(4E),OT(00),OT(4D),OT(4F),OT(0C),OT(0C),OT(0C)	;20
+	db OT(08),OT(4C),OT(4E),OT(00),OT(4D),OT(4F),OT(0C),OT(0C)	;20
 else
-	db 0     ,0     ,OT(00),0     ,0     ,OT(0C),OT(0C),OT(0C)	;20
+	db OT(08),0     ,0     ,OT(00),0     ,0     ,OT(0C),OT(0C)	;20
 endif
 	db OT(0C),OT(0C),OT(0C),OT(0C),OT(0C),OT(0C),OT(0C),OT(0C)	;28
-	db OT(0C),OT(0C),OT(0C),OT(0C),OT(0C),OT(3B),OT(3B),OT(3B)	;30
+	db OT(0C),OT(0C),OT(0C),OT(0C),OT(0C),OT(0C),OT(3B),OT(3B)	;30
 	db OT(3B),OT(3B),OT(3B),OT(3B),OT(3B),OT(3B),OT(3B),OT(3B)	;38
-	db OT(3B),OT(3B),OT(3B),OT(3B),OT(3B),OT(44),OT(44),OT(00)	;40
-	db OT(0A),OT(3C),OT(3D),OT(45),OT(45),OT(00),OT(0A),OT(3C)	;48
-	db OT(3D),OT(08),OT(04),OT(04),OT(07),OT(0A),OT(07),OT(07)	;50
-	db OT(30),OT(31),  004h,OT(0A),OT(08),OT(08),OT(30),OT(31)	;58
-	db OT(04),OT(04),  004h,OT(09),OT(09),OT(09),OT(09),OT(09)	;60
-	db OT(09),OT(09),OT(09),OT(10),OT(10),OT(0B),OT(0B),OT(0B)	;68
-	db OT(0B),OT(0F),OT(34),OT(02),OT(00),OT(00),OT(00),OT(00)	;70
+	db OT(3B),OT(3B),OT(3B),OT(3B),OT(3B),OT(3B),OT(44),OT(44)	;40
+	db OT(00),OT(0A),OT(3C),OT(3D),OT(45),OT(45),OT(00),OT(0A)	;48
+	db OT(3C),OT(3D),OT(08),OT(04),OT(04),OT(07),OT(0A),OT(07)	;50
+	db OT(07),OT(30),OT(31),  004h,OT(0A),OT(08),OT(08),OT(30)	;58
+	db OT(31),OT(04),OT(04),  004h,OT(09),OT(09),OT(09),OT(09)	;60
+	db OT(09),OT(09),OT(09),OT(09),OT(10),OT(10),OT(0B),OT(0B)	;68
+	db OT(0B),OT(0B),OT(0F),OT(34),OT(02),OT(00),OT(00),OT(00)	;70
 	db OT(00),OT(00),OT(00),OT(00),OT(00),OT(00),OT(00),OT(00)	;78
-	db OT(1E)
+	db OT(00),OT(1E)
 
 OTDATA ends
 
@@ -105,9 +105,9 @@ P686	equ 6000h
 	align 2
 
 ;--- compressed table of additional information.
-;--- Bits 0-11 are the offset of the mnemonics table if the
-;--- corresponding item in optypes is of kind OT(); else
-;--- it's a parameter for the optypes processing.
+;--- Bits 0-11 are the offset of the mnemonics table if
+;--- the corresponding item in optypes is defined via OT();
+;--- else it's a parameter for the optype processing.
 ;--- Bits 12-15 are the cpu which introduced this opcode.
 
 opinfo label word
@@ -235,41 +235,41 @@ opinfo label word
 	dw  0, 0138h, 0140h, P286 + MN_LAR	;00
 	dw  P286 + MN_LSL, P286 + MN_CLTS, P486 + MN_INVD, P486 + MN_WBINVD	;04
 	dw  P386 + MN_MOV, P386 + MN_MOV, P386 + MN_MOV, P386 + MN_MOV	;08
-	dw  P386 + MN_MOV, P386 + MN_MOV, P586 + MN_WRMSR, P586 + MN_RDMSR	;0C
-	dw  P686 + MN_CMOVO, P686 + MN_CMOVNO, P686 + MN_CMOVB, P686 + MN_CMOVAE	;10
-	dw  P686 + MN_CMOVZ, P686 + MN_CMOVNZ, P686 + MN_CMOVBE, P686 + MN_CMOVA	;14
-	dw  P686 + MN_CMOVS, P686 + MN_CMOVNS, P686 + MN_CMOVPE, P686 + MN_CMOVPO	;18
-	dw  P686 + MN_CMOVL, P686 + MN_CMOVGE, P686 + MN_CMOVLE, P686 + MN_CMOVG	;1C
+	dw  P386 + MN_MOV, P386 + MN_MOV, P586 + MN_WRMSR, P586 + MN_RDTSC	;0C
+	dw  P586 + MN_RDMSR, P686 + MN_CMOVO, P686 + MN_CMOVNO, P686 + MN_CMOVB	;10
+	dw  P686 + MN_CMOVAE, P686 + MN_CMOVZ, P686 + MN_CMOVNZ, P686 + MN_CMOVBE	;14
+	dw  P686 + MN_CMOVA, P686 + MN_CMOVS, P686 + MN_CMOVNS, P686 + MN_CMOVPE	;18
+	dw  P686 + MN_CMOVPO, P686 + MN_CMOVL, P686 + MN_CMOVGE, P686 + MN_CMOVLE	;1C
+	dw  P686 + MN_CMOVG
 if MMXSUPP
-	dw  P586 + MN_MOVD, P586 + MN_MOVQ, P586 + MN_EMMS, P586 + MN_MOVD	;20
-	dw  P586 + MN_MOVQ, P386 + MN_JO, P386 + MN_JNO, P386 + MN_JB	;24
+	dw  P586 + MN_MOVD, P586 + MN_MOVQ, P586 + MN_EMMS, P586 + MN_MOVD, P586 + MN_MOVQ
 else
-	dw  0, 0, 0, 0	;20
-	dw  0, P386 + MN_JO, P386 + MN_JNO, P386 + MN_JB	;24
+	dw  0, 0, 0, 0, 0
 endif
-	dw  P386 + MN_JAE, P386 + MN_JZ, P386 + MN_JNZ, P386 + MN_JBE	;28
-	dw  P386 + MN_JA, P386 + MN_JS, P386 + MN_JNS, P386 + MN_JPE	;2C
-	dw  P386 + MN_JPO, P386 + MN_JL, P386 + MN_JGE, P386 + MN_JLE	;30
-	dw  P386 + MN_JG, P386 + MN_SETO, P386 + MN_SETNO, P386 + MN_SETB	;34
-	dw  P386 + MN_SETAE, P386 + MN_SETZ, P386 + MN_SETNZ, P386 + MN_SETBE	;38
-	dw  P386 + MN_SETA, P386 + MN_SETS, P386 + MN_SETNS, P386 + MN_SETPE	;3C
-	dw  P386 + MN_SETPO, P386 + MN_SETL, P386 + MN_SETGE, P386 + MN_SETLE	;40
-	dw  P386 + MN_SETG, P386 + MN_PUSH, P386 + MN_POP, P586 + MN_CPUID	;44
-	dw  P386 + MN_BT, P386 + MN_SHLD, P386 + MN_SHLD, P386 + MN_PUSH	;48
-	dw  P386 + MN_POP, P586 + MN_RSM, P386 + MN_BTS, P386 + MN_SHRD	;4C
-	dw  P386 + MN_SHRD, P386 + MN_IMUL, P486 + MN_CMPXCHG, P486 + MN_CMPXCHG	;50
-	dw  P386 + MN_LSS, P386 + MN_BTR, P386 + MN_LFS, P386 + MN_LGS	;54
-	dw  P386 + MN_MOVZX, P386 + MN_MOVZX, 02e8h, P386 + MN_BTC	;58
-	dw  P386 + MN_BSF, P386 + MN_BSR, P386 + MN_MOVSX, P386 + MN_MOVSX	;5C
-	dw  P486 + MN_XADD, P486 + MN_XADD, 02f0h, P486 + MN_BSWAP	;60
+	dw  P386 + MN_JO, P386 + MN_JNO	;24
+	dw  P386 + MN_JB, P386 + MN_JAE, P386 + MN_JZ, P386 + MN_JNZ	;28
+	dw  P386 + MN_JBE, P386 + MN_JA, P386 + MN_JS, P386 + MN_JNS	;2C
+	dw  P386 + MN_JPE, P386 + MN_JPO, P386 + MN_JL, P386 + MN_JGE	;30
+	dw  P386 + MN_JLE, P386 + MN_JG, P386 + MN_SETO, P386 + MN_SETNO	;34
+	dw  P386 + MN_SETB, P386 + MN_SETAE, P386 + MN_SETZ, P386 + MN_SETNZ	;38
+	dw  P386 + MN_SETBE, P386 + MN_SETA, P386 + MN_SETS, P386 + MN_SETNS	;3C
+	dw  P386 + MN_SETPE, P386 + MN_SETPO, P386 + MN_SETL, P386 + MN_SETGE	;40
+	dw  P386 + MN_SETLE, P386 + MN_SETG, P386 + MN_PUSH, P386 + MN_POP	;44
+	dw  P586 + MN_CPUID, P386 + MN_BT, P386 + MN_SHLD, P386 + MN_SHLD	;48
+	dw  P386 + MN_PUSH, P386 + MN_POP, P586 + MN_RSM, P386 + MN_BTS	;4C
+	dw  P386 + MN_SHRD, P386 + MN_SHRD, P386 + MN_IMUL, P486 + MN_CMPXCHG	;50
+	dw  P486 + MN_CMPXCHG, P386 + MN_LSS, P386 + MN_BTR, P386 + MN_LFS	;54
+	dw  P386 + MN_LGS, P386 + MN_MOVZX, P386 + MN_MOVZX, 02e8h	;58
+	dw  P386 + MN_BTC, P386 + MN_BSF, P386 + MN_BSR, P386 + MN_MOVSX	;5C
+	dw  P386 + MN_MOVSX, P486 + MN_XADD, P486 + MN_XADD, 02f0h	;60
 	dw  P486 + MN_BSWAP, P486 + MN_BSWAP, P486 + MN_BSWAP, P486 + MN_BSWAP	;64
-	dw  P486 + MN_BSWAP, P486 + MN_BSWAP, P486 + MN_BSWAP, MN_INC	;68
-	dw  MN_DEC, P386 + MN_BT, P386 + MN_BTS, P386 + MN_BTR	;6C
-	dw  P386 + MN_BTC, P586 + MN_CMPXCHG8B, MN_POP, MN_MOV	;70
-	dw  MN_FNOP, MN_FCHS, MN_FABS, MN_FTST	;74
-	dw  MN_FXAM, P386 + MN_FUCOMPP, MN_FNENI, MN_FNDISI	;78
-	dw  MN_FNCLEX, MN_FNINIT, P286 + MN_FNSETPM, MN_FCOMPP	;7C
-	dw  MN_FNSTSW
+	dw  P486 + MN_BSWAP, P486 + MN_BSWAP, P486 + MN_BSWAP, P486 + MN_BSWAP	;68
+	dw  MN_INC, MN_DEC, P386 + MN_BT, P386 + MN_BTS	;6C
+	dw  P386 + MN_BTR, P386 + MN_BTC, P586 + MN_CMPXCHG8B, MN_POP	;70
+	dw  MN_MOV, MN_FNOP, MN_FCHS, MN_FABS	;74
+	dw  MN_FTST, MN_FXAM, P386 + MN_FUCOMPP, MN_FNENI	;78
+	dw  MN_FNDISI, MN_FNCLEX, MN_FNINIT, P286 + MN_FNSETPM	;7C
+	dw  MN_FCOMPP, MN_FNSTSW
 
 ;--- table converts unsqueezed numbers to squeezed.
 ;--- 1E0-2DF are extended opcodes (0F xx).
@@ -282,26 +282,26 @@ sqztab label byte
 	db   0,  0,  0,  0,  0,  0,  0,  0	;1F8
 	db   8,  9, 10, 11, 12,  0, 13,  0	;200
 	db   0,  0,  0,  0,  0,  0,  0,  0	;208
-	db  14,  0, 15,  0,  0,  0,  0,  0	;210
+	db  14, 15, 16,  0,  0,  0,  0,  0	;210
 	db   0,  0,  0,  0,  0,  0,  0,  0	;218
-	db  16, 17, 18, 19, 20, 21, 22, 23	;220
-	db  24, 25, 26, 27, 28, 29, 30, 31	;228
+	db  17, 18, 19, 20, 21, 22, 23, 24	;220
+	db  25, 26, 27, 28, 29, 30, 31, 32	;228
 	db   0,  0,  0,  0,  0,  0,  0,  0	;230
 	db   0,  0,  0,  0,  0,  0,  0,  0	;238
 	db   0,  0,  0,  0,  0,  0,  0,  0	;240
-	db   0,  0,  0,  0,  0,  0, 32, 33	;248
-	db   0,  0,  0,  0,  0,  0,  0, 34	;250
-	db   0,  0,  0,  0,  0,  0, 35, 36	;258
-	db  37, 38, 39, 40, 41, 42, 43, 44	;260
-	db  45, 46, 47, 48, 49, 50, 51, 52	;268
-	db  53, 54, 55, 56, 57, 58, 59, 60	;270
-	db  61, 62, 63, 64, 65, 66, 67, 68	;278
-	db  69, 70, 71, 72, 73, 74,  0,  0	;280
-	db  75, 76, 77, 78, 79, 80,  0, 81	;288
-	db  82, 83, 84, 85, 86, 87, 88, 89	;290
-	db   0,  0, 90, 91, 92, 93, 94, 95	;298
-	db  96, 97,  0,  0,  0,  0,  0, 98	;2A0
-	db  99,100,101,102,103,104,105,106	;2A8
+	db   0,  0,  0,  0,  0,  0, 33, 34	;248
+	db   0,  0,  0,  0,  0,  0,  0, 35	;250
+	db   0,  0,  0,  0,  0,  0, 36, 37	;258
+	db  38, 39, 40, 41, 42, 43, 44, 45	;260
+	db  46, 47, 48, 49, 50, 51, 52, 53	;268
+	db  54, 55, 56, 57, 58, 59, 60, 61	;270
+	db  62, 63, 64, 65, 66, 67, 68, 69	;278
+	db  70, 71, 72, 73, 74, 75,  0,  0	;280
+	db  76, 77, 78, 79, 80, 81,  0, 82	;288
+	db  83, 84, 85, 86, 87, 88, 89, 90	;290
+	db   0,  0, 91, 92, 93, 94, 95, 96	;298
+	db  97, 98,  0,  0,  0,  0,  0, 99	;2A0
+	db 100,101,102,103,104,105,106,107	;2A8
 	db   0,  0,  0,  0,  0,  0,  0,  0	;2B0
 	db   0,  0,  0,  0,  0,  0,  0,  0	;2B8
 	db   0,  0,  0,  0,  0,  0,  0,  0	;2C0
@@ -311,22 +311,22 @@ sqztab label byte
 
 ;--- 5 sparse groups
 
-	db 107,108,  0,  0,  0,  0,  0,  0	;2E0
-	db   0,  0,  0,  0,109,110,111,112	;2E8
-	db   0,113,  0,  0,  0,  0,  0,  0	;2F0
-	db 114,  0,  0,  0,  0,  0,  0,  0	;2F8
-	db 115,  0,  0,  0,  0,  0,  0,  0	;300
+	db 108,109,  0,  0,  0,  0,  0,  0	;2E0
+	db   0,  0,  0,  0,110,111,112,113	;2E8
+	db   0,114,  0,  0,  0,  0,  0,  0	;2F0
+	db 115,  0,  0,  0,  0,  0,  0,  0	;2F8
+	db 116,  0,  0,  0,  0,  0,  0,  0	;300
 
 ;--- 6 sparse fpu groups
 
 SFPGROUPS equ SPARSE_BASE + ( $ - sqztab )
 SFPGROUP3 equ SFPGROUPS + 8 * 3
-	db 116,  0,  0,  0,  0,  0,  0,  0	;308
-	db 117,118,  0,  0,119,120,  0,  0	;310
-	db   0,121,  0,  0,  0,  0,  0,  0	;318
-	db 122,123,124,125,126,  0,  0,  0	;320
-	db   0,127,  0,  0,  0,  0,  0,  0	;328
-	db 128,  0,  0,  0,  0,  0,  0,  0	;330
+	db 117,  0,  0,  0,  0,  0,  0,  0	;308
+	db 118,119,  0,  0,120,121,  0,  0	;310
+	db   0,122,  0,  0,  0,  0,  0,  0	;318
+	db 123,124,125,126,127,  0,  0,  0	;320
+	db   0,128,  0,  0,  0,  0,  0,  0	;328
+	db 129,  0,  0,  0,  0,  0,  0,  0	;330
 
 ;--- table of mnemonics that change in the presence of a WAIT
 ;--- instruction.

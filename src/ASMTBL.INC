@@ -118,7 +118,7 @@ agroups label word
 ;---   if a >= 0x100 && a < 0x200: two byte "0F"-opcode.
 ;---   if a >= 0x200 && a < 0x240: fp instruction.
 ;---   if a >= 0x240: refers to agroups [macro AGRP() is used].
-;--- variant's 2. argument is index into array opindex.
+;--- variant's 2. argument is index for array opindex.
 
 mnlist label byte
 	mne AAA	; ofs=0h
@@ -1119,35 +1119,38 @@ endif
 	mne RDMSR	; ofs=5BEh
 	 variant 132h, 0, , ASM_MACH5
 	 endvariant
-	mne REP, ASM_LOCKREP, 0f3h	; ofs=5C2h
-	mne REPE, ASM_LOCKREP, 0f3h	; ofs=5C4h
-	mne REPNE, ASM_LOCKREP, 0f2h	; ofs=5C6h
-	mne RET	; ofs=5C8h
+	mne RDTSC	; ofs=5C2h
+	 variant 131h, 0, , ASM_MACH5
+	 endvariant
+	mne REP, ASM_LOCKREP, 0f3h	; ofs=5C6h
+	mne REPE, ASM_LOCKREP, 0f3h	; ofs=5C8h
+	mne REPNE, ASM_LOCKREP, 0f2h	; ofs=5CAh
+	mne RET	; ofs=5CCh
 	 variant 0c3h, 0
 	 variant 0c2h, 58
 	 endvariant
-	mne RETF, ASM_D16	; ofs=5CDh
-	mne RETFD, ASM_D32	; ofs=5CEh
+	mne RETF, ASM_D16	; ofs=5D1h
+	mne RETFD, ASM_D32	; ofs=5D2h
 	 variant 0cbh, 0
 	 variant 0cah, 58
 	 endvariant
-	mne RSM	; ofs=5D4h
+	mne RSM	; ofs=5D8h
 	 variant 1aah, 0, , ASM_MACH5
 	 endvariant
-	mne SAHF	; ofs=5D8h
+	mne SAHF	; ofs=5DCh
 	 variant 09eh, 0
 	 endvariant
-	mne SAL	; ofs=5DBh
+	mne SAL	; ofs=5DFh
 	 variant AGRP(11,4), 55
 	 variant AGRP(12,4), 56
 	 variant AGRP(13,4), 57, , ASM_MACH1
 	 endvariant
-	mne SAR	; ofs=5E3h
+	mne SAR	; ofs=5E7h
 	 variant AGRP(11,7), 55
 	 variant AGRP(12,7), 56
 	 variant AGRP(13,7), 57, , ASM_MACH1
 	 endvariant
-	mne SEG	; ofs=5EBh
+	mne SEG	; ofs=5EFh
 	 variant 026h, 64
 	 variant 02eh, 65
 	 variant 036h, 66
@@ -1155,209 +1158,209 @@ endif
 	 variant 064h, 68
 	 variant 065h, 69
 	 endvariant
-	mne ES, ASM_SEG, 026h	; ofs=5F8h
-	mne CS, ASM_SEG, 02eh	; ofs=5FAh
-	mne SS, ASM_SEG, 036h	; ofs=5FCh
-	mne DS, ASM_SEG, 03eh	; ofs=5FEh
-	mne FS, ASM_SEG, 064h	; ofs=600h
-	mne GS, ASM_SEG, 065h	; ofs=602h
-	mne SHL	; ofs=604h
+	mne ES, ASM_SEG, 026h	; ofs=5FCh
+	mne CS, ASM_SEG, 02eh	; ofs=5FEh
+	mne SS, ASM_SEG, 036h	; ofs=600h
+	mne DS, ASM_SEG, 03eh	; ofs=602h
+	mne FS, ASM_SEG, 064h	; ofs=604h
+	mne GS, ASM_SEG, 065h	; ofs=606h
+	mne SHL	; ofs=608h
 	 variant AGRP(11,4), 55
 	 variant AGRP(12,4), 56
 	 variant AGRP(13,4), 57, , ASM_MACH1
 	 endvariant
-	mne SHR	; ofs=60Ch
+	mne SHR	; ofs=610h
 	 variant AGRP(11,5), 55
 	 variant AGRP(12,5), 56
 	 variant AGRP(13,5), 57, , ASM_MACH1
 	 endvariant
-	mne SBB	; ofs=614h
+	mne SBB	; ofs=618h
 	 variant AGRP(0,3), 3, ASM_LOCKABLE
 	 variant 01ch, 1
 	 variant AGRP(1,3), 2, ASM_LOCKABLE
 	 variant 018h, 4, ASM_LOCKABLE
 	 variant 01ah, 5
 	 endvariant
-	mne SCASB	; ofs=622h
+	mne SCASB	; ofs=626h
 	 variant 0aeh, 0
 	 endvariant
-	mne SCASW, ASM_D16	; ofs=625h
-	mne SCASD, ASM_D32	; ofs=626h
+	mne SCASW, ASM_D16	; ofs=629h
+	mne SCASD, ASM_D32	; ofs=62Ah
 	 variant 0afh, 0
 	 endvariant
-	mne SETA	; ofs=62Ah
+	mne SETA	; ofs=62Eh
 	 variant 197h, 59, , ASM_MACH3
 	 endvariant
-	mne SETAE	; ofs=62Eh
+	mne SETAE	; ofs=632h
 	 variant 193h, 59, , ASM_MACH3
 	 endvariant
-	mne SETB	; ofs=632h
+	mne SETB	; ofs=636h
 	 variant 192h, 59, , ASM_MACH3
 	 endvariant
-	mne SETBE	; ofs=636h
+	mne SETBE	; ofs=63Ah
 	 variant 196h, 59, , ASM_MACH3
 	 endvariant
-	mne SETC	; ofs=63Ah
+	mne SETC	; ofs=63Eh
 	 variant 192h, 59, , ASM_MACH3
 	 endvariant
-	mne SETE	; ofs=63Eh
+	mne SETE	; ofs=642h
 	 variant 194h, 59, , ASM_MACH3
 	 endvariant
-	mne SETG	; ofs=642h
+	mne SETG	; ofs=646h
 	 variant 19fh, 59, , ASM_MACH3
 	 endvariant
-	mne SETGE	; ofs=646h
+	mne SETGE	; ofs=64Ah
 	 variant 19dh, 59, , ASM_MACH3
 	 endvariant
-	mne SETL	; ofs=64Ah
+	mne SETL	; ofs=64Eh
 	 variant 19ch, 59, , ASM_MACH3
 	 endvariant
-	mne SETLE	; ofs=64Eh
+	mne SETLE	; ofs=652h
 	 variant 19eh, 59, , ASM_MACH3
 	 endvariant
-	mne SETNA	; ofs=652h
+	mne SETNA	; ofs=656h
 	 variant 196h, 59, , ASM_MACH3
 	 endvariant
-	mne SETNAE	; ofs=656h
+	mne SETNAE	; ofs=65Ah
 	 variant 192h, 59, , ASM_MACH3
 	 endvariant
-	mne SETNB	; ofs=65Ah
+	mne SETNB	; ofs=65Eh
 	 variant 193h, 59, , ASM_MACH3
 	 endvariant
-	mne SETNBE	; ofs=65Eh
+	mne SETNBE	; ofs=662h
 	 variant 197h, 59, , ASM_MACH3
 	 endvariant
-	mne SETNC	; ofs=662h
+	mne SETNC	; ofs=666h
 	 variant 193h, 59, , ASM_MACH3
 	 endvariant
-	mne SETNE	; ofs=666h
+	mne SETNE	; ofs=66Ah
 	 variant 195h, 59, , ASM_MACH3
 	 endvariant
-	mne SETNG	; ofs=66Ah
+	mne SETNG	; ofs=66Eh
 	 variant 19eh, 59, , ASM_MACH3
 	 endvariant
-	mne SETNGE	; ofs=66Eh
+	mne SETNGE	; ofs=672h
 	 variant 19ch, 59, , ASM_MACH3
 	 endvariant
-	mne SETNL	; ofs=672h
+	mne SETNL	; ofs=676h
 	 variant 19dh, 59, , ASM_MACH3
 	 endvariant
-	mne SETNLE	; ofs=676h
+	mne SETNLE	; ofs=67Ah
 	 variant 19fh, 59, , ASM_MACH3
 	 endvariant
-	mne SETNO	; ofs=67Ah
+	mne SETNO	; ofs=67Eh
 	 variant 191h, 59, , ASM_MACH3
 	 endvariant
-	mne SETNP	; ofs=67Eh
+	mne SETNP	; ofs=682h
 	 variant 19bh, 59, , ASM_MACH3
 	 endvariant
-	mne SETNS	; ofs=682h
+	mne SETNS	; ofs=686h
 	 variant 199h, 59, , ASM_MACH3
 	 endvariant
-	mne SETNZ	; ofs=686h
+	mne SETNZ	; ofs=68Ah
 	 variant 195h, 59, , ASM_MACH3
 	 endvariant
-	mne SETO	; ofs=68Ah
+	mne SETO	; ofs=68Eh
 	 variant 190h, 59, , ASM_MACH3
 	 endvariant
-	mne SETP	; ofs=68Eh
+	mne SETP	; ofs=692h
 	 variant 19ah, 59, , ASM_MACH3
 	 endvariant
-	mne SETPE	; ofs=692h
+	mne SETPE	; ofs=696h
 	 variant 19ah, 59, , ASM_MACH3
 	 endvariant
-	mne SETPO	; ofs=696h
+	mne SETPO	; ofs=69Ah
 	 variant 19bh, 59, , ASM_MACH3
 	 endvariant
-	mne SETS	; ofs=69Ah
+	mne SETS	; ofs=69Eh
 	 variant 198h, 59, , ASM_MACH3
 	 endvariant
-	mne SETZ	; ofs=69Eh
+	mne SETZ	; ofs=6A2h
 	 variant 194h, 59, , ASM_MACH3
 	 endvariant
-	mne SGDT	; ofs=6A2h
+	mne SGDT	; ofs=6A6h
 	 variant AGRP(7,0), 29, , ASM_MACH2
 	 endvariant
-	mne SIDT	; ofs=6A6h
+	mne SIDT	; ofs=6AAh
 	 variant AGRP(7,1), 29, , ASM_MACH2
 	 endvariant
-	mne SHLD	; ofs=6AAh
+	mne SHLD	; ofs=6AEh
 	 variant 1a4h, 60, , ASM_MACH3
 	 variant 1a5h, 61, , ASM_MACH3
 	 endvariant
-	mne SHRD	; ofs=6B1h
+	mne SHRD	; ofs=6B5h
 	 variant 1ach, 60, , ASM_MACH3
 	 variant 1adh, 61, , ASM_MACH3
 	 endvariant
-	mne SLDT	; ofs=6B8h
+	mne SLDT	; ofs=6BCh
 	 variant AGRP(8,0), 40, , ASM_MACH2
 	 endvariant
-	mne SMSW	; ofs=6BCh
+	mne SMSW	; ofs=6C0h
 	 variant AGRP(7,4), 40, , ASM_MACH2
 	 endvariant
-	mne STC	; ofs=6C0h
+	mne STC	; ofs=6C4h
 	 variant 0f9h, 0
 	 endvariant
-	mne STD	; ofs=6C3h
+	mne STD	; ofs=6C7h
 	 variant 0fdh, 0
 	 endvariant
-	mne STI	; ofs=6C6h
+	mne STI	; ofs=6CAh
 	 variant 0fbh, 0
 	 endvariant
-	mne STOSB	; ofs=6C9h
+	mne STOSB	; ofs=6CDh
 	 variant 0aah, 0
 	 endvariant
-	mne STOSW, ASM_D16	; ofs=6CCh
-	mne STOSD, ASM_D32	; ofs=6CDh
+	mne STOSW, ASM_D16	; ofs=6D0h
+	mne STOSD, ASM_D32	; ofs=6D1h
 	 variant 0abh, 0
 	 endvariant
-	mne STR	; ofs=6D1h
+	mne STR	; ofs=6D5h
 	 variant AGRP(8,1), 41, , ASM_MACH2
 	 endvariant
-	mne SUB	; ofs=6D5h
+	mne SUB	; ofs=6D9h
 	 variant AGRP(0,5), 3, ASM_LOCKABLE
 	 variant 02ch, 1
 	 variant AGRP(1,5), 2, ASM_LOCKABLE
 	 variant 028h, 4, ASM_LOCKABLE
 	 variant 02ah, 5
 	 endvariant
-	mne TEST	; ofs=6E3h
+	mne TEST	; ofs=6E7h
 	 variant 0a8h, 1
 	 variant AGRP(6,0), 2
 	 variant 084h, 4
 	 variant 084h, 5
 	 endvariant
-	mne VERR	; ofs=6ECh
+	mne VERR	; ofs=6F0h
 	 variant AGRP(8,4), 41, , ASM_MACH2
 	 endvariant
-	mne VERW	; ofs=6F0h
+	mne VERW	; ofs=6F4h
 	 variant AGRP(8,5), 41, , ASM_MACH2
 	 endvariant
-	mne WAIT	; ofs=6F4h
+	mne WAIT	; ofs=6F8h
 	 variant 09bh, 0
 	 endvariant
-	mne WBINVD	; ofs=6F7h
+	mne WBINVD	; ofs=6FBh
 	 variant 109h, 0, , ASM_MACH4
 	 endvariant
-	mne WRMSR	; ofs=6FBh
+	mne WRMSR	; ofs=6FFh
 	 variant 130h, 0, , ASM_MACH5
 	 endvariant
-	mne XADD	; ofs=6FFh
+	mne XADD	; ofs=703h
 	 variant 1c0h, 4, ASM_LOCKABLE, ASM_MACH4
 	 endvariant
-	mne XCHG	; ofs=704h
+	mne XCHG	; ofs=708h
 	 variant 090h, 62
 	 variant 090h, 63
 	 variant 086h, 4, ASM_LOCKABLE
 	 variant 086h, 5, ASM_LOCKABLE
 	 endvariant
-	mne XLAT	; ofs=70Fh
+	mne XLAT	; ofs=713h
 	 variant 0d7h, 0
 	 endvariant
-	mne XLATB	; ofs=712h
+	mne XLATB	; ofs=716h
 	 variant 0d7h, 0
 	 endvariant
-	mne XOR	; ofs=715h
+	mne XOR	; ofs=719h
 	 variant AGRP(0,6), 3, ASM_LOCKABLE
 	 variant 034h, 1
 	 variant AGRP(1,6), 2, ASM_LOCKABLE

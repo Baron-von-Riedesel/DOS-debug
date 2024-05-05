@@ -334,6 +334,7 @@ rcr d0/3:38 d2/3:39 c0/3:3A;1
 rol d0/0:38 d2/0:39 c0/0:3A;1
 ror d0/1:38 d2/1:39 c0/1:3A;1
 rdmsr 0f32.;5
+rdtsc 0f31.;5
 rep f3*
 repe f3*
 repne f2*

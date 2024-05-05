@@ -303,7 +303,7 @@
        - DebugR(L): added bp & bc cmds.
     2.02 [11.2.2024]
        - fixed S cmd: position display was corrupted in v2.00-v2.01.
-    2.03 []
+    2.10 [5.5.2024]
        - DebugR fix: debugger assumed a 32-bit ring0 SS register on init;
          if this wasn't true, a crash may have occured.
        - fix r cmd: the disassembler tried to show memory contents for the LEA
@@ -333,3 +333,4 @@
        - g cmd: if a breakpoint cannot be written, the cmd is aborted.
        - Debug & DebugX may now be created in .exe file format.
        - mktables.c: creates ASMTBL.INC/DISTBL.INC instead of DEBUGTBL.INC.
+       - cmds a, u: instruction RDTSC added.

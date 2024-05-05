@@ -50,7 +50,7 @@
 ;       - hide debug's IVT vectors 0,1,3 for d(i)? Alternately, init them only when the
 ;         first G/P/T cmd is run, like MS Debug does for 1 & 3?
 
-VERSION    textequ <2.03>
+VERSION    textequ <2.10>
 
 	option casemap:none
 	option proc:private
