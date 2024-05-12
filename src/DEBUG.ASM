@@ -109,6 +109,8 @@ INT2324    = 1		; switch int 23h & 24h for debugger/debuggee
 USEFP2STR  = 0		; 1=use FloatToStr()
 FLATSS     = 0		; always 0 except for DebugRL; flat stack needed for long mode ring0 variant.
 
+SKIPBPINDBG equ 1	; 1=breakpoints occuring while in debug are reported, won't reenter debug
+
 if LMODE
 CS32	equ 40h or 20h	; check both default size and 64-bit mode
 else
@@ -116,6 +118,10 @@ CS32	equ 40h		; check just the default size in legacy
 endif
 
 @VecAttr textequ <>
+
+ifndef V86M
+V86M       equ 0	; 1=support v86 mode ( for RING0 only )
+endif
 
 if RING0
  if LMODE
@@ -591,6 +597,9 @@ run2324	dw 0,0,0,0	;debuggee's interrupt vectors 23 and 24 (both modes)
 endif
 if RING0
 wFlat	dw 0
+ if V86M
+dwV86Ofs dd 0
+ endif
 endif
 if VDD
 hVdd	dw -1		;handle of NT helper VDD
@@ -722,6 +731,9 @@ eqflag	db 0		;flag indicating presence of '=' argument
 bInit	db 0		;0=ensure a valid opcode is at debuggee's CS:IP
 if ?PM
 scratchsel dw 0		;scratch selector ( used by cmds a,c,e,f,g,m,p,t )
+ if RING0 and V86M
+scratchv86 dw 0
+ endif
 bCSAttr db 0		;current code attribute (D bit).
 bAddr32 db 0		;1=offset is 32-bit ( segment limit > 0ffffh )
 bFlagsPM db 0		;bit 0: 0=no default set for A cmd 
@@ -1013,7 +1025,11 @@ endif
 ifdef PROMPT
 prompt1	db @CatStr(!',%PROMPT,!')
 else
+ if RING0 and V86M
+prompt1	db '>'	;indicates v86 mode for DebugRV
+ else
 prompt1	db '-'	;main prompt
+ endif
 endif
 
 prompt2	db ':'	;prompt for register value
@@ -1352,6 +1368,9 @@ getr0stk proc
  if LMODE
 	sub eax, 6*8
 	and al, 0F0h	; aligned to 16-byte
+ elseif V86M
+;--- it's important to generally subtract 10 dwords, regs.rFL will be modified by "skip" and cannot be used
+	sub eax, 10*4	; adjust ESP ( ERRC, EIP, CS, EFL, ESP, SS, ES, DS, FS, GS )
  else
 	sub eax, 6*4	; adjust ESP ( ERRC, EIP, CS, EFL, ESP, SS )
  endif
@@ -1943,7 +1962,7 @@ endif
 ife ?PM
 	mov dx,offset prompt1
 else
- if ?DPMI
+ if ?DPMI or ( RING0 and V86M )
 	mov dx,offset prompt1
 	call ispm_dbe			; debuggee in rm/pm?
 	jz @F
@@ -3112,6 +3131,28 @@ dx_cmd endp
 
 endif
 
+if RING0 and V86M
+chkdispsegm proc
+	test byte ptr[regs.rFL+2],2
+	jz @F
+	cmp ax, [scratchsel]
+	jnz @F
+	mov ax, [scratchv86]
+@@:
+	jmp hexword
+chkdispsegm endp
+endif
+
+@dispsegm macro segm
+	mov ax,segm
+if RING0 and V86M
+	call chkdispsegm
+else
+	call hexword
+endif
+endm
+
+
 ;--- D command - hex/ascii dump.
 
 d_cmd proc
@@ -3236,8 +3277,7 @@ endif
 
 nextline:
 	mov di,offset line_out
-	mov ax,[d_addr+4]
-	call hexword
+	@dispsegm [d_addr+4]
 	mov al,':'
 	stosb
 	sizeprfX		; mov eax, esi
@@ -3343,6 +3383,63 @@ endif
 
 d_cmd endp
 
+if RING0 and V86M
+
+v86setofs:
+	test byte ptr [regs.rFL+2], 2	; v86-mode
+	jz nov86
+	.386
+
+;--- either use scratch selector or flat selector
+;--- both variants have their pros and cons.
+;--- still to decide...
+
+ if 0
+
+V86OFSFR struct
+	dd ?	;edx
+	dw ?	;return addr
+wSegm dw ?	;src/dst register
+V86OFSFR ends
+
+	push edx
+	movzx edx, [esp].V86OFSFR.wSegm
+	shl edx, 4
+	mov [dwV86Ofs], edx
+	mov dx, [wFlat]
+	mov [esp].V86OFSFR.wSegm, dx
+	pop edx
+ else
+
+V86OFSFR struct
+	dw ?	;dx
+	dw ?	;bx
+	dw ?	;return addr
+wSegm dw ?	;src/dst register
+V86OFSFR ends
+
+	push dx
+	push bx
+	mov dx, [esp].V86OFSFR.wSegm
+	call setscratchsel  
+	mov [esp].V86OFSFR.wSegm, bx
+	pop bx
+	pop dx
+ endif
+nov86:
+	ret
+endif
+
+@movs macro dst, src
+if RING0 and V86M
+	push src
+	call v86setofs
+	pop dst
+else
+	mov dst, src
+endif
+endm
+
 errorj4:
 	jmp cmd_error
 
@@ -3350,7 +3447,7 @@ errorj4:
 
 e_cmd proc
 	call prephack
-	mov bx,[regs.rDS]
+	@movs bx,[regs.rDS]
 	call getaddr	;get address into bx:(e)dx
 	call skipcomm0
 	cmp al,CR
@@ -3423,8 +3520,7 @@ endif
 ;--- Begin loop over lines.
 
 e_nextl:			;<--- next line
-	mov ax,bx		;print out segment and offset
-	call hexword
+	@dispsegm bx	;print out segment part
 	mov al,':'
 	stosb
 	sizeprfX		;mov eax,edx
@@ -4103,15 +4199,15 @@ LoadSDA:
 @@:
 	ret
 
-ispm_dbg:	; debugger in protected-mode
 ispm_dbe:	; debuggee in protected-mode?
+ispm_dbg:	; debugger in protected-mode
 	cmp cs:[regs.msw],0 	;returns: Z=real-mode, NZ=prot-mode
 	ret
 
-elseif 0;RING0
-ispm_dbe:	; debuggee in protected-mode?
+elseif RING0 and V86M
+ispm_dbe:	; return Z if debuggee in v86-mode
 	push ax
-	mov ax, cs:[regs.efl+2]
+	mov ax, [regs.rFL+2]
 	and al, 2	; VM bit  
 	xor al, 2
 	pop ax
@@ -5406,11 +5502,16 @@ IsWriteableBX endp
 
  if RING0
 
-;--- hack to make 'u' work with a real-mode segment
+;--- in: DX=real-mode segment
+;--- out: BX=scratch sel, base modified to match the segment in DX
 
 setscratchsel proc
+  if V86M
+	mov [scratchv86], dx
+  endif
 	pushad
   if FLATSS
+	mov ebp, esp
 	sub esp, 6
 	sgdt [esp]
   else
@@ -5434,7 +5535,7 @@ setscratchsel proc
 	mov word ptr [ebx+2], ax
 	shr eax, 16
 	mov byte ptr [ebx+4], al
-	mov word ptr [ebx+5], 9Bh
+	mov word ptr [ebx+5], 0093h	; data, writeable, present, 16-bit
 	mov byte ptr [ebx+7], ah
 	pop ds
 	popad
@@ -5463,7 +5564,7 @@ setrmaddr:		;<--- set selector in BX to segment address in DX
 ;--- modifies EAX, BX
 
 getcsattr proc
-	mov bx,[regs.rCS]
+	@movs bx,[regs.rCS]
 getseldefsize::	;<--- any selector in BX
  if ?DPMI
 	mov al,00
@@ -5523,7 +5624,7 @@ endif ; ?PM
 
 getcseipbyte proc
 	push es
-	mov es, [regs.rCS]
+	@movs es, [regs.rCS]
 	sizeprfX		;mov ebx,[regs.rIP]
 	mov bx,[regs.rIP]
 if ?PM
@@ -6272,13 +6373,30 @@ found:
 	xchg si, bx
 	mov ebx, dword ptr [regs.rSP]
 	mov dx, [regs.rSS]
+ if V86M
+	test byte ptr [regs.rFL+2], 2
+	jnz isv86
+ endif
 	lar ax, [regs.rCS]
 	and ah, 60h				; exception occured in ring 0?
 	jz @F
+isv86:
 	mov ebx, [regs.r0Esp]	; no, use saved r0 stack
 	mov dx, [regs.r0SS]
 	@dprintf "sk: r3 exc, old r0 ss:esp=%X:%lX, vec=%X", dx, ebx, si
 	sub ebx, 2*4			; and correct esp for saved r3 ss:esp
+ if V86M
+	test byte ptr [regs.rFL+2], 2
+	jz isv86_2
+	sub ebx, 4*4			; for v86-mode, space for saved r3 regs es,ds,fs,gs
+	and byte ptr [regs.rFL+2], not 2	; reset VM flag   
+	xor ax, ax
+	mov [regs.rDS], ax
+	mov [regs.rES], ax
+	mov [regs.rFS], ax
+	mov [regs.rGS], ax
+isv86_2:
+ endif
 @@:
 	bt [run_intw], 15	; exc with error code?
 	jnc @F
@@ -6577,7 +6695,7 @@ else
 	jc isstdtrace			;then do standard trace
 endif
 useproceed:
-	mov bx,[regs.rCS]
+	@movs bx,[regs.rCS]
 	sizeprfX			; mov esi,[regs.rIP]
 	mov si,[regs.rIP]
 if ?PM
@@ -6713,7 +6831,7 @@ endif
 
 clear_tf_onstack proc
 	push es
-	mov es, [regs.rSS]
+	@movs es, [regs.rSS]
 if ?PM
 	mov bx,es
 ;	call getseglimit      ; v1.29: segment limit doesn't matter,
@@ -6725,6 +6843,7 @@ if ?PM
 	jmp ctos_1
 	.8086
 @@:
+	@dprintf "clear_tf_onstack: es=%X", es
 endif
 	mov bx,[regs.rSP]
 	and byte ptr es:[bx+1],not 1
@@ -6752,7 +6871,7 @@ endif
 ;--- "unexpected" exception in real-mode inside debugger
 
 ife RING0
- if CATCHINT07 or CATCHINT0C or CATCHINT0D
+ if CATCHINT07 or CATCHINT0C or CATCHINT0D or SKIPBPINDBG
 ue_intxx:
   if EXCCSIP
 	pop cx
@@ -7888,9 +8007,14 @@ run proc
 
 if RING0
 ;--- check segment values, since there's no stack switch if a GPF occurs.
+ if V86M
+	test byte ptr [regs.rFL+2], 2	;v86-mode?
+	jnz @F
+ endif
 	call checksegm
 	mov dx, offset segerr
 	jc int21ah9
+@@:
 endif
 
 if USEHWBP
@@ -8005,6 +8129,30 @@ else
 	mov gs, [regs.rGS]
 @@:
  endif
+ if V86M
+	test byte ptr [regs.rFL+2], 2
+	jz @F
+	popad
+	lss esp, [regs.r0SSEsp]
+	mov [bInDbg],0
+	push 0
+	push [regs.rGS]
+	push 0
+	push [regs.rFS]
+	push 0
+	push [regs.rDS]
+	push 0
+	push [regs.rES]
+	push 0
+	push [regs.rSS]
+	push dword ptr [regs.rSP]
+	push dword ptr [regs.rFL]
+	push 0
+	push [regs.rCS]
+	push dword ptr [regs.rIP]
+	iretd
+@@:
+ endif
 	lar ax, [regs.rCS]
 	and ah, 60h
 	popad
@@ -8056,6 +8204,8 @@ run endp
 if RING0
  if LMODE
 	include <TRAPPL.INC>
+ elseif V86M
+	include <TRAPPV.INC>
  else
 	include <TRAPP.INC>
  endif
@@ -8376,7 +8526,7 @@ bp_cmd:
 	call skipwhite
 	cmp al,CR       ; no argument given? then just display status...
 	jz bp_disp
-	mov bx,[regs.rCS];default segment to use
+	@movs bx,[regs.rCS];default segment to use
 	call getaddr	; get address into bx:e/dx
 	call skipwh0
 	push edx
@@ -9466,7 +9616,7 @@ getlenforbx endp
 ;--- get range with default segment DS
 
 getrangeDS proc
-	mov bx,[regs.rDS]
+	@movs bx,[regs.rDS]
 ;--- fall thru!
 getrangeDS endp
 
@@ -9589,15 +9739,21 @@ if ?PM
 	jmp ga3
 @@:
 ;--- hack for a/u cmds: allow to enter a real-mode address.
-;--- since the debugger cannot handle v86-mode exceptions yet,
+;--- since DebugR[L] cannot handle v86-mode exceptions,
 ;--- this hack allows to at least (dis)assemble real-mode code parts.
 	cmp al, '$'
 	jnz normseg
+  if V86M
+;--- in v86-mode, '$' is unknown
+	test byte ptr [regs.rFL+2],2	; syntax NOT valid in v86-mode
+	jnz errorj2
+  else
 	cmp [lastcmd], offset u_cmd	; u cmd?
 	jz @F
 	cmp [errret], offset cmdloop; a cmd?
 	jz normseg
 @@:
+  endif
 	lodsb
 	call getword
 	cmp al,':'
@@ -9605,6 +9761,20 @@ if ?PM
 	call setscratchsel	; set BX to scratchsel
 	jmp ga3
 normseg:
+  if V86M
+	cmp al,'#'			; segment part is a selector?
+	jnz @F
+	test byte ptr [regs.rFL+2],2	; syntax valid only in v86-mode
+	jz errorj2
+	lodsb
+	call getword
+	@dprintf "getaddr: # detected, selector=%X ax=%X", dx, ax
+	cmp al,':'
+	jnz errorj2
+	mov bx, dx
+	jmp ga3
+@@:
+  endif
  endif
 endif
 	call getofsforbx
@@ -9619,7 +9789,7 @@ endif
 
 ga2:
 	pop ax		;throw away saved si
-	mov bx,dx	;mov segment into BX
+	@movs bx,dx	;mov segment into BX
 ga3:
 	call skipwhite	;skip to next word
 if ?PM
@@ -9996,7 +10166,7 @@ endif
 	mov di, offset u_addr
 	movsw
 	movsw
-	mov ax,[regs.rCS]
+	@movs ax,[regs.rCS]
 	stosw
 	mov al, DIS_F_REPT or DIS_F_SHOW
 	call disasm
@@ -10083,9 +10253,14 @@ CONST ends
 
 dmpr0ssesp:
 	.386
+ if V86M
+	test byte ptr [regs.rFL+2],2
+	jnz isv86
+ endif
 	lar ax, [regs.rCS]
 	and ah,60h
 	jz @F
+isv86:
 	mov si, offset pl0esp
 	mov cl, sizeof pl0esp
 	rep movsb

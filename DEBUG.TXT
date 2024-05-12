@@ -73,6 +73,20 @@
  while in command mode. Command mode, indicated by the presence of the
  DEBUG command prompt (a hyphen), is the mode that DEBUG starts in.
 
+ [ENH:
+  Debug/X changes the command prompt if the debuggee has been stopped
+ inside DOS - a '!' will precede the default prompt ('!-' instead of
+ just '-'). DebugX changes the prompt to '#' if debuggee is in protected-
+ mode. Prompt '!#', which means "inside DOS" AND "in protected-mode",
+ is also possible, if the debuggee has been stopped in a so-called
+ DPMI real-mode callback.
+
+  The DebugR variants don't "know" about DOS and hence there's never a 
+ '!' prompt prefix. In protected-mode, a '#' prompt is displayed, just
+ like DebugX does. DebugRV, however, also supports v86-mode - and will
+ change the prompt to '>' if this mode is active.
+ ]
+
  For the more recent versions of DEBUG, you can cause DEBUG to display
  a list of the commands and their parameters by entering a "?" at the
  DEBUG command prompt.
@@ -100,6 +114,9 @@
  is actually using one of these variables. For the remainder of this
  section, all register names refer to the associated variable.
 
+
+ 3.1 Entering Addresses and Ranges
+
  For the commands that accept a range parameter, the parameter can be
  used to specify a starting address, or a starting and ending address,
  or a starting address and a length. To differentiate a length
@@ -115,19 +132,17 @@
  -D DS:100 102
  -D SS:20 L 4
 
- [ENH: the command prompt is changed if the debuggee has been stopped
- inside DOS - a '!' will precede the default prompt ('!-' instead of
- just '-'). DebugX changes the prompt to '#' if debuggee is in protected-
- mode. Prompt '!#', which means "inside DOS" AND "in protected-mode",
- is also possible, if the debuggee has been stopped in a so-called
- DPMI real-mode callback.
-
- When an address is entered in protected-mode, a '$' just before the
- segment part will tell DebugX to interpret the address as a real-mode
- address. However, this should be used sparsely, since DPMI function
- 0002 is used to convert the segment - the selector returned cannot
- be released anymore.
-
+ [ENH:
+  DebugX/DebugR: when an address is entered in protected-mode, a '$'
+ just before the segment part will tell those variants to interpret the
+ address as a real-mode address. However, as for DebugX this should be
+ used sparsely, since DPMI function 0002 is used to convert the segment
+ - the selector returned cannot be released anymore.
+  DebugRV: when an address is entered while in v86-mode, a '#' just
+ before the segment part will tell DebugRV to interpret the segment as
+ a selector.
+ ]
+ 
  If debuggee is in protected-mode and the segment part of an address
  has a limit beyond 64k, the offset parts of the starting and ending
  address - as well as the length - can be 32bit. Examples:
@@ -150,10 +165,10 @@
  ---
 [ENH:
   The Breakpoint commands (BP/BC) are activated for DebugXg, DebugXv and
- DebugR(L) only, but may be activated for all Debug variants. The commands use
- the 80386+ debug capabilities to set up to 4 "permanent" breakpoints. If not
- all 4 are used, the rest may be used internally by the G, T and P commands to
- set temporary breakpoints.
+ DebugR(L|V) only, but may be activated for all Debug variants. The commands
+ use the 80386+ debug capabilities to set up to 4 "permanent" breakpoints. If
+ not all 4 are used, the rest may be used internally by the G, T and P commands
+ to set temporary breakpoints.
   The feature is not available on all platforms - on NT platforms and DosEmu,
  it's generally inactive. For other environments and to be sure, it may be
  switched off by cmdline option /s. Else it will be active in protected-mode
@@ -939,23 +954,23 @@
  10. DebugR Basics
  -----------------
 
-  DebugR and DebugRL are variants of DEBUG that run in ring-0 (privileged)
- protected-mode. DebugR runs in "legacy" mode, while DebugRL runs in long
- mode. For DebugR, a 80386 or better CPU is required, while DebugRL needs
- a 64-bit CPU. Both variants are plain binaries that have to be loaded and
- initialized (in protected-mode!) by some kind of "loader" code.
-  Unlike DebugX, the DebugR(L) binaries aren't bimodal ( meaning to be able
- to run in both real-mode and protected-mode ). For DebugR, exceptions in
- v86-mode, which are reported if DebugR runs in the context of a v86-monitor
- program like Jemm386, are ignored.
-  DebugR and DebugRL don't use DOS and actually don't use any BIOS calls at
- all. For their tty i/o they call out to the "loader" program, which is
- responsible to route those calls to the OS or handle them on its own.
+  DebugR, DebugRL and DebugRV are variants of DEBUG that run in ring-0
+ (privileged) protected-mode. DebugR and DebugRV run in "legacy" mode, while
+ DebugRL runs in long mode. For DebugR(V), a 80386 or better CPU is required,
+ while DebugRL needs a 64-bit CPU. All variants are plain binaries that have
+ to be loaded and initialized (in protected-mode!) by some kind of "loader"
+ code. Unlike DebugX, the DebugR(L|V) binaries aren't bimodal ( meaning to be
+ able to run in both real-mode and protected-mode ). Exceptions in v86-mode,
+ which are reported if DebugR(V) runs in the context of a v86-monitor program
+ like Jemm386, are ignored by DebugR - DebugRV is able to handle them.
+  DebugR(L|V) don't use DOS and actually don't use any BIOS calls at all. For
+ their tty i/o they call out to the "loader" program, which is responsible to
+ route those calls to the OS or handle them on its own.
  
-  Once loaded, DebugR(L) can debug programs running in both ring-0 and ring-3
+  Once loaded, DebugR(L|V) can debug programs running in both ring-0 and ring-3
  protected-mode. Since they don't use DOS or BIOS, a few commands implemented
  in the standard Debug/X aren't available: DM, DX, L, N, Q, W, Xx. OTOH,
- DebugR(L) have got some special commands:
+ DebugR(L|V) have got some special commands:
 
  DG start [count]: display GDT ( Global Descriptor Table )
  DI start [count]: display IDT ( Interrupt Descriptor Table )
@@ -972,9 +987,10 @@
  Commands G, T and P: since support for 80386+ hardware debug registers is
  active, it may be used by those commands in case a breakpoint is to be set. 
  If no more free breakpoints are available - of if cmdline option -s has been
- set -, the debugger will switch back to "soft" breakpoints. One shouldn't set
- a breakpoint that may be triggered in real-mode - DebugR is, unlike DebugX,
- not bimodal and hence won't be notified in such cases!
+ set -, the debugger will switch back to "soft" breakpoints. As for DebugR and
+ DebugRL, one shouldn't set a breakpoint that may be triggered in real/v86-mode
+ - these variants are not bimodal, cannot handle V86-mode and hence won't be
+ notified in such cases!
 
   At the debugger prompt, when an address is to be parsed, the prefix '%' will
  tell the debugger to interpret the following offset as linear address.
@@ -982,11 +998,12 @@
  of the range argument with a '$' to make DebugR(L) interpret it as real-mode
  address and translate the segment to a selector.
 
-  Some GPFs occuring in non-privileged code are not handled by DebugR(L): CLI/STI
- executed by programs with IOPL 0; trapped IN/INS/OUT/OUTS instructions; INT XX
- with DPL==0 in the IDT.
+  Some GPFs occuring in non-privileged code are not handled by DebugR(L|V):
+ CLI/STI executed by programs with IOPL 0; trapped IN/INS/OUT/OUTS instructions;
+ INT XX with DPL==0 in the IDT. DebugRV: "breakpoint" instructions used by the
+ V86 monitor program to exit V86 mode.
  
-  DebugR(L) understand commandline option -m, that will instruct it to assume
+  DebugR(L|V) understand commandline option -m, that will instruct it to assume
  that exception and IRQ vectors ( interrupts 08-0Fh ) do not overlap.
 
 

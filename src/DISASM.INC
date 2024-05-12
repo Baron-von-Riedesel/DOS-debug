@@ -701,8 +701,7 @@ da_done:
 da28b:
 	push di		;print start of disassembly line
 	mov di,offset line_out
-	mov ax,[u_addr+4]	;print address
-	call hexword
+	@dispsegm [u_addr+4];print segment part of address
 	mov al,':'
 	stosb
 	sizeprfX			;mov eax,[u_addr+0]
@@ -811,7 +810,7 @@ da32h:
 if ?PM
 ;--- v2.0: we don't want that just msg "General Protection Fault"
 ;--- appears, without a hint what the underlying problem is.
-;--- so display what's rendered up to now...
+;--- so display what's rendered so far...
 	call puts
 	or [disflags], DIS_I_MEMACC	; tell exc handler to print a crlf first
 	mov di, offset line_out
@@ -820,7 +819,8 @@ endif
 	shr cl, 1
 ;--- v2.0: just read the bytes that the instruction would
 	push ds
-	mov ds, [bx]
+	@movs ds, [bx]
+ds_is_set:
 	mov bx, cs:[addrr]
 	add bx, cx
 @@:

@@ -170,11 +170,11 @@
      active. Definitely not for beginners. See "Installing and Initializing
      DebugB" in DEBUG.TXT for details.
 
-   - DebugR(L).BIN: versions that runs in ring0 protected-mode. These variants
-     need additional software a) to be loaded and b) to handle the i/o
-     requests. Like DebugB.BIN no DOS is used - actually, not even the BIOS
-     is used - and hence these are not really "DOS debuggers" anymore. See
-     "DebugR Basics" in DEBUG.TXT for more details.
+   - DebugR(L|V).BIN: variants that run in ring0 protected-mode. These
+     binaries need additional software a) to be loaded and b) to handle the
+     i/o requests. Like DebugB.BIN no DOS is used - actually, not even the
+     BIOS is used - and hence these are not really "DOS debuggers" anymore.
+     See "DebugR Basics" in DEBUG.TXT for more details.
 
   d. The following features of MS Debug are not implemented:
 

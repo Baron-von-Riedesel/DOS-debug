@@ -158,6 +158,13 @@ endif
 ;--- Interrupt 3 (breakpoint interrupt) handler.
 
 intr03:
+if SKIPBPINDBG
+	cmp cs:[bInDbg],0
+	jz @F
+	mov ax, EXC03MSG
+	jmp ue_intxx
+@@:
+endif
 	mov cs:[run_int], EXC03MSG	;remember interrupt type
 
 intrtnr proc

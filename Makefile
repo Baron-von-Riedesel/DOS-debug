@@ -9,7 +9,7 @@ NAME=DEBUG
 OUTD=build
 
 ALL: $(OUTD)/DEBUG.COM   $(OUTD)/DEBUGX.COM  $(OUTD)/DEBUGXD.COM $(OUTD)/DEBUGXE.COM $(OUTD)/DEBUGXF.COM \
-     $(OUTD)/DEBUGXG.EXE $(OUTD)/DEBUGXU.COM $(OUTD)/DEBUGXV.COM $(OUTD)/DEBUGB.BIN  $(OUTD)/DEBUGR.BIN $(OUTD)/DEBUGRL.BIN
+     $(OUTD)/DEBUGXG.EXE $(OUTD)/DEBUGXU.COM $(OUTD)/DEBUGXV.COM $(OUTD)/DEBUGB.BIN  $(OUTD)/DEBUGR.BIN $(OUTD)/DEBUGRL.BIN $(OUTD)/DEBUGRV.BIN
 
 DEPS= src/$(NAME).ASM src/ASMTBL.INC src/DISTBL.INC src/DPRINTF.INC src/FPTOSTR.INC src/DISASM.INC src/LINEASM.INC
 
@@ -46,6 +46,9 @@ $(OUTD)/DEBUGR.BIN:  $(DEPS) src/TRAPP.INC
 $(OUTD)/DEBUGRL.BIN: $(DEPS) src/TRAPPL.INC
 	@echo creating debugRL.bin - a protected-mode "ring 0"  version for long mode
 	@jwasm -nologo -bin  -Fo $(OUTD)/DEBUGRL.BIN -Fl=$(OUTD)/DEBUGRL.LST -Sg -DRING0=1 -DLMODE=1 src/$(NAME).ASM
+$(OUTD)/DEBUGRV.BIN: $(DEPS) src/TRAPPV.INC
+	@echo creating debugRV.bin - a protected-mode "ring 0"  version with v86 support
+	@jwasm -nologo -bin  -Fo $(OUTD)/DEBUGRV.BIN -Fl=$(OUTD)/DEBUGRV.LST -Sg -DRING0=1 -DV86M=1 src/$(NAME).ASM
 
 clean:
 	del $(OUTD)\$(NAME)*.com
