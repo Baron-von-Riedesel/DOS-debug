@@ -50,7 +50,7 @@
 ;       - hide debug's IVT vectors 0,1,3 for d(i)? Alternately, init them only when the
 ;         first G/P/T cmd is run, like MS Debug does for 1 & 3?
 
-VERSION    textequ <2.10>
+VERSION    textequ <2.50>
 
 	option casemap:none
 	option proc:private
@@ -304,7 +304,11 @@ endif
 
 if ?PM or CATCHINT07
 EXCCSIP    equ 1	;display CS:IP where exception occured
+ if V86M
+EXCCSEIP   equ 1	;debugger may callout to v86-monitor, which is 32-bit CS
+ else
 EXCCSEIP   equ 0	;may be activated if unknown exceptions occur in debugger
+ endif
 else
 EXCCSIP    equ 0
 endif
@@ -2071,6 +2075,7 @@ waitkey endp
 	include lineasm.inc
 
 if ?PM
+;--- called by c_cmd, e_cmd, f_cmd, m_cmd, s_cmd
 IsOfs32 proc
 	cmp cs:[bAddr32],0
 	ret
@@ -2457,7 +2462,11 @@ ldtrdone:
 	call putsline
 	pop si
 	popf
-	jc done
+	jnc @F
+	test bl,4
+	jz @F
+	jmp done
+@@:
 endif
 if ?DPMI
 	.286
@@ -3152,6 +3161,15 @@ else
 endif
 endm
 
+@movs macro dst, src
+if RING0 and V86M
+	push src
+	call v86setofs
+	pop dst
+else
+	mov dst, src
+endif
+endm
 
 ;--- D command - hex/ascii dump.
 
@@ -3164,7 +3182,7 @@ d_cmd proc
 if RING0
 	verr bx
 	jz @F
-	mov bx, [regs.rDS]
+	@movs bx, [regs.rDS]
 	xor edx, edx
 @@:
 endif
@@ -3263,8 +3281,8 @@ dd1_1:
 ;--- E/SI=src offset, E/DX=end src
 
 dd2:
+	mov [d_addr+4], bx	;save segment/selector (offset is saved later)
 	mov [lastcmd], offset d_cmd
-	mov [d_addr+4], bx	;save segment (offset is saved later)
 	mov bp, offset dd16
 if ?PM
 	call getseglimit	;Z flag set if segment limit is <= 64 kB
@@ -3429,16 +3447,6 @@ V86OFSFR ends
 nov86:
 	ret
 endif
-
-@movs macro dst, src
-if RING0 and V86M
-	push src
-	call v86setofs
-	pop dst
-else
-	mov dst, src
-endif
-endm
 
 errorj4:
 	jmp cmd_error
@@ -3938,7 +3946,7 @@ g_cmd proc
 if USEHWBP
 	mov bp, [wStoreBP]
 endif
-@@:
+nextbp:
 	dec si
 	call skipcomma
 	cmp al,CR		;end of line?
@@ -3951,15 +3959,29 @@ endif
 ;--- Anyway,  multiple BPs with different segment parts all used
 ;--- the very same "scratch" selector, resulting in "random" mem writes.
 
-	mov bx,[eqladdr+4]	;default segment ( either CS or segm of '=' )
+	@movs bx,[eqladdr+4]	;default segment ( either CS or segm of '=' )
 	call getaddr	;get address into bx:(e)dx
+if RING0 and V86M
+	test byte ptr [regs.rFL+2],2
+	jz @F
+	cmp bx, [scratchsel]
+	jnz @F
+;--- if v86-mode, don't store the scratch selector in the list of BPs
+;--- instead, use linear addresses (and the flat selector)
+	.386
+	movzx ebx, [scratchv86]
+	shl ebx, 4
+	add edx, ebx
+	mov bx, [wFlat]
+@@:
+endif
 	@dprintf "g_cmd: bp=%X:%lX", bx, edx
 if USEHWBP
 	call bp
 else
 	call storebpdef
 endif
-	jmp @B			;next bp
+	jmp nextbp		;next bp
 
 if USEHWBP
 storebpdef2:
@@ -3980,7 +4002,6 @@ if USEHWBP
 storebpx::
 	call sethwbptmp
 	jc storebpdef2
-	@dprintf "storebpx: bp linear=%lX (cs:eip=%X:%lX)", eax, bx, edx
 	retn
 endif
 
@@ -3988,7 +4009,7 @@ gg_parsebp_done:
 
 ;--- Store breakpoint bytes in the given locations.
 
-;--- v2.03: abort g as in t/p if bp can't be written
+;--- v2.50: abort g as in t/p if bp can't be written
 ;	mov bp, offset _ret	; ignore write errors for g
 	mov bp, offset bp_writeerr
 gg_1::				; <--- called by p/t ( run an int/call/... - set 1 bp )
@@ -5169,7 +5190,7 @@ if FMTEXE
 endif
 
 ;--- Copy and canonicalize file name.
-;--- v2.03: check max. length to ensure that debug's _TEXT segment isn't modified.
+;--- v2.50: check max. length to ensure that debug's _TEXT segment isn't modified.
 ;--- out: [fileext]=0 if no file spec at all
 ;---      [execblk.cmdtail] -> behind file spec
 
@@ -5895,7 +5916,7 @@ endif
 
 getnextb:
 	push ds
-	mov ds,[regs.rCS]
+	@movs ds,[regs.rCS]
 if ?PM
 	test cs:[bCSAttr], CS32
 	jz $+3
@@ -5906,7 +5927,7 @@ endif
 	retn
 
 doproceed2:
-	mov bx, [regs.rCS]
+	@movs bx, [regs.rCS]
 
 ;--- Special instruction.  Set a breakpoint and run until we hit it.
 ;--- BX:(E)SI == address where a breakpoint is to be set.
@@ -6531,8 +6552,7 @@ displaypos:
 	push di			;v2.02 save pos on stack (in v2.0-v2.01, it was saved in CX)
 	push ds			;v2.02 restore ES; needed for hex(d)word
 	pop es
-	mov ax,bx
-	call hexword
+	@dispsegm bx
 	mov al,':'
 	stosb
 if ?PM
@@ -6731,6 +6751,10 @@ if ?PM
 	sub esp, 6
 	sidt [esp]
   else
+   if V86M
+	test byte ptr [regs.rFL+2],2
+	jnz step_int_rm
+   endif
 	push bp
 	mov bp, sp
 	sub sp, 6
@@ -6758,16 +6782,26 @@ if ?PM
 	call doproceed1	; expects bp to be set at BX:(E)SI
 	ret
 endif
-ife RING0
+if (RING0 eq 0) or V86M
 step_int_rm:
 	mov bh,0
 	push ds
+ if V86M
+	mov ds, [wFlat]
+	movzx ebx, bx
+	movzx eax, word ptr [ebx*4+2]
+	shl eax, 4
+	movzx esi, word ptr [ebx*4+0]
+	add esi, eax
+	mov bx, ds
+	pop ds
+ else
 	xor ax,ax
 	mov ds,ax
 	shl bx,1		;stay 8086 compatible in real-mode!
 	shl bx,1
 	cli
-	lds si,[bx+0]
+	lds si,[bx+0]	; check if IVT is R/O? What's the purpose?
 	mov al,[si]
 	xor byte ptr [si],0FFh
 	cmp al,[si]
@@ -6776,8 +6810,10 @@ step_int_rm:
 	jz isrom
 	mov bx,ds
 	pop ds
-	call doproceed1
+ endif
+	call doproceed1	; set bp at BX:ESI, then GO
 	ret
+ ife V86M
 isrom:
 	mov  ax,ds
 	pop  ds
@@ -6797,6 +6833,7 @@ isrom:
 	mov  [regs.rSP],bx
 	and  byte ptr [regs.rFL+1],0FCh  ;clear IF + TF
 	jmp  tt1_1
+ endif
 endif
 
 trace1 endp
@@ -6921,7 +6958,9 @@ if EXCCSIP
 	mov al,':'
 	stosb
  if EXCCSEIP
+	.386
 	pop eax
+	.8086
 	call hexdword
  else
 	pop ax
@@ -7711,7 +7750,7 @@ freemem proc
 	pop ax
 	call run
 ;	@dprintf "freemem back from run"
-	cmp [run_int],INT22MSG	; v2.03: in case prog termination failed...
+	cmp [run_int],INT22MSG	; v2.50: in case prog termination failed...
 	jnz ue_int				; stop and display msg
 	ret
 fmem2:
@@ -8285,7 +8324,7 @@ endif
 	cmp ax,1
 	sbb ax,ax
   else
-	mov ax,cs		;v2.03: adjusted so it works for both .COM and .EXE formats
+	mov ax,cs		;v2.50: adjusted so it works for both .COM and .EXE formats
 	mov dx,ds
 	sub ax,dx		;Z=rm,NZ=pm
 	cmp ax,1		;C=rm,NC=pm
@@ -9320,6 +9359,29 @@ if ?PM
 @@:
 endif
 	sub cx,dx		;number of bytes minus one
+if RING0 and V86M
+;--- there's just one scratch selector
+;--- but m & c may require another one for the addr argument behind the range.
+;--- so if the range's segment is scratchsel,
+;--- change it to FLAT
+	test byte ptr [regs.rFL+2], 2	;v86-mode?
+	jz @F
+	cmp bx, [scratchsel]
+	jnz @F
+	pop bx
+	push [wFlat]
+	mov [bAddr32], 1
+	.386
+	movzx ebx, [scratchv86]
+	shl ebx, 4
+	movzx edx, dx
+	movzx ecx, cx
+	add edx, ebx
+	push edx
+	push ecx
+	jmp pc_01
+@@:
+endif
 	push dx
 	push cx
 pc_01:
@@ -9327,7 +9389,7 @@ pc_01:
 
 ;--- get the second ( destination ) address
 
-	mov bx,[regs.rDS]	; DS = default for "destination"
+	@movs bx,[regs.rDS]	; DS = default for "destination"
 if ?PM
 	call IsOfs32
 	jz pc_1

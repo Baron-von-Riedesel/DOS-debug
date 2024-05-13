@@ -418,7 +418,7 @@ da20:
 ;--- now check and loop for unused prefixes:
 ;--- OPSIZE (66h), ADDRSIZE (67h), WAIT, segment, REP[N][Z], LOCK
 
-;--- v2.03: the string instructions may have both 66h & 67h prefixes.
+;--- v2.50: the string instructions may have both 66h & 67h prefixes.
 ;--- a 67h prefix will now be shown as a comment behind the opcode.
 ;--- this code has been reworked.
 
@@ -640,7 +640,7 @@ hdl_rep:
 	repne scasb
 	jne disbad2		;if not one of the REPE/REPNE instructions
 	mov si,offset mnlist+MN_REPE
-;	test [preused],PREREPZ		; v2.03: isn't set yet with the new code,
+;	test [preused],PREREPZ		; v2.50: isn't set yet with the new code,
 	test [preflags],PREREPZ		; but we may use [preflags].
 	jnz hdl_insprf	;if REPE
 	mov si,offset mnlist+MN_REPNE
@@ -768,7 +768,7 @@ da32:
 	jmp da32z		;done
 
 ;--- Dump referenced memory location.
-;--- v2.03: skip this if instruction is LEA!
+;--- v2.50: skip this if instruction is LEA!
 
 da32f:
 	mov al,[disflags]
@@ -776,7 +776,7 @@ da32f:
 	test al,DIS_F_SHOW + DIS_I_SHOW
 	jnz da32z		;if there is no memory location to show
 
-	cmp [bInstr], 8Dh	; v2.03: don't show mem contents for lea!
+	cmp [bInstr], 8Dh	; v2.50: don't show mem contents for lea!
 	jz da32z
 
 ife RING0			; for DebugR, FS/GS memory contents aren't skipped
@@ -987,7 +987,7 @@ dop18a:
 ;--- example: mov ax,00001000[ebx][edi]
 
 dop22:
-;--- v2.03: put offset in square brackets: mov ax,[00001000][ebx][edi]
+;--- v2.50: put offset in square brackets: mov ax,[00001000][ebx][edi]
 ;    call disp32	;get and display 32bit offset
     call dop18a		;get and display 32bit offset
 
@@ -1259,9 +1259,9 @@ dop_shosiz:
 
 disasm endp
 
-;--- v2.03: return value in SI has changed 
-;--- up to v2.03, si returned an offset for the oplists table ( + OPTYPES_BASE )
-;--- since v2.03, si returns just an index (for table opindex).
+;--- v2.50: return value in SI has changed 
+;--- up to v2.50, si returned an offset for the oplists table ( + OPTYPES_BASE )
+;--- since v2.50, si returns just an index (for table opindex).
 
 disbad proc
 if FLATSS
@@ -1285,7 +1285,7 @@ endif
 	dec [dis_n]		;reset cnt to 0 again
 	mov bx,MN_DB	;offset of 'DB' mnemonic
 ;	mov si,OPLIST_26+OPTYPES_BASE;this says OP_IMM8
-	mov si,26h		;v2.03: index 26h: this says OP_IMM8
+	mov si,26h		;v2.50: index 26h: this says OP_IMM8
 	ret
 @@:
 	or [disflags],DIS_I_UNUSED	;print special flag
@@ -1296,12 +1296,12 @@ endif
 	shl bx,1		;prefix wait, lock, repe, repne
 	mov bx,[prefixmnem+bx-6*2]
 ;	mov si,OPTYPES_BASE	;no operand
-	xor si, si			;v2.03: index 0, first item, no operand
+	xor si, si			;v2.50: index 0, first item, no operand
 	ret
 @@:
 ;--- an unused segment prefix
 ;	lea si,[bx+OPLIST_40+OPTYPES_BASE]	;OPLIST_40 is OP_ES, size 2
-	lea si,[bx+40h]						;v2.03: 40h is index for OP_ES
+	lea si,[bx+40h]						;v2.50: 40h is index for OP_ES
 	mov bx,MN_SEG
 	ret
 disbad endp
@@ -1311,7 +1311,7 @@ disbad endp
 dop_relxx proc
 
 ;--- 8-bit relative jump (OP_REL8)
-;--- v2.03: correctly handle a 8-bit short jmp with a size prefix
+;--- v2.50: correctly handle a 8-bit short jmp with a size prefix
 
 dop_rel8::
 	call disgetbyte
@@ -1328,7 +1328,7 @@ dop_rel16:			;16-bit distance ( also used for 8-bit short distances
 	jmp hexword		;call hexword and return
 
 ;--- 16/32-bit relative jump (OP_REL1632)
-;--- v2.03: a 16-bit relative call/jmp in 32-bit will clear hiword(eip)!
+;--- v2.50: a 16-bit relative call/jmp in 32-bit will clear hiword(eip)!
 ;--- to make this evident, display a WORD only!
 
 dop_rel1632::

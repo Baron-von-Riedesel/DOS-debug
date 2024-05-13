@@ -905,9 +905,9 @@
  its output to that device via the /2 cmdline option. This gives DebugX
  the ability to debug graphics applications.
 
-  Some DOS extenders may set code section pages to readonly. Up to v2.10
+  Some DOS extenders may set code section pages to readonly. Up to v2.50
  this did pretty reliably prevent DebugX from setting its breakpoints. Since
- v2.10, Debug/X may prefer to use hardware breakpoints - and thus avoid
+ v2.50, Debug/X may prefer to use hardware breakpoints - and thus avoid
  such problems.
 
 

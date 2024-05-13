@@ -59,7 +59,7 @@ endm
 ;--- opl macro, used to define operand list types
 ;--- the macro defines an EQUate, OPLIST_XX, which
 ;--- is refered to by array opindex.
-;--- v2.03: "terminating" 0 no longer required.
+;--- v2.50: "terminating" 0 no longer required.
 
 opl macro index, value:VARARG
 OPLIST_&index equ $ - oplists
@@ -96,7 +96,7 @@ OP_AX		equ 14		;al or ax or eax
 ;--- order must match items in asm_jmp1, bittab and dis_optab.
 ;--- additionally, order of OP_M64 - OP_FARMEM is used
 ;--- in table asm_siznum
-;--- v2.03: value 0 was used to terminate an operand list ( macro opl )
+;--- v2.50: value 0 was used to terminate an operand list ( macro opl )
 ;---        it's free now.
 
 OP_M64		equ 2		; 0 qword memory (obsolete?)
@@ -185,7 +185,7 @@ AMF_FSGS	equ 20h		;if FS or GS was encountered
 AMF_D16		equ 40h		;16bit opcode/data operand
 AMF_ADDR	equ 80h		;address operand is given
 
-bEndOplItem db 0		;v2.03
+bEndOplItem db 0		;v2.50
 
 ;--- aa_saved_prefix and aa_seg_pre must be consecutive.
 aa_saved_prefix	db 0	;WAIT or REP... prefix
@@ -960,7 +960,7 @@ ab14:
 	jg ab17			;if we can't have a colon here
 	cmp al,':'
 	jne ab17		;if not xxxx:yyyy
-if 1	;v2.03: size for ssss:oooo must be none or far
+if 1	;v2.50: size for ssss:oooo must be none or far
 	cmp [di].OPRND.sizearg, SIZ_NONE
 	jz @F
 	cmp [di].OPRND.sizearg, SIZ_FAR
@@ -1748,7 +1748,7 @@ ao08_1:
 	xchg al,[ai.opsize]
 	cmp al,0
 	jnz ao11		;if sizes disagree
-;--- v2.03: the next line caused - as a side effect - a regression for "call [xxxx]"
+;--- v2.50: the next line caused - as a side effect - a regression for "call [xxxx]"
 ;--- which has been fixed at ao13.
 	or [ai.varflags],VAR_SIZ_GIVN	;v1.18 added!!!
 @@:
@@ -1770,7 +1770,7 @@ ao12:
 ao13:				;<--- OP_1632 - word or dword.
 	mov al,[di].OPRND.sizearg
 	@dprintf "ao13: OP_1632, AL=sizearg=%X, dx=%X", ax, dx
-if 1	;v2.03: set default size for call/jmp/push [mem] (hackish fix)
+if 1	;v2.50: set default size for call/jmp/push [mem] (hackish fix)
 	cmp al,SIZ_NONE
 	jnz @F
 	cmp dx, 40		;just opindex 40 ( call/jmp/push [memref] )   

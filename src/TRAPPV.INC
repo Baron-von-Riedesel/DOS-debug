@@ -354,6 +354,21 @@ nostop:
 novm86:
 	cmp cs:[bInDbg],0
 	jz int_dbgee
+
+if 1
+;--- if a callout is done to the v86 monitor for I/O, GPFs in v86-mode will occur
+;--- which the debugger has to ignore in any case.
+	cmp byte ptr [esp].EXCFR.wMsg, EXC0DMSG
+	jnz @F
+	test byte ptr [esp].EXCFR._efl+2, 2		; v86mode?
+	jz @F
+	call checkv86monitorbp
+	jc nostop
+	call checkioplinstr
+	jc nostop
+@@:
+endif
+
 	pop ax		; skip _ret
 	pop ax		; get msg
 	pop ecx		; skip error code
@@ -362,7 +377,7 @@ novm86:
 	pop edx		; cs
   endif
 	mov ss, cs:[wDgroup]
-	mov sp, cs:[top_sp]
+	movzx esp, cs:[top_sp]
   if EXCCSIP
    if EXCCSEIP
 	push ecx	; eip
