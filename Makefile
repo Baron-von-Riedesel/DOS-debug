@@ -48,7 +48,7 @@ $(OUTD)/DEBUGRL.BIN: $(DEPS) src/TRAPPL.INC
 	@jwasm -nologo -bin  -Fo $(OUTD)/DEBUGRL.BIN -Fl=$(OUTD)/DEBUGRL.LST -Sg -DRING0=1 -DLMODE=1 src/$(NAME).ASM
 $(OUTD)/DEBUGRV.BIN: $(DEPS) src/TRAPPV.INC
 	@echo creating debugRV.bin - a protected-mode "ring 0"  version with v86 support
-	@jwasm -nologo -bin  -Fo $(OUTD)/DEBUGRV.BIN -Fl=$(OUTD)/DEBUGRV.LST -Sg -DRING0=1 -DV86M=1 src/$(NAME).ASM
+	@jwasm -nologo -bin  -Fo $(OUTD)/DEBUGRV.BIN -Fl=$(OUTD)/DEBUGRV.LST -Sg -DRING0=1 -DV86M=1 -DCATCHSYSREQ=1 -DCATCHINT0C=1 src/$(NAME).ASM
 
 clean:
 	del $(OUTD)\$(NAME)*.com

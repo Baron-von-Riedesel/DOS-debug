@@ -12,7 +12,8 @@
 ;--- debuggee. If debugger is reentered because of an exception inside
 ;--- the debugger, this var must not be modified anymore.
 
-SKIPINTGPF equ 1	; ignore GPFs caused by INT xx
+SKIPINTGPF equ 1	; 1=ignore GPFs caused by INT xx
+JEMMPLEMU  equ 1	; 1=ignore GPFs for priviledged instructions that Jemm will emulate
 
 ;--- stack size problem: if "SAFESS equ 0" it's assumed that ring0 stack
 ;--- is 32-bit - which may not be true. if ring0 ss is 16-bit, but
@@ -22,11 +23,15 @@ SAFESS equ 1
 
 	.386
 
-FAULT32 struct
-_errc   dd ?
+IRET32 struct
 _eip	dd ?
 _cs		dd ?
 _efl	dd ?
+IRET32 ends
+
+FAULT32 struct
+_errc   dd ?
+    IRET32 <>
 FAULT32 ends
 
 EXCFR struct
@@ -49,23 +54,54 @@ CIIFR ends
 ;--- caused a GPF.
 ;--- in: ESP = CIIFR
 ;--- out: C if yes
+;--- for v86 mode, the instructions differ: it's
+;--- CLI, STI, PUSHF, POPF, INT, IRET
+;--- note: this proc is called in v86-mode even if IOPL == 3;
 
 checkioplinstr proc
 	push ds
 	push ax
 	push esi
+	cld
 	test byte ptr [esp].CIIFR._efl+2,2	;v86-mode?
-	jz @F
+	jz is_pm
 	movzx esi, word ptr [esp].CIIFR._cs
 	shl esi, 4
 	add esi, [esp].CIIFR._eip
 	mov ds, cs:[wFlat]
-	cld
-	jmp check_io
+
+	mov al, byte ptr [esp].CIIFR._efl+1
+	and al, 30h
+	cmp al, 30h		; V86-mode with IOPL==3?
+	jz check_io		; then check for IN/OUT only
+;--- check for IOPL sensitive instructions in v86-mode
+@@:
+	lodsb [esi]
+	cmp al, 66h		;size prefix
+	jz @B
+	cmp al, 9Ch		;PUSHF?
+	jz isiopl
+	cmp al, 9Dh		;POPF?
+	jz isiopl
+	cmp al, 0CDh	;INT?
+	jz isiopl
+	cmp al, 0CCh	;INT 3?
+	jz isiopl
+	cmp al, 0CFh	;IRET?
+	jz isiopl
+	jmp check_clisti
+is_pm:
+	lar ax, word ptr [esp].CIIFR._cs
+	test ah, 60h	; ring 0 exception?
+	jz done
+	mov al, byte ptr [esp].CIIFR._efl+1
+	and al, 30h
+	cmp al, 30h		; IOPL==3 in protected-mode?
+	jz done
 @@:
 	lds esi, fword ptr [esp].CIIFR._eip
-	cld
 	lodsb [esi]
+check_clisti:
 	cmp al, 0FAh	;CLI?
 	jz isiopl
 	cmp al, 0FBh	;STI?
@@ -109,6 +145,7 @@ ci1:
 	jz isiopl
 	cmp al, 6Ch
 	jz isiopl
+done:
 	pop esi
 	pop ax
 	pop ds
@@ -124,10 +161,11 @@ checkioplinstr endp
 
 endif
 
-;--- see if a GPF is caused by a monitor "breakpoint"
+;--- see if an Exc 0D or 06 is caused by a monitor "breakpoint"
+;--- this is called in v86 mode only.
 ;--- Jemm uses HLT (F4h) to switch out from v86-mode,
 ;--- Win9X uses ARPL (63h).
-;--- Also it's checked here if the instruction causing the
+;--- Also, for exc 0D, it's checked here if the instruction causing the
 ;--- GPF is a mov to/from a special register. Those are
 ;--- emulated by Jemm and hence the debugger should route
 ;--- these exceptions to the previous handler.
@@ -150,16 +188,22 @@ checkv86monitorbp proc
 	mov ds, cs:[wFlat]
 	cld
 	lodsb [esi]
-	cmp al, 0F4h	;HLT?
+	cmp al, 0F4h	;HLT should never stop in debugger
 	jz isv86mon
+	cmp al, cs:[bV86Bp]	; may be HLT or ARPL
+	jz isv86mon
+	cmp byte ptr [esp].CVMFR.wMsg, EXC06MSG
+	jz done
+if JEMMPLEMU
 	cmp al, 0Fh		;2 byte opcode? (0F 20, 0F 21, 0F 22, 0F 23)
-	jnz @F
+	jnz done
 	lodsb [esi]
 	cmp al, 20h		;a mov to/from a "special reg" - that's emulated by Jemm
-	jb @F
+	jb done
 	cmp al, 23h
 	jbe isv86mon
-@@:
+endif
+done:
 	pop esi
 	pop ax
 	pop ds
@@ -265,36 +309,24 @@ if CATCHSYSREQ
 	.err <'SYSRQINT equ 15h' not implemented for RING0>
  endif
 
+exitwithpopds:
+	pop ds
 @@:
 	jmp cs:[oldisrq]
 intrsrq:
 	test cs:[bInDbg], 1
 	jnz @B
 ;--- no way to call the real-mode IRQ handler from here. we check the sysreq
-;--- bit and, if set, read the kbd port direct, also sending EOI to the PIC.
-;--- Not really nice, but it works.
+;--- bit and, if set, set TF=1 - will trigger a single-step fault once the
+;--- interrupt routine is done.
 	push ds
 	mov ds, cs:[wFlat]
 	test byte ptr ds:[418h], 4	; sysreq pressed?
-	pop ds
-	jz @B
-	push ax
-	in al, 60h
-	cmp al, 54h+80h		; sysreq released?
-	pop ax
-	jnz @B
-	push ds
-	mov ds, cs:[wFlat]
-;	and byte ptr ds:[418h], not 4	;reset "SYSREQ pressed"
-	and byte ptr ds:[418h], not (2 or 4)	;reset "SYSREQ pressed" & "left ALT pressed"
-	pop ds
-	push ax
-	mov al, 20h
-	out 20h, al
-	pop ax
-	push SYSRQMSG or (1 shl 8)
-	jmp intr01ex
-
+	jz exitwithpopds
+	or byte ptr [esp+2].IRET32._efl+1, 1	; set TF=1
+	mov ds, cs:[wDgroup]
+	or [bFlagsPM], 2	; tell debugger that single-step is caused by SysReq
+	jmp exitwithpopds
 endif
 
 ;--- exceptions with error code
@@ -356,17 +388,22 @@ novm86:
 	jz int_dbgee
 
 if 1
-;--- if a callout is done to the v86 monitor for I/O, GPFs in v86-mode will occur
+;--- if a callout is done to the v86 monitor for I/O, v86-monitor breakpoints will happen
 ;--- which the debugger has to ignore in any case.
-	cmp byte ptr [esp].EXCFR.wMsg, EXC0DMSG
-	jnz @F
 	test byte ptr [esp].EXCFR._efl+2, 2		; v86mode?
+	jz v86_check_done
+	cmp byte ptr [esp].EXCFR.wMsg, EXC0DMSG
 	jz @F
+	cmp byte ptr [esp].EXCFR.wMsg, EXC06MSG	;in case ARPL is v86 monitor bp
+	jnz v86_check_done
+@@:
 	call checkv86monitorbp
 	jc nostop
+	cmp byte ptr [esp].EXCFR.wMsg, EXC0DMSG
+	jnz v86_check_done
 	call checkioplinstr
 	jc nostop
-@@:
+v86_check_done:
 endif
 
 	pop ax		; skip _ret
@@ -403,28 +440,26 @@ int_dbgee:
 	pop ax
 	jnc nostop
 
-if CHKIOPL
-;--- check if GPF caused by running CLI/STI/IN/OUT in IOPL=0
-	cmp byte ptr [esp].EXCFR.wMsg, EXC0DMSG
-	jnz noexc0D
+;--- check for v86-monitor bps
+
 	test byte ptr [esp].EXCFR._efl+2, 2		; v86mode?
+	jz nobpcheck
+	cmp byte ptr [esp].EXCFR.wMsg, EXC0DMSG
 	jz @F
+	cmp byte ptr [esp].EXCFR.wMsg, EXC06MSG
+	jnz nobpcheck
+@@:
 	call checkv86monitorbp
 	jc nostop
-	jmp v86io	; skip IOPL check for v86
-@@:
-	test byte ptr [esp].EXCFR._efl+1, 30h	;IOPL==0?
-	jnz noexc0D
-	push ax
-	lar ax, word ptr [esp+2].EXCFR._cs
-	test ah, 60h	; ring 0?
-	pop ax
-	jz @F
-v86io:
+nobpcheck:
+
+if CHKIOPL
+;--- check if GPF caused by an IOPL sensitive instruction in IOPL=0
+	cmp byte ptr [esp].EXCFR.wMsg, EXC0DMSG
+	jnz @F
 	call checkioplinstr
-	jc nostop	; if yes, don't stop in debugger
+	jc nostop		; IOPL sensitive instruction, don't stop!
 @@:
-noexc0D:
 endif
 
 	push ds

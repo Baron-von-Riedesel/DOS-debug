@@ -369,7 +369,7 @@ a_cmd proc
 	mov [errret],offset aa01
 	cmp al,CR
 	je aa01x		;if end of line
-	mov bx,[regs.rCS]	;default segment to use
+	@movs bx,[regs.rCS]	;default segment to use
 aa00a:
 	call getaddr	;get address into bx:(e)dx
 	call chkeol		;expect end of line here
@@ -387,7 +387,7 @@ aa01x:
  endif
 	test [bFlagsPM], 1	; default for a-cmd already set?
 	jnz aa01
-	mov ax, [regs.rCS]	; use current CS:IP as default
+	@movs ax, [regs.rCS]; use current CS:IP as default
 	mov [a_addr+4], ax 
 	sizeprfX			; mov eax, [regs.IP]
 	mov ax, [regs.rIP]    
@@ -411,8 +411,7 @@ else
 	mov sp,[top_sp]		;restore the stack (this implies no "ret")
 endif
 	mov di,offset line_out
-	mov ax,[a_addr+4]
-	call hexword
+	@dispsegm [a_addr+4]
 	mov al,':'
 	stosb
 	mov [asm_mn_flags],0

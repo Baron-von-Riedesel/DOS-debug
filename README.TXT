@@ -125,44 +125,15 @@
      compatible card, and there's no guarantee that it works as expected.
 
 
-  c. Optionally, one may create special-purpose versions of Debug(X).
+  c. Optionally, one may create special-purpose variants of Debug.
      Run file makex.bat to create them; you'll need the JWasm assembler
-     for a successful run. The additional versions are:
+     for a successful run. The many variants may be confusing, basically
+     there are 3 branches:
+
+     - debugger without protected-mode support ( Debug, DebugB )
+     - debugger with DPMI protected-mode support ( DebugX variants )
+     - debugger running in protected-mode ring 0 ( DebugR variants )
   
-   - DebugXd.COM: a version that doesn't hook int 01 and int 03. This
-     allows to debug this variant with a "normal" version of Debug(X).
-
-   - DebugXe.COM: a version which hooks interrupts 06, 0Ch and 0Dh in
-     real-mode. This is for - rare - cases when such exceptions may
-     occur in real-mode applications.
-
-   - DebugXf.COM: a version which hooks interrupt 31h in protected-mode
-     and then rejects any attempt to modify exception vectors 01, 03,
-     0Dh and 0Eh. This allows to debug DOS-extended applications that
-     modify these vectors.
-
-   - DebugXg.EXE: a version that is in DOS device driver format. This
-     variant can be used to debug other device drivers. There are a
-     few peculiarities:
-     + commands N and Q are rejected;
-     + commands R and W can't be used to read/write files;
-     + interrupt 06 (invalid opcode exception) is hooked;
-     + commands BP/BC to manage permanent breakpoints are activated.
-
-   - DebugXu.COM: a version that uses "unreal" mode to access extended
-     memory for the DX command. This is useful to debug applications
-     that set/use "unreal" mode themselves, because DebugXU will not
-     change the current "unreal" state by its DX command.
-
-   - DebugXv.COM: a variant that has a few nice features activated
-     compared to the standard DebugX:
-     + takes care that screen output of debuggee and debugger are strictly
-       separated; the 'v' command may be used to watch the debuggee screen
-       while the debugger is active.
-     + the SysReq key is detected and will activate the debugger.
-     + the BP/BC commands are active, allowing permanent breakpoints.
-     DebugXv is intended to help debugging fullscreen text mode programs.
-
    - DebugB.BIN: a version that is supposed to be loaded during the
      boot process, before DOS is loaded. Has to be installed in "free"
      disk space ( for example, in the "reserved" sectors of a FAT partition
@@ -170,11 +141,51 @@
      active. Definitely not for beginners. See "Installing and Initializing
      DebugB" in DEBUG.TXT for details.
 
-   - DebugR(L|V).BIN: variants that run in ring0 protected-mode. These
+   - DebugX variants:
+
+     + DebugXd.COM: a version that doesn't hook int 01 and int 03. This
+       allows to debug this variant with a "normal" version of Debug(X).
+
+     + DebugXe.COM: a version which hooks interrupts 06, 0Ch and 0Dh in
+       real-mode. This is for - rare - cases when such exceptions may
+       occur in real-mode applications.
+
+     + DebugXf.COM: a version which hooks interrupt 31h in protected-mode
+       and then rejects any attempt to modify exception vectors 01, 03,
+       0Dh and 0Eh. This allows to debug DOS-extended applications that
+       modify these vectors.
+
+     + DebugXg.EXE: a version that is in DOS device driver format. This
+       variant can be used to debug other device drivers. There are a
+       few peculiarities:
+       - commands N and Q are rejected;
+       - commands R and W can't be used to read/write files;
+       - interrupt 06 (invalid opcode exception) is hooked;
+       - commands BP/BC to manage permanent breakpoints are activated.
+
+     + DebugXu.COM: a version that uses "unreal" mode to access extended
+       memory for the DX command. This is useful to debug applications
+       that set/use "unreal" mode themselves, because DebugXU will not
+       change the current "unreal" state by its DX command.
+
+     + DebugXv.COM: a variant that has a few nice features activated
+       compared to the standard DebugX:
+       - takes care that screen output of debuggee and debugger are strictly
+         separated; the 'v' command may be used to watch the debuggee screen
+         while the debugger is active.
+       - the SysReq key is detected and will activate the debugger.
+       - the BP/BC commands are active, allowing permanent breakpoints.
+       DebugXv is intended to help debugging fullscreen text mode programs.
+
+   - DebugR variants. These variants run in ring0 protected-mode. The
      binaries need additional software a) to be loaded and b) to handle the
-     i/o requests. Like DebugB.BIN no DOS is used - actually, not even the
-     BIOS is used - and hence these are not really "DOS debuggers" anymore.
+     i/o requests. No DOS API is used ( actually, not even the BIOS is used )
+     and hence these are not really "DOS debuggers" anymore.
      See "DebugR Basics" in DEBUG.TXT for more details.
+   
+     + DebugR.BIN: variant for legacy mode, no support for V86 mode.
+     + DebugRV.BIN: variant for legacy mode with support for V86 mode.
+     + DebugRL.BIN: variant for long mode.
 
   d. The following features of MS Debug are not implemented:
 

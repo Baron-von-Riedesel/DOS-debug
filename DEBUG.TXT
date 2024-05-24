@@ -17,14 +17,13 @@
  1. About
  --------
 
- This is a quick and dirty DEBUG tutorial.
-
- Public Domain 2004 Michael Webster, 2010-2024 japheth.
+ This text is based upon a "quick and dirty DEBUG tutorial", written
+ by Michael Webster 2004, Public Domain.
 
  Note: MS-Debug means the original Debug written by Microsoft.
        Debug/X  means the "clone" variants (both Debug and DebugX).
        DEBUG    means both MS-Debug and Debug/X.
-       Enhancements for Debug/X are put in square brackets: [ ].
+       Enhancements for Debug/X are marked: [ENH:...].
 
  MS-Debug was developed originally by Tim Paterson as a tool to aid in
  his development of the 16-bit x86 OS that eventually became MS-DOS
@@ -59,15 +58,22 @@
    options are:
     /? : display cmdline format help.
 
-[ENH: DebugX accepts further options:
-    /2 : use an alternate (monochrome) adapter if available.
-    /s : debugger won't use hardware breakpoints.
-    /v : debugger may use hardware breakpoints even in v86-mode.
+[ENH:
+ DebugX accepts these additional options:
+  /2 : use an alternate (monochrome) adapter if available.
+  /s : debugger won't use hardware breakpoints.
+  /v : debugger may use hardware breakpoints even in v86-mode.
+ DebugR(L|V) accepts these additional options:
+  /m : don't assume exceptions and IRQ0-7 do overlap.
+ DebugRV accepts this additional option:
+  /b : assume v86-monitor bp is ARPL (default is HLT).
 ]
 
 
  3. DEBUG commands
  -----------------
+
+ 3.1 Command Mode & Command Prompt 
 
  This section deals with the commands that DEBUG recognizes
  while in command mode. Command mode, indicated by the presence of the
@@ -79,7 +85,7 @@
  just '-'). DebugX changes the prompt to '#' if debuggee is in protected-
  mode. Prompt '!#', which means "inside DOS" AND "in protected-mode",
  is also possible, if the debuggee has been stopped in a so-called
- DPMI real-mode callback.
+ DPMI real-mode callback that's called from inside DOS.
 
   The DebugR variants don't "know" about DOS and hence there's never a 
  '!' prompt prefix. In protected-mode, a '#' prompt is displayed, just
@@ -91,7 +97,8 @@
  a list of the commands and their parameters by entering a "?" at the
  DEBUG command prompt.
 
- DEBUG recognizes only hex numbers (without a trailing "H").
+
+ 3.2 Initial Values of CPU Register Variables
 
  DEBUG maintains a set of variables that it uses to store a target
  program's CPU registers. DEBUG initializes these variables each time
@@ -115,7 +122,7 @@
  section, all register names refer to the associated variable.
 
 
- 3.1 Entering Addresses and Ranges
+ 3.3 Entering Addresses and Ranges
 
  For the commands that accept a range parameter, the parameter can be
  used to specify a starting address, or a starting and ending address,
@@ -132,16 +139,18 @@
  -D DS:100 102
  -D SS:20 L 4
 
+ Note that DEBUG recognizes only hex numbers (without a trailing "H").
+
  [ENH:
-  DebugX/DebugR: when an address is entered in protected-mode, a '$'
+ DebugX/DebugR: when an address is entered in protected-mode, a '$'
  just before the segment part will tell those variants to interpret the
  address as a real-mode address. However, as for DebugX this should be
  used sparsely, since DPMI function 0002 is used to convert the segment
  - the selector returned cannot be released anymore.
-  DebugRV: when an address is entered while in v86-mode, a '#' just
+
+ DebugRV: when an address is entered while in v86-mode, a '#' just
  before the segment part will tell DebugRV to interpret the segment as
  a selector.
- ]
  
  If debuggee is in protected-mode and the segment part of an address
  has a limit beyond 64k, the offset parts of the starting and ending
@@ -170,28 +179,35 @@
  not all 4 are used, the rest may be used internally by the G, T and P commands
  to set temporary breakpoints.
   The feature is not available on all platforms - on NT platforms and DosEmu,
- it's generally inactive. For other environments and to be sure, it may be
- switched off by cmdline option /s. Else it will be active in protected-mode
- and real-mode; in v86-mode, however, the feature isn't active as default, since
- support of the v86 monitor programs may be unreliable. To make the debugger
- use it even then, cmdline option /v is supplied.
+ it's generally inactive. As a rule of thumb one can say that if DOS is running
+ on emulators, the debug registers are NOT available, while on virtualizers
+ they usually are. So to be sure, debug register usage may be switched off by
+ cmdline option /s. Else it will be active in protected-mode and real-mode; in
+ v86-mode, however, the feature isn't active as default, since support of the
+ v86 monitor programs may be unreliable. To make the debugger use it even then,
+ cmdline option /v is supplied.
   Without argument, BP will display the currently active breakpoints. Although
  the breakpoints may be entered in the usual format ( segment:offset ), they
  are stored internally just as linear addresses, and so BP will display this
  linear address only.
-  The type argument is a combined field of bits. Bits 0-1 define the type:
+
+ Syntax: BP [[address] type]
+
+ The type argument is a byte value, actually a field of bits: __SS__TT;
+ bits 0-1 define the breakpoint's type and translate to:
 
   0 code breakpoint
   1 write watchpoint
   2 I/O watchpoint ( not specified by DPMI v0.9/v1.0 )
   3 read/write watchpoint
 
- while bits 2-3 define the size ( for watchpoints ):
+ while bits 4-5 set the size ( watchpoints only ):
 
   0 byte access
   1 word access
   3 dword access
 
+ Bits 2-3 and 6-7 are ignored and masked out.
   If no type argument is given, a code breakpoint is assumed. Note that I/O
  watchpoints may be rejected by the DPMI host; in any case they require
  bit DE to be set in register CR4.
@@ -201,10 +217,12 @@
  that flag when an interrupt occurs, thus making it appear as if the program
  cannot continue.
 
+ ---
+
  Command BC is used to clear a previously set breakpoint.
  
- Syntax: BP [[address] type]
-         BC bp#
+ Syntax: BC bp#
+
  ---]
 
  The Compare command (C) compares two memory regions. All differences will be
@@ -975,12 +993,12 @@
  DG start [count]: display GDT ( Global Descriptor Table )
  DI start [count]: display IDT ( Interrupt Descriptor Table )
  DL start [count]: display LDT ( Local Descriptor Table )
- DT: display TR and PL0 SS:ESP
+ DT [port count]:  display TR, PL0 SS:ESP and optionally trapped ports
  SK: Skip handling of current exception, hand it over to previous handler.
  VC vector: untrap vector
  VL: list (un)trapped vectors ( vectors marked with '*' are untrapped )
- VT vector: trap vector; vectors that can be trapped are vectors 0, 1, 3, 6,
-    0Dh and 0Eh.
+ VT vector: trap vector; what vectors can be trapped depends on how DebugR(L|V)
+    was assembled, usually it's 0,1,3,6,0Dh and 0Eh.
  
  Commands BC and BP are activated for DebugR.
 

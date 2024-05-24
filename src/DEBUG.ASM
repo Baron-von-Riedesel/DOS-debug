@@ -499,7 +499,7 @@ start:
  if RING0
 	jmp getr0stk	; get ring 0 SS:ESP
 	org start+6		; entercmd must be start+2*3
-	jmp entercmd	; enter command loop
+	jmp uninstall	; uninstall
  endif
 
 endif
@@ -706,6 +706,7 @@ if USEHWBP
 ;---   5: 1=bp is temp
 ;---   6: 1=bp is active
 ;---   7: 1=bp is used
+BP_CODE   equ  0h
 BP_TEMP   equ 20h
 BP_ACTIVE equ 40h
 BP_USED   equ 80h
@@ -737,6 +738,7 @@ if ?PM
 scratchsel dw 0		;scratch selector ( used by cmds a,c,e,f,g,m,p,t )
  if RING0 and V86M
 scratchv86 dw 0
+bV86Bp     db 0F4h  ;may be 0F4h or 63h
  endif
 bCSAttr db 0		;current code attribute (D bit).
 bAddr32 db 0		;1=offset is 32-bit ( segment limit > 0ffffh )
@@ -1075,7 +1077,7 @@ elseif DPCMDR0
 	db 'dump page table', TAB, 'DP [linear_address]',CR,LF
 endif
 if DTCMD
-	db 'dump TSS', TAB, 'DT',CR,LF
+	db 'dump TSS', TAB, 'DT [port count]',CR,LF
 endif
 if DXCMD
 	db 'dump ext memory', TAB, 'DX [physical_address]',CR,LF
@@ -1930,10 +1932,12 @@ intr22dbg:
 	mov ds,ax
 	mov ss,ax
 elseif RING0
+ if 0
 entercmd:
 	mov ds, cs:[wDgroup]
 	push ds
 	pop ss
+ endif
 endif
 
 ;--- fall through to cmdloop!
@@ -2071,6 +2075,25 @@ endif
 nowait:
 	ret
 waitkey endp
+
+@movs macro dst, src
+if RING0 and V86M
+	push src
+	call v86setofs
+	pop dst
+else
+	mov dst, src
+endif
+endm
+
+@dispsegm macro segm
+	mov ax,segm
+if RING0 and V86M
+	call chkdispsegm
+else
+	call hexword
+endif
+endm
 
 	include lineasm.inc
 
@@ -2844,9 +2867,11 @@ endif
 
 if DTCMD
 
- if 0
-;--- "legacy TSS "
-TSSSTR struct
+ ife LMODE
+
+;--- "legacy TSS"
+
+TSS struct
 dwLink	dd ?	;+00 selector
 _Esp0	dd ?	;+04
 _SS0    dd ?
@@ -2872,9 +2897,13 @@ _GS		dd ?	;+5C
 _LDT	dd ?	;+60
 wFlags  dw ?	;+64
 wOffs   dw ?	;+66
-TSSSTR ends
+TSS ends
+
+ else
+
 ;--- long mode TSS
-TSSSTR struct
+
+TSS struct
 		dd ?	;+00
 _Rsp0	dq ?	;+04
 _Rsp1	dq ?	;+0C
@@ -2890,7 +2919,7 @@ _Ist7	dq ?	;+54
 		dq ?	;+5C
 		dw ?	;+64
 wOffs   dw ?	;+66
-TSSSTR ends
+TSS ends
  endif
 
 CONST segment
@@ -2899,10 +2928,26 @@ szPL0Stk db " RSP0=",0
 else
 szPL0Stk db " R0 SS:ESP=",0
 endif
+szIOBM db " IOBM=",0
+szTrapped db "trapped ports:",13,10,'$'
 CONST ends
  
 dt_cmd proc
 	.386
+	xor dx, dx
+	cmp al,CR
+	jz @F
+	call getword	;get word into DX
+	call skipcomm0
+	cmp al,CR
+	jz cmd_error
+	mov bp, dx
+	call getword	;get word into DX
+	call skipcomm0
+	cmp al,CR
+	jnz cmd_error
+@@:
+	mov si, dx
 	mov ax,"RT"
 	stosw
 	mov al,'='
@@ -2911,29 +2956,74 @@ dt_cmd proc
 	mov bx, ax
 	call hexword
 	cmp bx,0
-	jz @F
-	call getlinearbaseDT
-	jc @F
-	call getlinearbaseBX
+	jz done
+	call getlinearbaseDT	;modifies DX
+	jc done
+	call getlinearbaseBX	;modifies DX
 	@dprintf "dt: bx=%X eax=%lX", bx, eax
 	mov ebx, eax
+	push si
 	mov si, offset szPL0Stk
 	call copystring
+	pop si
 	push ds
 	mov ds, [wFlat]
 if LMODE
-	mov eax,[ebx+8]	; get high32 RSP0
+	mov eax, dword ptr [ebx].TSS._Rsp0+4
+	call hexdword
+	mov eax, dword ptr [ebx].TSS._Rsp0+0
 	call hexdword
 else
-	mov ax, [ebx+8]	; get PL0 SS
+	mov ax, word ptr [ebx].TSS._SS0
 	call hexword
 	mov al,':'
 	stosb
-endif
-	mov eax,[ebx+4]	; get PL0 ESP / low32 RSP0
+	mov eax, [ebx].TSS._Esp0
 	call hexdword
+endif
+	movzx eax, [ebx].TSS.wOffs
 	pop ds
+	add eax, ebx
+	push ax
+	push si
+	mov si, offset szIOBM
+	call copystring
+	pop si
+	pop ax
+	mov ebx, eax
+	call hexdword
+	cmp si, 0
+	jz done
+	@dprintf "dt_cmd: start port=%X cnt=%X", bp, si
+	call putsline
+	mov di, offset line_out
+	mov dx, offset szTrapped
+	call int21ah9
+	mov cx, si
+	movzx ebp, bp
+	mov dl,0
+nextport:
+	push ds
+	mov ds, [wFlat]
+	bt [ebx], ebp
+	pop ds
+	jnc @F
+	@dprintf "dt_cmd: found trapped port=%X", bp
+	mov ax, bp
+	call hexword
+	mov al,' '
+	stosb
+	inc dl
+	test dl, 7
+	jnz @F
+	pusha
+	call putsline
+	popa
+	mov di, offset line_out
 @@:
+	inc bp
+	loop nextport
+done:
 	call putsline
 	ret
 dt_cmd endp
@@ -3151,25 +3241,6 @@ chkdispsegm proc
 	jmp hexword
 chkdispsegm endp
 endif
-
-@dispsegm macro segm
-	mov ax,segm
-if RING0 and V86M
-	call chkdispsegm
-else
-	call hexword
-endif
-endm
-
-@movs macro dst, src
-if RING0 and V86M
-	push src
-	call v86setofs
-	pop dst
-else
-	mov dst, src
-endif
-endm
 
 ;--- D command - hex/ascii dump.
 
@@ -5675,7 +5746,7 @@ getcseipbyte endp
 
 setcseipbyte proc
 	push es
-	mov bx,[regs.rCS]
+	@movs bx,[regs.rCS]
 if ?PM
 	call IsWriteableBX	; checks descriptor only, can't detect r/o pages
 	jc scib_1
@@ -6004,7 +6075,7 @@ q_cmd proc
 ;--- not have implemented an int 21h API at all. However, it will work
 ;--- in many cases and hence seems better than nothing.
 
-	mov bx, [regs.rCS]
+	@movs bx, [regs.rCS]
 	.386
 	lar ax, bx
 	and ah, 60h
@@ -6894,6 +6965,18 @@ clear_tf_onstack endp
 
 ue_int:
 	mov dl, [run_int]
+if RING0 and CATCHSYSREQ
+	.386
+	btr word ptr [bFlagsPM], 1
+	.8086
+	jnc @F
+	mov dl, SYSRQMSG
+	push ds
+	mov ds, [wFlat]
+	and word ptr ds:[417h], not ( 200h or 8)	;reset "Alt pressed" flags
+	pop ds
+@@:
+endif
 	mov dh, 0
 	add dx, offset int0msg
 	call int21ah9	;print string
@@ -6980,7 +7063,7 @@ u_cmd proc
 	mov cx,20h		;default length
 	cmp al,CR
 	je uuloop		;if no address was given
-	mov bx,[regs.rCS]
+	@movs bx,[regs.rCS]
 	call getrange	;get address range into bx:(e)dx/(e)cx
 	call chkeol		;expect end of line here
 	sizeprfX		;mov [u_addr+0],edx
@@ -7893,7 +7976,7 @@ nextbp:
 	pop cx
 	jc error
 	or byte ptr [si-1], BP_ACTIVE
-	or byte ptr [regs.rFL+2], 1	; set resume flag so a hwbp at cs:eip will be skipped
+;	or byte ptr [regs.rFL+2], 1	; set resume flag so a hwbp at cs:eip will be skipped (see comment below)
 skipbp:
  if ?DPMI
 	lodsw
@@ -7901,6 +7984,9 @@ skipbp:
 	inc cx
 	cmp cl, MAXHWBP
 	jnz nextbp
+;--- set resume flag generally - another debugger might have set a HW bp, and without
+;--- RF=1 we would be stuck...
+	or byte ptr [regs.rFL+2], 1
 	ret
 error:
 	call resetHWBps
@@ -7976,13 +8062,21 @@ setHWBps endp
 ;--- unmap (hard) breakpoints from debug registers
 ;--- entry will be patched to NOP if hw bp enabled!
 
+;--- todo: for ring0, it's probably a good idea not to just
+;--- scan the bp table, but check the debug registers directly.
+;--- they may have been set by another PL0 debugger and
+;--- perhaps we want to cooperate by importing the bp?
+;--- At the very least, it should be checked if the addresses
+;--- in HWBps and DR0-3 do match. If no, a warning is to be
+;--- emitted.
+
 resetHWBps proc
 	ret
 	mov [bBPhit], 0
 if ?DPMI
 	mov bp, offset pmresethwbp
 	call ispm_dbg
-	jnz @F			; skip if in real-mode
+	jnz @F			; skip if in real/v86-mode
 endif
 	mov bp, [wRMResetBP]
 @@:
@@ -8011,6 +8105,7 @@ skipbp:
 	jb nextbp
 	ret
 
+ if ?DPMI
 pmresethwbp:
 	mov bx, [si]
 	mov ax, 0b02h	; get status
@@ -8020,6 +8115,7 @@ pmresethwbp:
 	int 31h
 	@dprintf "pmresetHWBps hdl=%X", bx
 	retn
+ endif
 r0resethwbp::
 	xor eax, eax
 	call setdrreg
@@ -8038,7 +8134,7 @@ resetHWBps endp
 
 	.8086
 
-endif
+endif ; USEHWBP
 
 ;--- This is the routine that starts up the running program.
 
@@ -8463,7 +8559,7 @@ sethwbptmp proc
 	add eax, edx
 	@dprintf "sethwbptmp: linear=%lX (cs:eip=%X:%lX)", eax, bx, edx
 	stosd
-	mov al, 0 or BP_USED or BP_TEMP
+	mov al, BP_CODE or BP_USED or BP_TEMP
 	stosb
 @@:
 	pop di
@@ -8569,7 +8665,7 @@ bp_cmd:
 	call getaddr	; get address into bx:e/dx
 	call skipwh0
 	push edx
-	mov dl, 0		; default type: 0=exec (1=write,3=rw)
+	mov dl, 0		; default type: 0=exec (1=write,2=io,3=rw)
 	cmp al,CR       ; second argument (=type) given?
 	jz @F
 	call getbyte	; get byte into DL
@@ -8583,7 +8679,11 @@ bp_cmd:
 	add eax, ecx
 	stosd
 	mov al, dl
-	and al, 0fh		; type is 4 bits only
+	and al, 30h
+	and dl, 03h
+	shr al, 2
+	or  al, dl
+	and al, 0fh		; real type is 4 bits only
 	or al, BP_USED
 	stosb
 	ret
@@ -8619,6 +8719,11 @@ nextbp:
 	mov al, ' '
 	stosb
 	pop ax
+	mov ah, al
+	shl ah, 2
+	and al, 3
+	and ah, 30h
+	or al, ah
 	call hexbyte
 	call putsline
 	pop cx
@@ -9262,6 +9367,20 @@ endif
 	cmp al,7Fh
 	jz del_key
 	stosb
+if RING0
+	cmp al, 20h
+	jnc @F
+	cmp al, 0Dh
+	jz @F
+	cmp al, 08h
+	jz @F
+	push ax
+	mov al, '^'
+	call stdoutal
+	pop ax
+	or al, 40h
+@@:
+endif
 	call stdoutal
 	cmp al,0Dh
 	jnz rawnext
@@ -9578,12 +9697,21 @@ parseql proc
 	jne peq1		;if no '=' operand
 	call skipwhite
 if ?DPMI
-	sizeprf
+	sizeprf			;xor edx, edx
 	xor dx,dx
+endif
+if RING0 and V86M
+	@movs bx,[regs.rCS]
 endif
 	call getaddr	;get address into bx:(e)dx
 	sizeprfX		;mov [eqladdr+0],edx
 	mov [eqladdr+0],dx
+if RING0 and V86M
+	test byte ptr [regs.rFL+2],2
+	jz @F
+	mov bx,[scratchv86]	; don't store the scratch selector in eqladdr - must be a segment value in v86
+@@:
+endif
 peq1:
 	mov [eqladdr+4],bx
 	ret
@@ -10187,7 +10315,7 @@ sm4:
 	ret
 showmach endp
 
-;--- DUMPREGS - Dump registers.
+;--- DUMPREGS - Dump registers and print 1 disassembled line at CS:EIP.
 
 dumpregs proc
 ;	@dprintf "dumpregs"
@@ -10228,16 +10356,16 @@ endif
 	mov di, offset u_addr
 	movsw
 	movsw
-	@movs ax,[regs.rCS]
+	@movs ax,[regs.rCS]	; problem: if V86M and v86-mode, this will be the scratch sel
 	stosw
 	mov al, DIS_F_REPT or DIS_F_SHOW
 	call disasm
 
 ;--- 'r' resets default setting for 'u' to CS:[E]IP
 
-	sizeprf
+	sizeprf			; mov eax, [regs.rIP]
 	mov ax,[regs.rIP]
-	sizeprf
+	sizeprf			; mov [u_addr], eax
 	mov [u_addr],ax
 	ret
 
@@ -10997,6 +11125,39 @@ hook2f endp
 
 endif
 
+if RING0
+uninstall proc
+
+	.386
+	push ds
+	push es
+	mov ds, cs:[wDgroup]
+	sub esp, 6
+	sidt [esp]
+	pop dx
+	pop ebx
+	mov es, [wFlat]
+	mov cx, NUMINTS
+	mov si, offset inttab
+	mov di, offset intsave
+@@:
+	movzx edx, byte ptr [si]
+	shl edx, 3
+	mov eax, [di]
+	mov es:[ebx+edx+0], ax
+	shr eax, 16
+	mov es:[ebx+edx+6], ax
+	mov ax, [di+4]
+	mov es:[ebx+edx+2], ax
+	add si, sizeof INTITEM
+	add di, sizeof INTVEC
+	loop @B
+	pop es
+	pop ds
+	retd
+uninstall endp
+endif
+
 endoftext16 label byte
 
 _TEXT ends
@@ -11733,13 +11894,13 @@ noopt2:
 ;--- ||| Other switches may go here.
 
  if USEHWBP
-	cmp al,'s'
+	cmp al,'s'		; don't use debug registers in real-mode/protected-mode?
 	jnz @F
 	mov [bHWBPflgs],0
 	jmp contparse
 @@:
   ife RING0
-	cmp al,'v'
+	cmp al,'v'		; use debug registers in v86-mode?
 	jnz @F
 	or [bHWBPflgs],HWBP_V86
 	jmp contparse
@@ -11761,6 +11922,14 @@ noopt2:
 	mov [itab41.bInt], -1; deactivate Int 41h hook   
 	jmp contparse
 noopti:
+ endif
+
+ if RING0 and V86M
+	cmp al, 'b'		; set alternate v86-monitor bp?
+	jnz nooptb
+	mov [bV86Bp], 63h; assume v86 monitor bp is ARPL
+	jmp contparse
+nooptb:
  endif
 
  ife (DRIVER or RING0)	; those versions ignore invalid cmdline args

@@ -160,34 +160,24 @@ if CATCHSYSREQ
 	.err <'SYSRQINT equ 15h' not implemented for RING0>
  endif
 
+exitwithpopds:
+	pop ds
 @@:
 	jmp cs:[oldisrq]
 intrsrq:
 	test cs:[bInDbg], 1
 	jnz @B
-;--- no way to call the real-mode IRQ handler from here. we check the sysreq
-;--- bit and, if set, read the kbd port direct, also sending EOI to the PIC.
-;--- Not really nice, but it works.
+;--- v2.50: changed strategy - instead of reading port 60h and see if
+;--- SysRq was released, we check the BIOS variable only and if set, set
+;--- TF=1, causing a single-step exception once the irq1 routine is done.
 	push ds
 	mov ds, cs:[wFlat]
 	test byte ptr ds:[418h], 4	; sysreq pressed?
-	pop ds
-	jz @B
-	push ax
-	in al, 60h
-	cmp al, 54h+80h		; sysreq released?
-	pop ax
-	jnz @B
-	push ds
-	mov ds, cs:[wFlat]
-	and byte ptr ds:[418h], not 4
-	pop ds
-	push ax
-	mov al, 20h
-	out 20h, al
-	pop ax
-	push SYSRQMSG or (1 shl 8)
-	jmp intr01ex
+	jz exitwithpopds
+	or byte ptr [esp+2].IRET32._efl+1, 1	; set TF=1
+	mov ds, cs:[wDgroup]
+	or [bFlagsPM], 2	; tell debugger that single-step is caused by SysReq
+	jmp exitwithpopds
 endif
 
 ;--- exceptions with error code
