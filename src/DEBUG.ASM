@@ -1050,7 +1050,7 @@ endif
 helpmsg db DBGNAME2, ' v',@CatStr(!',%VERSION,!'),CR,LF
 	db 'assemble', TAB, 'A [address]',CR,LF
 if BCMD
-	db 'clear bp', TAB, 'BC # (#=0|1|2)',CR,LF
+	db 'clear bp', TAB, 'BC # (#=0|1|2|3)',CR,LF
 	db 'set/show bp', TAB, 'BP [address [type]]',CR,LF
 endif             
 	db 'compare', TAB, TAB, 'C range address',CR,LF
@@ -1276,6 +1276,7 @@ gatewrong db 'gate not accessible',0
 endif
 if RING0
 segerr	db "Debuggee segments invalid",CR,LF,'$'
+fpuemerr db "CR0.EM=1, won't run FPU opcodes",CR,LF,'$'
  if QCMD
 plerr   db "can't quit protected-mode",CR,LF,'$'
  endif
@@ -2599,6 +2600,15 @@ szidtr db "IDTR=",0
 CONST ends
  endif
 
+ if RING0
+GATE struct
+wOfsLo dw ?
+wSeg   dw ?
+wAttr  dw ?
+wOfsHi dw ?
+GATE ends
+ endif
+
 ;--- DI command
 
 di_cmd proc
@@ -2612,39 +2622,21 @@ di_cmd proc
 	call chkeol
 	and dx,dx
 	jnz @F
-	inc dx			;ensure that count is > 0
+	inc dx			;ensure that count is at least 1
 @@:
 	mov si,dx		;save count
 if RING0
- if FLATSS
-	push ebp
-	mov ebp, esp
-	sub esp, 6
-	sidt [ebp-6]
- else
-	push bp
-	mov bp, sp
-	sub sp, 6
-	sidt [bp-6]
- endif
+	sidt [real_end-6]
 	push si
 	mov si, offset szidtr
 	call copystring
 	pop si
- if FLATSS
-	mov ax,[ebp-6]
- else
-	mov ax,[bp-6]
- endif
+	mov ax,word ptr [real_end-6]
 	call hexword
 	mov al,'.'
 	stosb
 	.386
- if FLATSS
-	mov eax,[ebp-4]
- else
-	mov eax,[bp-4]
- endif
+	mov eax,dword ptr [real_end-4]
 	call hexdword
 	call putsline
 endif
@@ -2688,36 +2680,42 @@ gate16:
 	.386
 	push bx
 	movzx ebx, bl
+ if V86M
+	mov dl, bl
+ endif
  if LMODE
 	shl bx, 4
  else
 	shl bx, 3
  endif
- if FLATSS
-	cmp bx, [ebp-6]
- else
-	cmp bx, [bp-6]
- endif
+	cmp bx, word ptr [real_end-6]
 	ja di_done
- if FLATSS
-	add ebx, [ebp-4]
- else
-	add ebx, [bp-4]
- endif
+	add ebx, dword ptr [real_end-4]
 	push ds
 	mov ds, [wFlat]
-	mov ax, [ebx+2]
+	mov ax, [ebx].GATE.wSeg
 	call hexword
 	mov al, ':'
 	stosb
-	mov ax, [ebx+6]
+	mov ax, [ebx].GATE.wOfsHi
 	call hexword
-	mov ax, [ebx+0]
+	mov ax, [ebx].GATE.wOfsLo
 	call hexword
 	mov eax, '=ta '
 	stosd
-	mov ax, [ebx+4]
+	mov ax, [ebx].GATE.wAttr
 	call hexword
+ if V86M
+	mov eax, "=vi "
+	stosd
+	movzx ebx, dl
+	mov ax, [ebx*4+2]
+	call hexword
+	mov al,':'
+	stosb
+	mov ax, [ebx*4+0]
+	call hexword
+ endif
 	.8086
 	pop ds
 	pop bx
@@ -2732,16 +2730,6 @@ gate_exit:
 	dec si
 	jnz gateout_00
 di_done:
-if RING0
- if FLATSS
-	.386
-	mov esp, ebp
-	pop ebp
- else
-	mov sp, bp
-	pop bp
- endif
-endif
 	ret
 if ?DPMI
 gatefailed:
@@ -2928,7 +2916,7 @@ szPL0Stk db " RSP0=",0
 else
 szPL0Stk db " R0 SS:ESP=",0
 endif
-szIOBM db " IOBM=",0
+szIOPB db " IOPB=",0
 szTrapped db "trapped ports:",13,10,'$'
 CONST ends
  
@@ -2957,10 +2945,10 @@ dt_cmd proc
 	call hexword
 	cmp bx,0
 	jz done
-	call getlinearbaseDT	;modifies DX
+	call getlinearbaseDT	;TSS is always in GDT
 	jc done
-	call getlinearbaseBX	;modifies DX
-	@dprintf "dt: bx=%X eax=%lX", bx, eax
+	call getlinearbaseBX	;ret: eax=linear addr, dx=limit
+	@dprintf "dt: bx=%X eax=%lX, limit=%X", bx, eax, dx
 	mov ebx, eax
 	push si
 	mov si, offset szPL0Stk
@@ -2981,12 +2969,28 @@ else
 	mov eax, [ebx].TSS._Esp0
 	call hexdword
 endif
+
+;--- display trapped ports;
+
+;--- check if TSS does indeed include an IO permission bitmap.
+;--- DX=limit TSS
+;--- BP=port to start with
+;--- SI=number of ports to check
+
+	mov ax, bp
+	add ax, si
+	add ax, 8-1
+	shr ax, 3
+	add ax, [ebx].TSS.wOffs
+	cmp dx, ax
+	jc done
+
 	movzx eax, [ebx].TSS.wOffs
 	pop ds
 	add eax, ebx
 	push ax
 	push si
-	mov si, offset szIOBM
+	mov si, offset szIOPB
 	call copystring
 	pop si
 	pop ax
@@ -3022,7 +3026,7 @@ nextport:
 	mov di, offset line_out
 @@:
 	inc bp
-	loop nextport
+	loopnz nextport
 done:
 	call putsline
 	ret
@@ -6442,7 +6446,7 @@ yesskip db "Exception skipped",13,10,'$'
 
 CONST ends
 
-;--- skip exception
+;--- skip exception.
 ;--- actually, the only exceptions that cannot be skipped
 ;--- are breakpoints set by the debugger itself.
 
@@ -6471,7 +6475,7 @@ found:
  endif
 	lar ax, [regs.rCS]
 	and ah, 60h				; exception occured in ring 0?
-	jz @F
+	jz @F					; then there's no stack switch.
 isv86:
 	mov ebx, [regs.r0Esp]	; no, use saved r0 stack
 	mov dx, [regs.r0SS]
@@ -6490,6 +6494,7 @@ isv86:
 isv86_2:
  endif
 @@:
+;--- dx=ss, ebx=esp, esi -> intsave entry for exception
 	bt [run_intw], 15	; exc with error code?
 	jnc @F
 	sub ebx, 1*4	; correct error code
@@ -6507,7 +6512,7 @@ isv86_2:
 	pushf
 	pop ax
 	mov byte ptr [regs.rFL+1], ah
-	
+
 	mov [run_int+1], -1		; reset run_int, so skip is "deactivated" for this time
 	mov dx, offset yesskip
 	jmp int21ah9
@@ -10536,8 +10541,19 @@ CONST ends
 
 ;--- dumpregsFPU - Dump Floating Point Registers 
 ;--- modifies SI, DI, [E]AX, BX, CX, [E]DX
+;--- Note: value of CR0 bits 1=MP,2=EM,3=TS may have unwanted effects:
+;--- 1. if MP=1 and TS=1, an fwait will raise exc 07
+;--- 2. if EM=1, any fpu opcode will raise exc 07.
 
 dumpregsFPU proc
+if RING0
+	.386
+	mov dx, offset fpuemerr
+	mov eax, cr0
+	test al, 4		;CR0.EM=1?
+	jnz int21ah9
+	.8086
+endif
 	mov di,offset line_out
 	mov si,offset fregnames
 	mov bx,offset line_in + 2

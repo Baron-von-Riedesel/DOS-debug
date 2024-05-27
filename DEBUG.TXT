@@ -256,35 +256,46 @@
  [ENH:
  ---
 
- DebugX only: the Dump Interrupt (DI) command displays interrupt vectors in
- real/v86-mode and DPMI interrupt (+exception) vectors in protected-mode.
- Examples:
+ The Dump Interrupt (DI) command displays interrupt vectors (DebugX/
+ DebugR(L/V) only).
+ 
+ DebugX: the format depends on the current mode. In real/v86-mode, it's
+ the interrupt vector table (IVT) that is displayed. In protected-mode, it's
+ the (virtual) IDT and the exception vectors that are displayed.
 
- Display interrupt 00 in real-mode:
+  -DI 0     ; Interrupt 00 in real-mode:
+  00 02F8:03F8
 
- -DI 0
- 00 02F8:03F8
+  #DI 8 4   ; Interrupt and exception vectors 08-0B in 32bit protected-mode:
+  08 00C7:00000D28 00C7:00001228
+  09 00C7:00000D2D 00C7:0000122D
+  0A 00C7:00000D32 00C7:00001232
+  0B 00C7:00000D37 00C7:00001237
 
- Display interrupt and exception vectors 08-0B in 32bit protected-mode:
+ DebugR(L): the (real) IDT is displayed.
 
- #DI 8 4
- 08 00C7:00000D28 00C7:00001228
- 09 00C7:00000D2D 00C7:0000122D
- 0A 00C7:00000D32 00C7:00001232
- 0B 00C7:00000D37 00C7:00001237
+  #DI 10 2  ; IDT vectors 10-11
+  10 0008:00110338 at=EE00
+  11 0008:00110340 at=EE00
+
+ DebugRV: besides the IDT, the IVT vector is displayed.
+ 
+  #DI 10 2  ; IDT and IVT vectors 10-11
+  10 0008:00110338 at=EE00 iv=C000:1234
+  11 0008:00110340 at=EE00 iv=0123:0023
 
  Syntax: DI vector [count]
 
  ---
 
- DebugX only: the Dump LDT descriptor (DL) command displays DPMI LDT
- descriptors. Example:
+ The Dump LDT descriptor (DL) command displays LDT descriptors (DebugX/
+ DebugR(L/V) only). Example:
 
  #dl 84 2
  0084 base=00110800 limit=0000014F attr=00F2
  008C base=00110000 limit=000007FF attr=00F3
 
- DL can also be used to display limit and attributes of those GDT 
+ DebugX: DL can also be used to display limit and attributes of those GDT 
  descriptors which are accessible by the client. Example:
 
  #dl 18 3
@@ -316,10 +327,10 @@
 
  ---
 
- DebugX only: The Dump eXtended memory command (DX) allows to examine
- the full range of memory. It uses interrupt 15h, AH=87h for extended
- memory access. It should be noted that, when running under a Expanded
- Memory Manager (EMM), Interrupt 15h, AH=87h behaves slightly inconsistent:
+ The Dump eXtended memory command (DX) allows to examine the full range of
+ memory (DebugX only). It uses interrupt 15h, AH=87h for extended memory
+ access. It should be noted that, when running under a Expanded Memory
+ Manager (EMM), Interrupt 15h, AH=87h behaves slightly inconsistent:
  addresses below 110000h are regarded as linear, while addresses >= 110000h
  are regarded as physical.
 

@@ -335,3 +335,6 @@
        - mktables.c: creates ASMTBL.INC/DISTBL.INC instead of DEBUGTBL.INC.
        - cmds a, u: instruction RDTSC added.
        - another variant of DebugR - DebugRV, with support for V86 mode.
+       - DebugR(V) dt cmd: optionally displays trapped ports.
+       - DebugRV di cmd: displays IDT & IVT vectors.
+       - DebugR rn cmd: won't run cmd if CR0.EM is set.
