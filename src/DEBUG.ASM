@@ -703,13 +703,10 @@ u_addr	dw 0,0,0	;address for last U command; must follow d_addr
 if USEHWBP
 ;--- bits in bType:
 ;---   0-3: type
-;---   5: 1=bp is temp
-;---   6: 1=bp is active
-;---   7: 1=bp is used
 BP_CODE   equ  0h
-BP_TEMP   equ 20h
-BP_ACTIVE equ 40h
-BP_USED   equ 80h
+BP_TEMP   equ 20h	;1=bp is temporary
+BP_ACTIVE equ 40h	;1=bp has been set
+BP_USED   equ 80h	;1=used,0=free
 BP_ACTIVEBIT equ 6
 
 HWBPSTRUCT struct
@@ -7948,9 +7945,9 @@ WPENABLE equ 1	;local wp enable
 ;--- DR7 (debug control register):
 ;--- bit 0-7: L0,G0 - L3,G3
 ;--- bit 8-9: LE,GE
-;--- type ( optional 2. argument ) will be copied to bits 16-19 (RW0,LEN0)
-;--- bit 16-17: type (0=exec, 1=write, 2=I/O [if CR4.DE=1], 3=read or write)
-;--- bit 18-19: len (0=1 byte, 1=2 byte, 2=8 byte, 3=4 byte )
+;--- type ( optional 2. argument ) will be copied to bits 16-31 (RWx,LENx)
+;--- bp0 bit 16-17: type (0=exec, 1=write, 2=I/O [if CR4.DE=1], 3=read or write)
+;--- bp0 bit 18-19: len (0=1 byte, 1=2 byte, 2=8 byte, 3=4 byte )
 
 ;--- map (hard) breakpoints to debug registers
 ;--- entry will be patched to NOP NOP if hw bp enabled!
@@ -7989,8 +7986,8 @@ skipbp:
 	inc cx
 	cmp cl, MAXHWBP
 	jnz nextbp
-;--- set resume flag generally - another debugger might have set a HW bp, and without
-;--- RF=1 we would be stuck...
+;--- set resume flag generally - another debugger
+;--- might have set a HW bp, and without RF=1 we would be stuck...
 	or byte ptr [regs.rFL+2], 1
 	ret
 error:
@@ -8707,7 +8704,7 @@ nextbp:
 	lodsd
 	xchg edx, eax
 	lodsb
-	@dprintf "bp: cx=%X, edx=%lX, ax=%X", cx, edx, ax
+	@dprintf "bp: cx=%X, edx=%lX, al=%X", cx, edx, ax
 	test al, BP_USED
 	jz skipbp
 	mov di, offset line_out
@@ -10985,7 +10982,11 @@ stdout endp
 ifdef _DEBUG
 	pushcontext cpu
 	.386
+ if RING0 and V86M
+	include <DPRINTFR.INC>
+ else
 	include <DPRINTF.INC>
+ endif
 	popcontext cpu
 endif
 

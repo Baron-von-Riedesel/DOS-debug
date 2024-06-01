@@ -1,11 +1,6 @@
 
 ;--- debug printf - all registers preserved, including flags
-
-if CATCHINT41
-;--- .486 makes jwasm avoid LEAVE generation - problem if stack is 32-bit
-;--- and hiword(ebp) != 0. That can happen for @dprintf inside intr41().
-	.486
-endif
+;--- DEBUGR variant, compatible with 32-bit stack
 
 handle_char proc
 
@@ -18,11 +13,7 @@ handle_char proc
 	push bx
 	xor bx,bx
 	mov ah,0Eh
-if RING0
 	call cs:[int10vec]
-else
-	int 10h
-endif
 	pop bx
 	ret
 
@@ -31,14 +22,12 @@ handle_char endp
 ;--- ltob(long n, char * s, int base);
 ;--- convert long to string
 ;--- eax=number
-;--- bx=buffer - is expected to be onto stack
+;--- ss:ebx=buffer
 ;--- cx=base
 
-;ltob PROC stdcall uses edi number:dword, outb:word, base:word
 ltob PROC 
 
 	push edi
-	push edx
 	movzx edi, cx
 	mov ch,0
 	cmp di,-10
@@ -49,9 +38,9 @@ ltob PROC
 	neg eax
 	mov ch,'-'
 @@:
-	add bx,10
-	mov BYTE PTR ss:[bx],0
-	dec bx
+	add ebx,10
+	mov BYTE PTR ss:[ebx],0
+	dec ebx
 @@nextdigit:
 	xor edx, edx
 	div edi
@@ -60,60 +49,54 @@ ltob PROC
 	jbe @F
 	add dl,7+20h
 @@:
-	mov ss:[bx],dl
-	dec bx
+	mov ss:[ebx],dl
+	dec ebx
 	and eax, eax
 	jne @@nextdigit
 	cmp ch,0
 	je @F
-	mov ss:[bx],ch
-	dec bx
+	mov ss:[ebx],ch
+	dec ebx
 @@:
-	inc bx
-	mov ax,bx
-	pop edx
+	inc ebx
+	mov eax,ebx
 	pop edi
 	ret
 
 ltob ENDP
 
-;--- ss doesn't need to be dgroup
-;--- v2.01: ss may be 32-bit!
+;--- ds unused; ss unknown, may be 16- or 32-bit.
+;--- tiny model ( strings may be addressed with CS ) assumed.
 
 dprintf PROC
 
-d_sp   equ word ptr [bp+16+2]
-d_ret  equ word ptr [bp+16+2+2]
-d_fmt  equ word ptr [bp+16+2+2+2]
-d_args equ          [bp+16+2+2+2+2]
+d_esp     equ <dword ptr [ebp+32+2]>
+d_ret     equ <word ptr [ebp+32+2+4]>
+d_fmt     equ <word ptr [ebp+32+2+4+2]>
+d_args    equ <[ebp+32+2+4+2+2]>
 
-if 0
-local size_:word
-local flag:byte
-local longarg:byte
-local fill:byte
-local szTmp[12]:byte
-else
-d_size    equ <[bp-2]>
-d_flag    equ <byte ptr [bp-3]>
-d_longarg equ <byte ptr [bp-4]>
-d_fill    equ <byte ptr [bp-5]>
-d_szTmp   equ <[bp-18]>
-endif
+d_size    equ <word ptr [ebp-2]>
+d_flag    equ <byte ptr [ebp-3]>
+d_longarg equ <byte ptr [ebp-4]>
+d_fill    equ <byte ptr [ebp-5]>
+d_szTmp   equ <[ebp-18]>
 
-	push sp
+	push esp
 	pushf
-	pusha
-	mov bp, sp
-	sub sp, 18
-	push ds
-	push cs
-	pop ds
-	lea di, d_args
+	pushad
+	mov ebp, esp
+	sub esp, 18
+	mov ax, ss
+	lar eax, eax
+	bt eax, 22
+	jc @F
+	movzx ebp, bp
+@@:
+	lea edi, d_args
 @@L335:
 	mov si, d_fmt
 nextchar:
-	lodsb [si]
+	lodsb cs:[si]
 	or al,al
 	je done
 	cmp al,'%'
@@ -121,15 +104,14 @@ nextchar:
 	call handle_char
 	jmp nextchar
 done:
-	sub di, 2
+	sub edi, 2
 	mov ax, d_ret
-	mov ss:[di], ax
-	mov d_sp, di
-	pop ds
-	mov sp, bp
-	popa
+	mov ss:[edi], ax
+	mov d_esp, edi
+	add esp, 18
+	popad
 	popf
-	pop sp
+	pop esp
 	ret
 
 formatitem:
@@ -138,36 +120,40 @@ formatitem:
 	mov d_longarg,dl
 	mov bl,1
 	mov cl,' '
-	cmp BYTE PTR [si],'-'
+	cmp BYTE PTR cs:[si],'-'
 	jne @F
 	dec bx
 	inc si
 @@:
 	mov d_flag, bl
-	cmp BYTE PTR [si],'0'
+	cmp BYTE PTR cs:[si],'0'
 	jne @F
 	mov cl,'0'
 	inc si
 @@:
 	mov d_fill,cl
 	mov bx,dx
-
-	.while byte ptr [si] >= '0' && byte ptr [si] <= '9'
-		lodsb
-		sub al,'0'
-		cbw
-		imul cx,bx,10		;cx = bx * 10
-		add ax,cx
-		mov bx,ax
-	.endw
-
+@@:
+	lodsb cs:[si]
+	cmp al, '0'
+	jb numdone
+	cmp al, '9'
+	ja numdone
+	sub al,'0'
+	cbw
+	imul cx,bx,10		;cx = bx * 10
+	add ax,cx
+	mov bx,ax
+	jmp @B
+numdone:
+	dec si
 	mov d_size, bx
-	cmp BYTE PTR [si],'l'
+	cmp BYTE PTR cs:[si],'l'
 	jne @F
 	mov d_longarg,1
 	inc si
 @@:
-	lodsb
+	lodsb cs:[si]
 	mov d_fmt,si
 	cmp al,'x'
 	je handle_x
@@ -188,8 +174,8 @@ formatitem:
 	pop ax
 	jmp done
 handle_c:
-	mov ax,ss:[di]
-	add di,2
+	mov ax,ss:[edi]
+	add edi,2
 @@L359:
 	call handle_char
 	retn
@@ -204,8 +190,8 @@ handle_i:
 handle_u:
 	mov cx,10
 @@lprt262:
-	mov ax,ss:[di]
-	add di,2
+	mov ax,ss:[edi]
+	add edi,2
 	sub dx,dx
 	cmp cx,0		;signed or unsigned?
 	jge @F
@@ -213,37 +199,31 @@ handle_u:
 @@:
 	cmp d_longarg,0
 	je @F
-	mov dx,ss:[di]
-	add di,2
+	mov dx,ss:[edi]
+	add edi,2
 @@:
-	lea bx, d_szTmp
-
-	push eax		; hiword eax must be preserved
+	lea ebx, d_szTmp
 
 	push dx
 	push ax
 	pop eax
 ;	invoke ltob, eax, bx, cx
 	call ltob
-	mov si,ax
-
-	pop eax
-
-	push ds
-	push ss
-	pop ds
-	call output_string
-	pop ds
+	mov esi,eax
+	.while byte ptr ss:[esi]
+		lodsb ss:[esi]
+		call handle_char
+	.endw
 	retn
 
 handle_s:
-	mov si,ss:[di]
-	add di,2
+	mov si,ss:[edi]
+	add edi,2
 
 output_string:	;display string at ds:si
 	mov ax,si
 	mov bx,d_size
-	.while byte ptr [si]
+	.while byte ptr cs:[si]
 		inc si
 	.endw
 	sub si,ax
@@ -257,8 +237,8 @@ output_string:	;display string at ds:si
 		.endw
 	.endif
 
-	.while byte ptr [si]
-		lodsb
+	.while byte ptr cs:[si]
+		lodsb cs:[si]
 		call handle_char
 	.endw
 
@@ -270,4 +250,14 @@ output_string:	;display string at ds:si
 	retn
 
 dprintf ENDP
+
+d_esp     equ <>
+d_ret     equ <>
+d_fmt     equ <>
+d_args    equ <>
+d_size    equ <>
+d_flag    equ <>
+d_longarg equ <>
+d_fill    equ <>
+d_szTmp   equ <>
 

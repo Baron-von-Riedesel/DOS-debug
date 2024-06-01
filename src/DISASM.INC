@@ -488,7 +488,7 @@ da21:
 	jnz @F
 	dec di
 @@:
-	@dprintf "da21, di=%X", di
+;	@dprintf "da21, di=%X", di
 	xor bx, bx
 nextflag:
 	mov ax, word ptr [preflags]	; ah=preused
