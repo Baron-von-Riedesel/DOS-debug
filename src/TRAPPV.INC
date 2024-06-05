@@ -325,6 +325,9 @@ intrsrq:
 	or byte ptr [esp+2].IRET32._efl+1, 1	; set TF=1
 	mov ds, cs:[wDgroup]
 	or [bFlagsPM], 2	; tell debugger that single-step is caused by SysReq
+	bts [wTrappedExc+2], 1	; is exc 1 trapped?
+	jc exitwithpopds
+	or [bFlagsPM], 4		; if no, mark it in bFlagsPM   
 	jmp exitwithpopds
 endif
 
@@ -434,8 +437,12 @@ int_dbgee:
 ;--- check vector traps (set/reset by VT/VC)
 	push ax
 	mov al, byte ptr [esp+2].EXCFR.wMsg+1
+	test byte ptr [esp+2].EXCFR._efl+2, 2		; v86mode?
+	jz @F
+	add al, 16
+@@:
 	and ax, 1Fh
-	bt cs:[wTrappedExc], ax	; exception trapped?
+	bt cs:[wTrappedExc], ax	; exception trapped in ring 0/3?
 	pop ax
 	jnc nostop
 

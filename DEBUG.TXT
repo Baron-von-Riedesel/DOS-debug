@@ -256,6 +256,12 @@
  [ENH:
  ---
 
+ DebugR(L/V) only: the Dump GDT (DG) command displays the GDT.
+ 
+ Syntax: DG selector [count]
+
+ ---
+
  The Dump Interrupt (DI) command displays interrupt vectors (DebugX/
  DebugR(L/V) only).
  
@@ -324,6 +330,16 @@
  An owner of 0000 means that this MCB describes a free memory block.
 
  Syntax: DM
+
+ ---
+
+ DebugR(L|V) only: The Dump Task State Segment (DT) displays some information
+ of the current TSS: the TR register, the ring0 SS:ESP and the address of the
+ IO Permission Bitmap (IOPB). Optionally, one may display ports that are
+ trapped if the debuggee is either in V86-mode or in non-priviledged protected
+ mode and IOPL is 0.
+
+ Syntax: DT [port count]
 
  ---
 
@@ -998,28 +1014,25 @@
  
   Once loaded, DebugR(L|V) can debug programs running in both ring-0 and ring-3
  protected-mode. Since they don't use DOS or BIOS, a few commands implemented
- in the standard Debug/X aren't available: DM, DX, L, N, Q, W, Xx. OTOH,
- DebugR(L|V) have got some special commands:
-
- DG start [count]: display GDT ( Global Descriptor Table )
- DI start [count]: display IDT ( Interrupt Descriptor Table )
- DL start [count]: display LDT ( Local Descriptor Table )
- DT [port count]:  display TR, PL0 SS:ESP and optionally trapped ports
- SK: Skip handling of current exception, hand it over to previous handler.
- VC vector: untrap vector
- VL: list (un)trapped vectors ( vectors marked with '*' are untrapped )
- VT vector: trap vector; what vectors can be trapped depends on how DebugR(L|V)
-    was assembled, usually it's 0,1,3,6,0Dh and 0Eh.
+ in the standard Debug/X aren't available: DM, DX, L, N, Q, W, Xx. OTOH, some
+ "dump" variants are activated: DG, DI, DL, DT, as well as BC and BP. A few
+ commands very specific to DebugR(L|V) are:
  
- Commands BC and BP are activated for DebugR.
-
+ SK: Skip handling of current exception, hand it over to previous handler.
+ VC vector [0|3]: untrap vector, optionally specific for ring 0 or 3.
+ VL: list (un)trapped vectors. Shows the vectors and in what ring they are
+    trapped.
+ VT vector [0|3]: trap vector, optionally specific for ring 0 or 3; what
+    vectors can be trapped depends on how DebugR(L|V) was assembled, usually
+    it's 0, 1, 3, 6, 0Ch, 0Dh and 0Eh.
+ 
  Commands G, T and P: since support for 80386+ hardware debug registers is
  active, it may be used by those commands in case a breakpoint is to be set. 
  If no more free breakpoints are available - of if cmdline option -s has been
  set -, the debugger will switch back to "soft" breakpoints. As for DebugR and
- DebugRL, one shouldn't set a breakpoint that may be triggered in real/v86-mode
- - these variants are not bimodal, cannot handle V86-mode and hence won't be
- notified in such cases!
+ DebugRL, setting a breakpoint that may be triggered in real/v86-mode is
+ somewhat problematic, since these variants don't know how to handle those
+ modes and hence are unable to stop in such cases!
 
   At the debugger prompt, when an address is to be parsed, the prefix '%' will
  tell the debugger to interpret the following offset as linear address.

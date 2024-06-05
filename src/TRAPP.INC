@@ -293,7 +293,12 @@ int_dbgee:
 
 ;--- check vector traps (set/reset by VT/VC)
 	push ax
+	lar ax, word ptr [esp+2].EXCFR._cs
+	test ah, 60h	; ring 0?
 	mov al, byte ptr [esp+2].EXCFR.wMsg+1
+	jz @F
+	add al, 16
+@@:
 	and ax, 1Fh
 	bt cs:[wTrappedExc], ax	; exception trapped?
 	pop ax

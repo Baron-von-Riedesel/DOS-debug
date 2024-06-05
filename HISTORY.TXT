@@ -338,3 +338,7 @@
        - DebugR(V) dt cmd: optionally displays trapped ports.
        - DebugRV di cmd: displays IDT & IVT vectors.
        - DebugR rn cmd: won't run cmd if CR0.EM is set.
+    2.51
+       - DebugR vc/vt/vl cmds: vectors can be (un)trapped selectively for
+         ring 0 and 3.
+

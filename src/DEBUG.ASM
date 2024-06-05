@@ -739,10 +739,13 @@ bV86Bp     db 0F4h  ;may be 0F4h or 63h
  endif
 bCSAttr db 0		;current code attribute (D bit).
 bAddr32 db 0		;1=offset is 32-bit ( segment limit > 0ffffh )
-bFlagsPM db 0		;bit 0: 0=no default set for A cmd 
+bFlagsPM db 0		;b0: 0=no default set for A cmd, b1 & b2: for ring0, SysReq support
  if RING0
-;--- exceptions trapped ( modified by VC/VT )
-wTrappedExc dw (1 shl 0) or (1 shl 1) or (1 shl 3) or (CATCHINT06 shl 6) (CATCHINT07 shl 7) or \
+;--- exceptions trapped ( modified by VC/VT ) - fields must be consecutive!
+wTrappedExc label word
+	dw (1 shl 0) or (1 shl 1) or (1 shl 3) or (CATCHINT06 shl 6) (CATCHINT07 shl 7) or \
+		(CATCHINT0C shl 12 ) or (CATCHINT0D shl 13) or (1 shl 14)
+	dw (1 shl 0) or (1 shl 1) or (1 shl 3) or (CATCHINT06 shl 6) (CATCHINT07 shl 7) or \
 		(CATCHINT0C shl 12 ) or (CATCHINT0D shl 13) or (1 shl 14)
   if FLATSS
 bChar   db 0
@@ -1129,7 +1132,7 @@ if VXCHG
 	db 'view screen', TAB, 'V',CR,LF
 endif
 if VXCMD
-	db 'clr/trap vector', TAB, 'V[C|T] vector',CR,LF
+	db 'clr/trap vector', TAB, 'V[C|T] vector [ring]',CR,LF
 	db 'list vectors', TAB, 'VL',CR,LF
 endif
 if WCMDFILE
@@ -6970,14 +6973,18 @@ ue_int:
 if RING0 and CATCHSYSREQ
 	.386
 	btr word ptr [bFlagsPM], 1
+	jnc notsysreq
+	btr word ptr [bFlagsPM], 2	; was exc01 in v86-mode temporarily untrapped?
 	.8086
 	jnc @F
+	and byte ptr [wTrappedExc+2], not 2	; then restore the state of exc 01
+@@:
 	mov dl, SYSRQMSG
 	push ds
 	mov ds, [wFlat]
 	and word ptr ds:[417h], not ( 200h or 8)	;reset "Alt pressed" flags
 	pop ds
-@@:
+notsysreq:
 endif
 	mov dh, 0
 	add dx, offset int0msg
@@ -8754,7 +8761,22 @@ CONST ends
 getexc proc
 	call skipwhite
 	call getbyte		; get byte into DL
-	call chkeol			; expect end of line here
+	call skipcomm0
+	mov bl,1+2			; default: 0 & 3
+	cmp al, CR
+	jz both
+	push dx
+	call getbyte
+	call chkeol			;expect end of line here
+	mov bl, 1
+	cmp dl, 0
+	jz @F
+	mov bl, 2
+	cmp dl, 3
+	jnz cmd_error
+@@:
+	pop dx
+both:
 	mov si, offset exctab
 	mov cx, SIZEEXCTAB
 nextitem:
@@ -8774,7 +8796,14 @@ getexc endp
 
 vc_cmd proc
 	call getexc
+	test bl, 1
+	jz @F
 	btr [wTrappedExc], dx
+@@:
+	test bl, 2
+	jz @F
+	btr [wTrappedExc+2], dx
+@@:
 	ret
 vc_cmd endp
 
@@ -8782,7 +8811,14 @@ vc_cmd endp
 
 vt_cmd proc
 	call getexc
+	test bl, 1
+	jz @F
 	bts [wTrappedExc], dx
+@@:
+	test bl, 2
+	jz @F
+	bts [wTrappedExc+2], dx
+@@:
 	ret
 vt_cmd endp
 
@@ -8809,9 +8845,14 @@ nextitem:
 	mov eax, [bx+0]
 	call hexdword
 	bt [wTrappedExc], dx
-	jc @F
-	mov al,'*'
-	stosb
+	jnc @F
+	mov ax, "0 "
+	stosw
+@@:
+	bt [wTrappedExc+2], dx
+	jnc @F
+	mov ax, "3 "
+	stosw
 @@:
 	call putsline
 	pop cx
