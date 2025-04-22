@@ -165,7 +165,7 @@ exitwithpopds:
 @@:
 	jmp cs:[oldisrq]
 intrsrq:
-	test cs:[bInDbg], 1
+	cmp cs:[bInDbg],0
 	jnz @B
 ;--- v2.50: changed strategy - instead of reading port 60h and see if
 ;--- SysRq was released, we check the BIOS variable only and if set, set

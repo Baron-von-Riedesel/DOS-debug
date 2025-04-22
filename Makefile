@@ -26,7 +26,7 @@ $(OUTD)/DEBUGXE.COM: $(DEPS) src/TRAPR.INC src/TRAPD.INC
 	@echo creating debugxE - checks for exc 06, 0C and 0D in real-mode
 	@jwasm -nologo -D?DPMI=1 -bin -Fo $(OUTD)/DEBUGXE.COM -Fl=$(OUTD)/DEBUGXE.LST -DCATCHINT06=1 -DCATCHINT0C=1 -DCATCHINT0D=1 src/$(NAME).ASM
 $(OUTD)/DEBUGXF.COM: $(DEPS) src/TRAPR.INC src/TRAPD.INC
-	@echo creating debugxF - client cannot modify exc 01, 03, 0d and 0e in protected-mode
+	@echo creating debugxF - debugger handles exc 0,1,3, 0d and 0e in protected-mode exclusively
 	@jwasm -nologo -D?DPMI=1 -bin -Fo $(OUTD)/DEBUGXF.COM -Fl=$(OUTD)/DEBUGXF.LST -DCATCHINT31=1 src/$(NAME).ASM
 $(OUTD)/DEBUGXG.EXE: $(DEPS) src/TRAPR.INC src/TRAPD.INC
 	@echo creating debugxG - device driver version of debugx, b cmds

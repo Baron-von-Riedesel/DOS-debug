@@ -338,7 +338,18 @@
        - DebugR(V) dt cmd: optionally displays trapped ports.
        - DebugRV di cmd: displays IDT & IVT vectors.
        - DebugR rn cmd: won't run cmd if CR0.EM is set.
-    2.51
+    2.51 []
+       - fix a cmd: size qualifiers weren't fully skipped if they contained
+         digits (near16/32, far16/32).
+       - fix DebugR dl cmd: the debugger assumed the limit of the LDT to be
+         <= 0xffff, hence didn't display anthing if limit was i.e. 0x10000.
+       - fix DebugR dg/dl cmd: gates in GDT/LDT were displayed in memory
+         descriptor format.
        - DebugR vc/vt/vl cmds: vectors can be (un)trapped selectively for
          ring 0 and 3.
-
+       - DebugXf: handle exc 0 like 1,3,0dh and 0eh first, before client.
+         todo: add 'skip' cmd!
+       - DebugR(V): don't stop if "invalid" values in registers FS,GS are
+         detected.
+       - DebugB: added check if already loaded beyond conv. memory.
+         

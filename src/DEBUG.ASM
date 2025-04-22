@@ -50,7 +50,7 @@
 ;       - hide debug's IVT vectors 0,1,3 for d(i)? Alternately, init them only when the
 ;         first G/P/T cmd is run, like MS Debug does for 1 & 3?
 
-VERSION    textequ <2.50>
+VERSION    textequ <2.51>
 
 	option casemap:none
 	option proc:private
@@ -142,6 +142,7 @@ USEHWBP    equ 1	; 1=use 386 hw breakpoints
 VDD        equ 0
 ;NOEXTENDER equ 0	; ??? used at all for ring0 ???
 DISPPL0STK equ 0	;1=display ring 0 stack in register dump
+CHECKFSGS  equ 1	;1=check if FS/GS registers can be loaded
 CHKIOPL    equ 1	;1=don't stop if GPF cause of IOPL==0 and iosensitive instr
  ifndef BCMD
 BCMD       equ 1
@@ -679,7 +680,7 @@ mach_87	db 0		;coprocessor (0=8087,1,2,3=80387,...)
 if MMXSUPP
 has_mmx	db 0
 endif
-bInDbg	db 0		;1=debugger is running
+bInDbg	db 0		;if !=0 then debugger is active
 if MCLOPT and ( CATCHINT0C or CATCHINT0D )
 bMPicB	db 8		;master PIC base
 endif
@@ -1579,8 +1580,8 @@ initdpmi proc
 	@dprintf "initdpmi: client entered pm"
 	mov [cssel],cs
 	mov [dssel],ds
-	mov cl, 90h
-	mov ax, 200h
+	mov cl, 90h         ; NOP opcode
+	mov ax, 200h        ; offset size AH=2 
 	cmp [machine],3		; is at least a 80386?
 	jb @F
 	mov dx, ss
@@ -1592,8 +1593,8 @@ initdpmi proc
 	.286
 	adc al,0
 	jz @F
-	mov cl, 66h
-	mov ah, 4
+	mov cl, 66h         ; 32-bit opcode variant
+	mov ah, 4           ; offset size 4
 @@:
 
 	mov [dpmi32], al
@@ -1603,6 +1604,7 @@ if CATCHINT21
 endif
 if CATCHINT31
 	mov [patchint31pm], cl
+	mov [patchloadexcvector], cl
 endif
 if CATCHINT41
 	mov [patchint41pm], cl
@@ -1707,7 +1709,7 @@ endif
 	sizeprf			; pop edi - restore hiword(edi)
 	pop di
 
-;--- hook exceptions 0,1,3,6,(7),(C),D,E
+;--- hook exceptions 0,1,3,(6),(7),(C),D,E
 
 	cld
 	mov si,offset exctab
@@ -1726,7 +1728,7 @@ endif
 	cmp si,offset endexctab
 	jb @B
 
-;--- hook DPMI protected-mode interrupts
+;--- hook DPMI protected-mode interrupts (21h, 31h, 41h)
 
 if LPMINTS
 	mov si, offset pmvectors
@@ -1856,6 +1858,8 @@ if CATCHINT31
 intr31pm proc
 	cmp cs:[bInDbg],0; v2.0 do nothing if debugger is active
 	jnz notinterested
+	cmp ax,0202h	; get exception vector?
+	jz is202
 	cmp ax,0203h	; set exception vector?
 	jz is203
 	cmp ax,0212h	; v2.0: set exception vector v1.0?
@@ -1863,18 +1867,28 @@ intr31pm proc
 notinterested:
 patchint31pm db 66h	; jmp fword ptr cs:[oldint31]
 	jmp cs:[oldint31]
+is202:
+	call loadexcvector
+	jc notinterested
+	jmp clearC
 is203:
 is212:
-	cmp bl,1
-	jz @F
-	cmp bl,3
-	jz @F
-	cmp bl,0Dh
-	jz @F
-	cmp bl,0Eh
-	jnz notinterested
+;--- v2.51: handle both set/get exception vectors 
+	call storeexcvector
+	jc notinterested
+;---v2.51: the vectors must be stored in the debugger and returned
+;---       with function 202h! This also allows to "skip" the exception.
+clearC:
+;--- clear C in IRET frame!
+	cmp cs:[dpmi32],0
+	jnz @F
+	push bp
+	mov bp,sp
+	and byte ptr [bp+2+2*2],not 1
+	pop bp
+	jmp execiret
 @@:
-;	jmp execiret
+	and byte ptr [esp+2*4],not 1
 intr31pm endp
 endif
 
@@ -1890,6 +1904,63 @@ i24pm:
 patchfarretpm db 66h
 	retf 2
 patchfarretpmval equ byte ptr ($ - 2)
+
+if CATCHINT31
+excvecs db 0,1,3,0Dh,0Eh   ;v2.51: also handle exc 00
+excvecsend equ $
+_DATA segment
+clexcvecs label fword
+    df 0,0,0,0,0
+_DATA ends
+storeexcvector proc
+	push ds
+	mov ds, cs:[dssel]
+	pusha
+	mov si, offset excvecs
+	mov di, offset clexcvecs
+nextitem:
+	cmp bl, [si]
+	jz excfnd
+	inc si
+	add di,6
+	cmp si,offset excvecsend
+	jnz nextitem
+	stc
+	jmp exit
+excfnd:
+	mov [di+0], edx
+	mov [di+4], cx
+exit:
+	popa
+	pop ds
+	ret
+storeexcvector endp
+
+loadexcvector proc
+	push ds
+	mov ds, cs:[dssel]
+	pusha
+	mov si, offset excvecs
+	mov di, offset clexcvecs
+nextitem:
+	cmp bl, [si]
+	jz excfnd
+	inc si
+	add di,6
+	cmp si,offset excvecsend
+	jnz nextitem
+	stc
+	jmp exit
+excfnd:
+patchloadexcvector	db 66h	;mov edx,[di+0]
+	mov dx,[di+0]
+	mov cx,[di+4]
+exit:
+	popa
+	pop ds
+	ret
+loadexcvector endp
+endif
 
 	.8086
 
@@ -1955,11 +2026,19 @@ endif
 	push ds
 	pop es
 
-	cmp [bInDbg], 1
-	jz @F
-	mov ax, 0e07h
+ife RING0
+	cmp [bInDbg],0
+	jnz @F
+	mov ax, 0e07h       ; beep if debugger isn't active (shouldn't happen)
 	int 10h
 @@:
+else
+	bts word ptr [bInDbg],1  ;bit 1 of bInDbg used for initial
+	jc @F
+	mov ah,1
+	call cs:[int16vec]	;init kbd if necessary
+@@:
+endif
 
 if LCMDFILE
 	call isdebuggeeloaded
@@ -2343,8 +2422,10 @@ endif
 if RING0
 
 ;--- get base of descriptor table for selector in BX
+;--- called by dgl_cmd, dt_cmd, IsWriteableBX, findfreehwbp
 ;--- out: NC, eax=base, dx=limit
-;---       C if error
+;---       C if LAR for selector failed
+;---      if no base for LDT found, return DX=0
 ;--- other registers preserved
 
 	.386
@@ -2367,15 +2448,23 @@ endif
 	test bl, 4
 	jz isgdt
 	push bx
-	sldt bx
+	sldt bx	; bits 0+1 may be 1
+	lar dx, bx	; valid LDT selector?
+	mov dx,0
+	jnz @F
 	@dprintf "getlinearbaseDT: ldt=%X", bx
 	call getlinearbaseBX
-	@dprintf "getlinearbaseDT: eax=%lX", eax
+	@dprintf "getlinearbaseDT: eax=%lX, edx=%lX", eax, edx
+	cmp edx, 10000h	; limit LDT > 0ffffh?
+	jb @F
+	mov dx, -1		; restrict to 0ffffh then
+@@:
 	pop bx
 isgdt:
 	push ax
 	lar ax, bx
 	setnz al
+	@dprintf "getlinearbaseDT: ax=%X, al==0 if lar ok", ax
 	shr al,1
 	pop ax
 ife FLATSS
@@ -2418,9 +2507,11 @@ CONST ends
 ;--- DG/DL commands
 ;--- ah = 'l' or 'g'
 
+if ?DPMI
 CONST segment
-descbase db ' base=???????? limit=???????? attr=????',0
+descbase db 'base=???????? limit=???????? attr=????',0
 CONST ends
+endif
 
 dgl_cmd proc
 
@@ -2455,8 +2546,7 @@ if RING0
 	call getlinearbaseDT	; get linear base & limit of descriptor table for BX
 	.386
 	push eax
-	push dx
-	pushf         ; save error flag of getlinearbase
+	push dx       ; for LDT, limit isn't restricted to 16-bit!
 	push si
 	test bl,4
 	jz @F
@@ -2485,12 +2575,6 @@ if RING0
 ldtrdone:
 	call putsline
 	pop si
-	popf
-	jnc @F
-	test bl,4
-	jz @F
-	jmp done
-@@:
 endif
 if ?DPMI
 	.286
@@ -2505,52 +2589,26 @@ nextdesc:
 	mov di,offset line_out
 	mov ax,bx
 	call hexword
+	mov al,' '
+	stosb
+;	lar ax,bx
+;	jnz skipdesc	;tell that this descriptor is invalid
+ if ?DPMI
 	push si
 	push di
 	mov si,offset descbase
 	call copystring
 	pop di
 	pop si
-;	lar ax,bx
-;	jnz skipdesc	;tell that this descriptor is invalid
- if ?DPMI
 	mov ax,6
 	int 31h
-	jc @F
- elseif RING0
-	.386
-  if FLATSS
-	cmp bx, [ebp-6]	;beyond limit?
-  else
-	cmp bx, [bp-6]	;beyond limit?
-  endif
-	jae nogdt
-	push ds
-	movzx eax, bx
-	and al, 0F8h
-  if FLATSS
-	add eax, [ebp-4]
-  else
-	add eax, [bp-4]
-  endif
-	mov ds, [wFlat]
-	mov dx, [eax+2]
-	mov cl, [eax+4]
-	mov ch, [eax+7]
-	.286
-	pop ds
-	stc
-nogdt:
-	jnc done
-	lar ax, bx
-	jnz desc_out
- endif
-	add di, 6	; render base
-	mov ax,cx
+	jc getattrlim
+	add di, 5	; position behind "base="
+	mov ax,cx	; render base/ofs
 	call hexword
 	mov ax,dx
 	call hexword
-@@:
+getattrlim:
 	sizeprf		;lsl eax,ebx
 	lsl ax,bx
 	jnz desc_out
@@ -2574,6 +2632,76 @@ desc_o2:
 	call hexword; attr   
 desc_out:
 	mov di,offset line_out+25+14+4 ; position to end of line
+ elseif RING0
+	test bx, 0fffch	; skip null descriptor
+	jz desc_o3
+	.386
+  if FLATSS
+	cmp bx, [ebp-6]	;beyond limit?
+  else
+	cmp bx, [bp-6]	;beyond limit?
+  endif
+	jae done
+	push ds
+	push bx
+	movzx ebx, bx
+	and bl, 0F8h
+  if FLATSS
+	add ebx, [ebp-4]
+  else
+	add ebx, [bp-4]
+  endif
+	mov ds, [wFlat]
+	mov al, [ebx+5]
+	and al, 10100b     ; gates: bit 4=0 and bit 2=1  
+	cmp al, 4
+	jnz ismem
+	call gateout
+	pop bx
+	pop ds
+	lar ax, bx
+	jz desc_o3
+	mov al,'!'
+	stosb
+	jmp desc_o3
+ismem:
+	mov eax, "esab"
+	stosd
+	mov al,'='
+	stosb
+	mov al, [ebx+4]    ; hiword(base)
+	mov ah, [ebx+7]
+	call hexword
+	mov ax, [ebx+2]    ; loword(base)
+	call hexword
+	mov al,' '
+	stosb
+	mov eax,'imil'
+	stosd
+	mov eax,'=t'
+	stosw
+	mov dx, [ebx+5]
+	pop bx
+	pop ds
+	lsl eax, ebx
+	jz @F
+	mov eax,'????'
+	stosd
+	stosd
+	jmp nolim
+@@:
+	call hexdword
+nolim:
+	mov al,' '
+	stosb
+	mov eax,"rtta"
+	stosd
+	mov al,'='
+	stosb
+	mov ax, dx
+	call hexword
+desc_o3:
+ endif ; RING0
 	call putsline	; add cr/lf, then print
 	add bx,8
 	dec si
@@ -2588,6 +2716,33 @@ if RING0
  endif
 endif
 	ret
+
+if RING0
+	.386
+gateout:
+	mov eax,"rdda"
+	stosd
+	mov al,'='
+	stosb
+	mov ax,[ebx+2]	  ; ax=sel
+	call hexword
+	mov al,':'
+	stosb
+	mov ax, [ebx+6]    ; hiword(ofs)
+	call hexword
+	mov ax, [ebx+0]    ; loword(ofs)
+	call hexword
+	mov al,' '
+	stosb
+	mov eax, "rtta"
+	stosd
+	mov al,'='
+	stosb
+	mov ax,[ebx+4]
+	call hexword
+	ret
+endif
+
 dgl_cmd endp
 
 endif
@@ -2708,12 +2863,13 @@ gate16:
  if V86M
 	mov eax, "=vi "
 	stosd
-	movzx ebx, dl
-	mov ax, [ebx*4+2]
+	movzx bx, dl
+	shl bx, 2
+	mov ax, [bx+2]
 	call hexword
 	mov al,':'
 	stosb
-	mov ax, [ebx*4+0]
+	mov ax, [bx+0]
 	call hexword
  endif
 	.8086
@@ -2983,10 +3139,9 @@ endif
 	shr ax, 3
 	add ax, [ebx].TSS.wOffs
 	cmp dx, ax
-	jc done
-
 	movzx eax, [ebx].TSS.wOffs
 	pop ds
+	jc done
 	add eax, ebx
 	push ax
 	push si
@@ -3662,7 +3817,7 @@ ife RING0
 	jmp ee10
 @@:
 endif
-	mov ah,0h
+	mov ah,0
 if RING0
 	.386
 	call cs:[int16vec]
@@ -6858,16 +7013,18 @@ if ?PM
 	call doproceed1	; expects bp to be set at BX:(E)SI
 	ret
 endif
+
 if (RING0 eq 0) or V86M
+
 step_int_rm:
 	mov bh,0
 	push ds
  if V86M
 	mov ds, [wFlat]
-	movzx ebx, bx
-	movzx eax, word ptr [ebx*4+2]
+	shl bx, 2
+	movzx eax, word ptr [bx+2]	; get IVT item
 	shl eax, 4
-	movzx esi, word ptr [ebx*4+0]
+	movzx esi, word ptr [bx+0]
 	add esi, eax
 	mov bx, ds
 	pop ds
@@ -7919,7 +8076,11 @@ checksegm proc
 	test ah, 8
 	jnz error
 
+if CHECKFSGS
+	mov cx, 2	; don't check FS/GS
+else
 	mov cx, 4
+endif
 	mov si, offset regs.rDS
 nextitem:
 	lodsw
@@ -8008,7 +8169,7 @@ pmsethwbp:
 	pop bx
 	mov dh, dl
 	shr dl, 2		; dl = size (was in bits 2-3)
-	and dx, 303h	; dh = type (0=exec,1=read, 2=r/w)
+	and dx, 303h	; dh = type (0=exec,1=read, 2=r/w, 3=i/o)
 	add dl, 1		; 0->1, 1->2, 3->4
 	@dprintf "pmsethwbp bx:cx=%X%04X dx=%X", bx, cx, dx
 	mov ax, 0b00h	; set watchpoint
@@ -8259,20 +8420,6 @@ ife RING0
 	add sp,2*2	; skip places for FS,GS
 else
 	.386
- if 0;LMODE
-;--- FS and GS might be "unset" ( still containing real-mode values )
-;--- so check if value has changed and if not, don't write the regs
-	mov ax, fs
-	cmp ax, [regs.rFS]
-	jz @F
-	mov fs, [regs.rFS]
-@@:
-	mov ax, gs
-	cmp ax, [regs.rGS]
-	jz @F
-	mov gs, [regs.rGS]
-@@:
- endif
  if V86M
 	test byte ptr [regs.rFL+2], 2
 	jz @F
@@ -8297,12 +8444,27 @@ else
 	iretd
 @@:
  endif
+ if CHECKFSGS
+;--- FS and GS might contain "invalid" values (still
+;--- containing real-mode values or a descriptor that has just been "released") 
+;--- so don't write the regs if that's the case.
+	mov ax, fs
+	cmp ax, [regs.rFS]
+	jz @F
+	mov fs, [regs.rFS]
+@@:
+	mov ax, gs
+	cmp ax, [regs.rGS]
+	jz @F
+	mov gs, [regs.rGS]
+@@:
+ endif
 	lar ax, [regs.rCS]
 	and ah, 60h
 	popad
 	pop es
 	pop es
- if 0;LMODE
+ if CHECKFSGS
 	lea sp,[esp+2+2]
  else
 	pop fs
@@ -8489,7 +8651,7 @@ if INT22
 @@:
 endif
 ifdef FORCETEXT
-	call checkgfx		; see if current mode is gfx, set to text if yet
+	call checkgfx		; see if current mode is gfx, set to text mode if yes
 endif
 if VXCHG
 	mov al, 1           ; restore debugger screen
@@ -8530,7 +8692,7 @@ endif
 
 ifdef FORCETEXT
 checkgfx:
-	mov dx, 3CEh 			; see if in graphics mode
+	mov dx, 3CEh 			; see if in graphics mode (VGA/EGA only)
 	in al, dx
 	mov bl, al
 	mov al, 6
@@ -8896,7 +9058,7 @@ v_cmd proc
 	mov ah, 2          ; set cursor pos of page in BH
 	int 10h
  endif
-	mov ah, 10h
+	mov ah, 0
 if RING0
 	.386
 	call cs:[int16vec]
@@ -9393,7 +9555,7 @@ rawinput:
 	inc dx
 	mov di,dx
 rawnext:
-	mov ah,00h
+	mov ah,0
 if RING0
 	.386
 	call cs:[int16vec]
@@ -10260,14 +10422,20 @@ sc1:
 sc2:
 	ret
 
-;--- SKIPALPHA - Skip alphabetic character, and then white space.
+;--- SKIPALPHANUM - Skip alphanumeric character, and then white space.
+;--- used by line assembler for size qualifiers and "PTR"
 
-skipalpha:
+skipalphanum:
 	lodsb
+	cmp al,'0'      ;v2.51: also skip digits ( near16/32, far16/32 )
+	jb @F
+	cmp al,'9'
+	jbe skipalphanum
 	and al,TOUPPER
 	sub al,'A'
 	cmp al,'Z'-'A'
-	jbe skipalpha
+	jbe skipalphanum
+@@:
 	dec si
 ;	jmp skipwhite	;(control falls through)
 
@@ -10516,8 +10684,11 @@ dumpregs endp
 if USEFP2STR
  if RING0
 	.386
+ elseif ?DPMI
+;	.286	; prevents the assembler inserting FWAITs
  endif
 	include <FPTOSTR.INC>
+	.8086
 endif
 
 ;--- the layout for FSAVE/FRSTOR depends on mode and 16/32bit
@@ -11288,7 +11459,7 @@ if DRIVER or RING0 or BOOTDBG
 	ret
  endif
 else
-	mov [bInDbg], 1	; v2.01: variable is set only when debug is entered via interrupt
+	mov [bInDbg],1	; v2.01: variable is set only when debug is entered via interrupt
  if FMTEXE
 	mov es, [pspdbg]
 	add bx, 100h
@@ -12031,23 +12202,31 @@ if BOOTDBG
 
 ;--- get final address of debugger behind conv. memory
 
-	push ds
 	xor cx, cx
-	mov ds, cx
+	mov es, cx
 	mov ax, offset real_end + STACKSIZ + (1024-1)
 	mov cl, 10
-	shr ax, cl
-	sub ds:[413h], ax
-	mov ax, ds:[413h]
-	pop ds
+	shr ax, cl			;convert bytes to kB
+
+;--- v2.51: don't touch 413h if we're loaded beyond already
+	mov bx, 413h
+	mov dx, es:[bx]
 	mov cl, 6
-	shl ax, cl
+	shl dx, cl			;convert to para
+	mov cx, cs
+	cmp dx, cx
+	jnc @F
+	sub es:[bx], ax
+	mov ax, es:[bx]
+	mov cl, 6
+	shl ax, cl			;convert kB to para
 	mov [wDgroup], ax	; BOOTDBG: wDgroup and pspdbg must be updated!
+@@:
 
 endif
 
 if DMCMD
-	mov ah,52h		;get list of lists
+	mov ah,52h		;get list of lists in ES:BX
 	int 21h
 	mov ax,es:[bx-2]	;start of MCBs
 	mov [wMCB],ax

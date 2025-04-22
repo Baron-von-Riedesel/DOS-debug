@@ -817,7 +817,7 @@ ab04:
 	rep stosw
 	pop di
 
-;--- Small loop over "BYTE PTR" and segment prefixes.
+;--- check for size qualifiers, "PTR" or segment prefixes.
 
 ab05:
 	dec si
@@ -841,13 +841,15 @@ ab05:
 	sub cl,sizeof sizetcnam / 2
 	neg cl			;convert to 1, ..., 12
 	mov [di].OPRND.sizearg,cl
-	call skipalpha	;go to next token
+	call skipalphanum	;skip the rest of the size qualifier and white space
 	mov ah,[si]
 	and ax,TOUPPER_W
 	cmp ax,'TP'
 	jne ab05		;if not 'PTR'
-	call skipalpha	;go to next token
+	call skipalphanum	;skip the rest of "PTR" and white space
 	jmp ab05
+
+;--- not a size qualifier or "PTR"
 
 ab07:
 	cmp [aa_seg_pre],0

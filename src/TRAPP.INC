@@ -191,7 +191,7 @@ exitwithpopds:
 @@:
 	jmp cs:[oldisrq]
 intrsrq:
-	test cs:[bInDbg], 1
+	cmp cs:[bInDbg],0
 	jnz @B
 ;--- no way to call the real-mode IRQ handler from here. we check the sysreq
 ;--- bit and, if set, set TF=1 - will trigger a single-step fault once the

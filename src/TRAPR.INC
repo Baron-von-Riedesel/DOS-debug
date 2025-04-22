@@ -127,7 +127,7 @@ if CATCHSYSREQ
 @@:
 	jmp cs:[oldisrq]
 intrsrq:
-	test cs:[bInDbg], 1
+	cmp cs:[bInDbg],0
 	jnz @B
  if SYSRQINT eq 15h
 	cmp ax, 8501h	;sysreq released?

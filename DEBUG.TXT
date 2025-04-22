@@ -21,6 +21,7 @@
  by Michael Webster 2004, Public Domain.
 
  Note: MS-Debug means the original Debug written by Microsoft.
+       DebugX   means all DebugX variants (DebugX, DebugXv, ...).
        Debug/X  means the "clone" variants (both Debug and DebugX).
        DEBUG    means both MS-Debug and Debug/X.
        Enhancements for Debug/X are marked: [ENH:...].
@@ -124,7 +125,10 @@
 
  3.3 Entering Addresses and Ranges
 
- For the commands that accept a range parameter, the parameter can be
+  An address consists of a segment and an offset part, separated by a
+ colon (:). The segment part may be omitted - then a default value is
+ assumed, either CS or DS, depending on the context.
+  For the commands that accept a range parameter, the parameter can be
  used to specify a starting address, or a starting and ending address,
  or a starting address and a length. To differentiate a length
  parameter from an ending address, the length parameter must be
@@ -142,22 +146,36 @@
  Note that DEBUG recognizes only hex numbers (without a trailing "H").
 
  [ENH:
- DebugX/DebugR: when an address is entered in protected-mode, a '$'
- just before the segment part will tell those variants to interpret the
- address as a real-mode address. However, as for DebugX this should be
- used sparsely, since DPMI function 0002 is used to convert the segment
- - the selector returned cannot be released anymore.
-
- DebugRV: when an address is entered while in v86-mode, a '#' just
- before the segment part will tell DebugRV to interpret the segment as
- a selector.
- 
- If debuggee is in protected-mode and the segment part of an address
- has a limit beyond 64k, the offset parts of the starting and ending
- address - as well as the length - can be 32bit. Examples:
+ If debuggee is in protected-mode, the segment part of an address is
+ a selector. If the selector has a limit beyond 64k, the offset parts
+ of the starting and ending address - as well as the length - can be
+ 32bit. Examples:
 
  #D DS:110000 110FFF
  #D CS:400000 L 20000
+
+ Segment modifiers '$' and '#': For the variants that may handle both
+ real-mode and protected-mode, those modifiers are implemented to make
+ the debugger change its segment interpretation:
+ 
+ '$'-modifier:
+
+ DebugX: if debuggee is in protected-mode, a '$' before the segment part
+ will tell DebugX to interpret the address as a real-mode address. However,
+ this should be used sparsely, since DPMI function 0002 is used to convert
+ the segment - the selector returned cannot be released anymore.
+
+ DebugR: the '$' modifier is accepted for commands 'a' and 'u' only.
+
+ '#'-modifier:
+ 
+ DebugRV: if debuggee is in v86-mode, a '#' just before the segment part
+ of an address will tell DebugRV to interpret the segment as a selector.
+
+ Offset modfifier '%':
+
+ DebugR: if an address is entered without segment part, prefix '%' will
+ tell the debugger to interpret the offset value as linear address.
  ]
 
  ---
@@ -309,6 +327,8 @@
  0020 base=???????? limit=FFFFFFFF attr=CFF3
  0028 base=???????? limit=???????? attr=????
 
+ DebugR(L/V): call gates in LDT are displayed in gate format.
+
  Syntax: DL selector [count]
 
  ---
@@ -333,11 +353,11 @@
 
  ---
 
- DebugR(L|V) only: The Dump Task State Segment (DT) displays some information
- of the current TSS: the TR register, the ring0 SS:ESP and the address of the
- IO Permission Bitmap (IOPB). Optionally, one may display ports that are
- trapped if the debuggee is either in V86-mode or in non-priviledged protected
- mode and IOPL is 0.
+ DebugR(L|V) only: The Dump Task State Segment (DT) command displays some
+ information of the current TSS: the TR register, the ring0 SS:ESP and the
+ address of the IO Permission Bitmap (IOPB). Optionally, one may display ports
+ that are trapped if the debuggee is either in V86-mode or in non-priviledged
+ protected mode and IOPL is 0.
 
  Syntax: DT [port count]
 
@@ -961,11 +981,23 @@
 
   DebugB is a variant of DEBUG that can be used to debug boot code and DOS
  during its initialization ( actually, because it doesn't depend on any DOS
- interrupts, this variant is not restricted to DOS ) . Since it has to be
- loaded before the OS, when no file system is available yet, it should be
- installed at a location that the bootstrap code ( of either the MBR or the 
- partition's boot sector ) can handle comfortably - for FAT file systems, this
- could be the "reserved" region, just behind the FAT boot sector(s).
+ interrupts, this variant is not restricted to DOS ) . Since the debugger has
+ to be in memory before the OS is loaded, there's a problem: since no file
+ system is available yet, how to load the debugger itself? There are two
+ approaches:
+
+  1) the debugger is stored somewhere on disk where it can be loaded rather
+     comfortably by the bootstrap code ( of either the MBR or the partition's
+     boot sector ), without using a file system. For FAT file systems, this
+     could be the "reserved" region, just behind the FAT boot sector(s).
+     The bootstrap code itself has to be modified - it has to load the debugger
+     and then issue a far call to initialize it.
+  2) the debugger is loaded into memory above conventional memory just before
+     the system is rebooting. This requires that conventional memory used by
+     DOS is reduced to make room for the debugger code. Additionally, DOS must
+     be able to restore some of the interrupt vectors it has modified. This
+     is true for MS-DOS and FreeDOS, so all in all this approach is probably
+     far easier to follow, since the bootstrap code doesn't need modification.
 
   The size of the DebugB binary may vary depending on what features are
  activated, usually it's about 20 kB or 40 sectors of 512 bytes.
@@ -973,19 +1005,19 @@
   Initialization of the debugger is simple: it's a far call to the
  address the debugger has been loaded, with an offset of 0000 ( so it's a 
  "call 0800h:0000" if the debugger has been loaded at linear address 08000h ).
- The call will preserve contents of all segment registers and registers
- SP & BP. The address to load the debugger may vary - low addresses are
- preferable since the debugger will relocate itself just above conventional
- memory ( adjusting BIOS variable at 0040h:0013h ).
+ The call will preserve contents of all segment registers and registers SP & BP.
+ The address to load the debugger may vary - if the debugger is loaded into
+ DOS memory, it will relocate itself just above conventional memory and adjust
+ the BIOS variable at 0040h:0013h; else it will assume that the loader has
+ already done that. 
 
-  As it has been mentioned, the boot sector code must be adjusted, to load
- and initialize the debugger. Once the debugger is initialized, running an
- INT 1 or INT 3 will activate it. DebugB has 2 functions that are particularly
- usefull in this context: the L command allows to read sectors ( unlike the
- "normal" variants of DEBUG, DebugB's L command works with physical disks ),
- the DP command may be used to list the partitions of a disk ( currently
- MBR-partitioned disks only ). So it's possible to load the boot sector of
- any partition on the HDs and execute it.
+  Once the debugger is initialized, running an INT 1 or INT 3 will activate it.
+ DebugB has 2 functions that are particularly usefull in this context: the
+ L command allows to read sectors ( unlike the "normal" variants of DEBUG,
+ DebugB's L command works with physical disks ), the DP command may be used to
+ list the partitions of a disk ( currently MBR-partitioned disks only ). So
+ it's possible to load the boot sector of any partition on the HDs and execute
+ it.
 
   Currently there are problems when the boot loader GRUB has to swap disk
  numbers - to achieve this it intrudes into conventional memory, but that's
@@ -1034,8 +1066,6 @@
  somewhat problematic, since these variants don't know how to handle those
  modes and hence are unable to stop in such cases!
 
-  At the debugger prompt, when an address is to be parsed, the prefix '%' will
- tell the debugger to interpret the following offset as linear address.
   For the a(ssemble and u(nassemble) commands, one may precede the segment part
  of the range argument with a '$' to make DebugR(L) interpret it as real-mode
  address and translate the segment to a selector.
