@@ -986,18 +986,20 @@
  system is available yet, how to load the debugger itself? There are two
  approaches:
 
-  1) the debugger is stored somewhere on disk where it can be loaded rather
-     comfortably by the bootstrap code ( of either the MBR or the partition's
-     boot sector ), without using a file system. For FAT file systems, this
-     could be the "reserved" region, just behind the FAT boot sector(s).
-     The bootstrap code itself has to be modified - it has to load the debugger
-     and then issue a far call to initialize it.
+  1) the DebugB file is stored somewhere on disk where it can be loaded
+     rather comfortably by the bootstrap code ( of either the MBR or the
+     partition's boot sector ), without using a file system. For FAT file
+     systems, this could be the "reserved" region, just behind the FAT boot
+     sector(s). With this approach, the bootstrap code itself has to be
+     modified - it has to load the debugger and then issue a far call to
+     initialize it.
   2) the debugger is loaded into memory above conventional memory just before
      the system is rebooting. This requires that conventional memory used by
      DOS is reduced to make room for the debugger code. Additionally, DOS must
      be able to restore some of the interrupt vectors it has modified. This
-     is true for MS-DOS and FreeDOS, so all in all this approach is probably
-     far easier to follow, since the bootstrap code doesn't need modification.
+     is true for MS-DOS, DR-DOS and FreeDOS, so all in all this approach is
+     probably far easier to follow, since the bootstrap code doesn't need
+     modification and no low-level disk writes are necessary.
 
   The size of the DebugB binary may vary depending on what features are
  activated, usually it's about 20 kB or 40 sectors of 512 bytes.

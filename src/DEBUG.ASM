@@ -768,8 +768,11 @@ ife RING0
 ;--- 0: packet is not used (int 25h/26h, cx!=FFFF)
 ;--- 1: packet is used (int 25h/26h, cx==FFFF)
 ;--- 2: packet is used (int 21h, ax=7305h, cx==FFFF)
+ if BOOTDBG
+usepacket db 1	;DebugB never uses int 25h/26h or int 21h, but accepted secno is 32-bit
+ else
 usepacket db 0
-
+ endif
 PACKET struc
 secno	dd ?	;sector number
 numsecs	dw ?	;number of sectors to read
@@ -4260,7 +4263,9 @@ ife RING0
 	push ds
 	@ds_mypsp
  endif
+ ife BOOTDBG
 	@dprintf "g_cmd: run returned, [spadjust]=%X, [spsav]=%X:%X", cs:[spadjust], word ptr ds:[PSPS.SPSAV+2], word ptr ds:[PSPS.SPSAV]
+ endif
  if FMTEXE
 	pop ds
  endif
@@ -4731,7 +4736,7 @@ if BOOTDBG or DPCMD
 	.errnz RING0, <int 13h not yet supported>
 
 readsect proc
-	@dprintf "readsect: disk=%X", ax
+	@dprintf "readsect: disk=%X, cs=%X, ss=%X, ds=%X", ax, cs, ss, ds
 	mov dl, al
 	and al, al
 	jns nolba
@@ -4746,6 +4751,7 @@ readsect proc
 	xor cx, cx
 	mov bx, offset packet
 	@dprintf "readsect: lba access, dx=%X, secno=%lX", dx, [bx].PACKET.secno
+;--- create a Disk Access Packet onto stack (qword sector#, dword transfer buffer, word numsec, word struc size)
 	push cx
 	push cx
 	push word ptr [bx].PACKET.secno+2
@@ -4821,6 +4827,7 @@ if BOOTDBG
 ;--- L command - absolute disk read.
 
 l_cmd proc
+	@dprintf "l: cs=%X ss=%X ds=%X",cs,ss,ds
 	call parselw	;returns AL=drive, BX=packet
 	jz cmd_error	;Z means max 1 arg; must be a full command
 	call readsect
@@ -11604,6 +11611,9 @@ endif
 ;--- anything else: PSP:80h
 ;--- register (E)BP must be preserved!
 
+if BOOTDBG
+	dd 0DEADBEEFh	;signature
+endif
 if FMTEXE
 start:
 endif

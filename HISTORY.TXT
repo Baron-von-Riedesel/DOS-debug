@@ -345,6 +345,7 @@
          <= 0xffff, hence didn't display anthing if limit was i.e. 0x10000.
        - fix DebugR dg/dl cmd: gates in GDT/LDT were displayed in memory
          descriptor format.
+       - fix DebugB l cmd: allow 32-bit sector numbers (usepacket != 0).
        - DebugR vc/vt/vl cmds: vectors can be (un)trapped selectively for
          ring 0 and 3.
        - DebugXf: handle exc 0 like 1,3,0dh and 0eh first, before client.
