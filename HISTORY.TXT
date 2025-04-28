@@ -353,4 +353,4 @@
        - DebugR(V): don't stop if "invalid" values in registers FS,GS are
          detected.
        - DebugB: added check if already loaded beyond conv. memory.
-         
+       - fixed: hw breakpoints for variants Debug/DebugB was flawed.

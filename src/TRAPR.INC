@@ -29,6 +29,9 @@ intr00:
 
 if CATCHINT01
 
+ if BOOTDBG         ;v2.51: MS-DOS 7.1 won't init int 01/03 if sign "JP" is found
+	db "JP"
+ endif
 ;--- Interrupt 1 (single-step interrupt) handler.
 
 intr01:

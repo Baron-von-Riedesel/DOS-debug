@@ -182,14 +182,11 @@ OPTYPES_BASE equ $ - dis_jmp2
 
 CONST ends
 
-if FLATSS
-	.386
-;	mov [savesp2],esp
-	mov [run_sp],esp
-else
 ;	mov [savesp2],sp
-	mov [run_sp],sp
+if FLATSS
+	db 66h          ;mov [run_sp],esp
 endif
+	mov [run_sp],sp
 	xor ax,ax
 	mov [dis_n],ax
 	mov word ptr [preflags],ax	;clear preflags and preused
@@ -1265,11 +1262,9 @@ disasm endp
 
 disbad proc
 if FLATSS
-	.386
-	mov esp,[run_sp]	;pop junk off stack
-else
-	mov sp,[run_sp]		;pop junk off stack
+	db 66h              ;mov esp,[run_sp]
 endif
+	mov sp,[run_sp]		;pop junk off stack
 	mov ax,offset da13a	; the address where we "return" to
 	push ax
 	mov [dis_n],0

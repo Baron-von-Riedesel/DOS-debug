@@ -249,7 +249,7 @@ intrtnp proc
 ;	mov ss, cs:[wDgroup]
 ;	mov sp, cs:[top_sp]
 	mov ss, cs:[wFlat]
-	mov esp, cs:[top_sp]
+	mov esp, dword ptr cs:[top_sp]
   if EXCCSIP
    if EXCCSEIP
 	push ecx	; eip

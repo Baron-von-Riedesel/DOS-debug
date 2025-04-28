@@ -405,11 +405,9 @@ if ?PM
 endif
 	@dprintf "aa01: a_addr=%X:%lX", word ptr [a_addr+4], dword ptr [a_addr+0]
 if FLATSS
-	.386
-	mov esp,[top_sp]	;restore the stack (this implies no "ret")
-else
-	mov sp,[top_sp]		;restore the stack (this implies no "ret")
+	db 66h              ;mov esp,[top_sp]
 endif
+	mov sp,[top_sp]		;restore the stack (this implies no "ret")
 	mov di,offset line_out
 	@dispsegm [a_addr+4]
 	mov al,':'

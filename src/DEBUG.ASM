@@ -568,8 +568,8 @@ CONST ends
 _DATA segment
 
 if FLATSS
-top_sp	dd 0		;debugger's SP top ( also end of debug's MCB )
-run_sp	dd 0		;debugger's SP when run() is executed ( also used temp. by disasm )
+top_sp	dw 0,0		;debugger's SP top ( also end of debug's MCB )
+run_sp	dw 0,0		;debugger's SP when run() is executed ( also used temp. by disasm )
 else
 top_sp	dw 0		;debugger's SP top ( also end of debug's MCB )
 run_sp	dw 0		;debugger's SP when run() is executed
@@ -2021,10 +2021,9 @@ endif
 
 cmdloop proc
 if FLATSS
-	mov esp,[top_sp]	;restore stack (this must be first)
-else
-	mov sp,[top_sp]		;restore stack (this must be first)
+	db 66h              ;mov esp,[top_sp]
 endif
+	mov sp,[top_sp]     ;restore stack (this must be first)
 	mov [errret],offset cmdloop
 	push ds
 	pop es
@@ -2542,10 +2541,9 @@ dgl_cmd proc
 	mov si, dx		;save count
 if RING0
  if FLATSS
-	mov ebp, esp
- else
-	mov bp, sp
+	db 66h          ;mov ebp, esp
  endif
+	mov bp, sp
 	call getlinearbaseDT	; get linear base & limit of descriptor table for BX
 	.386
 	push eax
@@ -2712,11 +2710,9 @@ desc_o3:
 done:
 if RING0
  if FLATSS
-	.386
-	mov esp, ebp
- else
-	mov sp, bp
+	db 66h          ; mov esp, ebp
  endif
+	mov sp, bp
 endif
 	ret
 
@@ -6586,7 +6582,7 @@ if RING0
 
 CONST segment
 
-exctab label byte	; ring 0 exc table used by SK, VC, VT
+exctabr0 label byte	; ring 0 exc table used by SK, VC, VT
 	db 0,1,3
  if CATCHINT06
 	db 6
@@ -6601,7 +6597,7 @@ exctab label byte	; ring 0 exc table used by SK, VC, VT
 	db 0Dh
  endif
 	db 0Eh
-SIZEEXCTAB equ $ - offset exctab
+SIZEEXCTAB equ $ - offset exctabr0
 
 noskip db "No exception to skip",13,10,'$'
 yesskip db "Exception skipped",13,10,'$'
@@ -6617,7 +6613,7 @@ sk_cmd proc
 	mov dl, [run_int+1]
 	and dl, 1Fh
 	mov cx, SIZEEXCTAB
-	mov si, offset exctab
+	mov si, offset exctabr0
 	mov bx, offset intsave
 @@:
 	lodsb
@@ -8362,11 +8358,9 @@ if ?DPMI
 endif
 
 if FLATSS
-	.386
-	mov [run_sp],esp	;save stack position
-else
-	mov [run_sp],sp		;save stack position
+	db 66h              ;mov [run_sp],esp
 endif
+	mov [run_sp],sp		;save stack position
 ife (DRIVER or BOOTDBG or RING0)
 	; 16.2.2021: check if saved SS is debugger's SS. If no, don't adjust saved SP.
 	; SS may be != saved SS if debugger is stopped in protected-mode - then the
@@ -8575,7 +8569,7 @@ if RING0
 	.386
  if FLATSS
 	mov ss, cs:[wFlat]
-	mov esp, cs:[run_sp]	;restore running stack
+	mov esp, dword ptr cs:[run_sp]	;restore running stack
  else
 	movzx esp,cs:[run_sp]	;restore running stack
  endif
@@ -8734,6 +8728,9 @@ sethwbptmp proc
 	call findfreehwbp
 	pop edx
 	jc @F
+ife ?PM    ;v2.51
+	movzx edx,dx
+endif
 	add eax, edx
 	@dprintf "sethwbptmp: linear=%lX (cs:eip=%X:%lX)", eax, bx, edx
 	stosd
@@ -8946,7 +8943,7 @@ getexc proc
 @@:
 	pop dx
 both:
-	mov si, offset exctab
+	mov si, offset exctabr0
 	mov cx, SIZEEXCTAB
 nextitem:
 	lodsb
@@ -8996,7 +8993,7 @@ vt_cmd endp
 vl_cmd proc
 	call skipwhite
 	call chkeol			; expect end of line here
-	mov si, offset exctab
+	mov si, offset exctabr0
 	mov bx, offset intsave
 	mov cx, SIZEEXCTAB
 nextitem:
@@ -9967,7 +9964,9 @@ if ?PM
 	.8086
 gofbx_2:
 endif
-	sizeprfX		; v2.0: xor edx,edx
+;--- v2.51: clear hiword(edx) also for Debug/DebugB (needed if hw bps are used)
+;	sizeprfX		; v2.0: xor edx,edx
+	sizeprf
 	xor dx, dx
 	call getword
 ;	@dprintf "getofsforbx: edx=%lX", edx
@@ -11440,10 +11439,9 @@ if DRIVER or RING0 or BOOTDBG
 	.386
 	movzx ebx, bx
 	add ebx, [dwBase]
-	mov [run_sp], ebx
- else
-	mov [run_sp], bx
+	db 66h                  ; mov [run_sp], ebx
  endif
+	mov [run_sp], bx
  if BOOTDBG
 	mov cx, ax
 	mov es, [wDgroup]		; copy debugger beyond conv. memory
@@ -12533,10 +12531,11 @@ endif
 	mov bx, ax
 if FLATSS
 	add eax, [dwBase]
-	mov [top_sp], eax
-	@dprintf "top_sp=%lX", eax
-else
+	db 66h              ; mov [top_sp], eax
+endif
 	mov [top_sp], ax
+if FLATSS
+	@dprintf "top_sp=%lX", eax
 endif
 	jmp initcont
 
