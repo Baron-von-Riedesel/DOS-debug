@@ -39,7 +39,7 @@ $(OUTD)/DEBUGXV.COM: $(DEPS) src/TRAPR.INC src/TRAPD.INC
 	@jwasm -nologo -D?DPMI=1 -bin -Fo $(OUTD)/DEBUGXV.COM -Fl=$(OUTD)/DEBUGXV.LST -DVXCHG=1 -DCATCHSYSREQ=1 -DBCMD=1 src/$(NAME).ASM
 $(OUTD)/DEBUGB.BIN:  $(DEPS) src/TRAPR.INC
 	@echo creating debugB.bin - a "boot loader"  version
-	@jwasm -nologo -bin  -Fo $(OUTD)/DEBUGB.BIN -Fl=$(OUTD)/DEBUGB.LST -DBOOTDBG=1 src/$(NAME).ASM
+	@jwasm -nologo -bin  -Fo $(OUTD)/DEBUGB.BIN -Fl=$(OUTD)/DEBUGB.LST -DBOOTDBG=1 -DBCMD=1 src/$(NAME).ASM
 $(OUTD)/DEBUGR.BIN:  $(DEPS) src/TRAPP.INC
 	@echo creating debugR.bin - a protected-mode "ring 0"  version
 	@jwasm -nologo -bin  -Fo $(OUTD)/DEBUGR.BIN -Fl=$(OUTD)/DEBUGR.LST -DRING0=1 src/$(NAME).ASM

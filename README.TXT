@@ -134,12 +134,10 @@
      - debugger with DPMI protected-mode support ( DebugX variants )
      - debugger running in protected-mode ring 0 ( DebugR variants )
   
-   - DebugB.BIN: a version that is supposed to be loaded during the
-     boot process, before DOS is loaded. Has to be installed in "free"
-     disk space ( for example, in the "reserved" sectors of a FAT partition
-     or behind the disk's MBR ) and must be initialized before it becomes
-     active. Definitely not for beginners. See "Installing and Initializing
-     DebugB" in DEBUG.TXT for details.
+   - DebugB.BIN: a version that is supposed to be loaded during the boot
+     process, before DOS is loaded. Useful to debug DOS itself during its
+     initialization phase. For details about how this variant can be launched
+     see "Installing and Initializing DebugB" in DEBUG.TXT.
 
    - DebugX variants:
 

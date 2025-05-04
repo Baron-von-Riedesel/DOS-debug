@@ -21,7 +21,7 @@ echo creating debugxV - v cmd flips screens & sysreq trapped & b cmds
 jwasm -nologo -bin -Fo build\DEBUGXV.COM -Fl=build\DEBUGXV.LST -D?DPMI=1 -DVXCHG=1 -DCATCHSYSREQ=1 -DBCMD=1 src\debug.asm
 
 echo creating debugB.bin - a "boot loader"  version
-jwasm -nologo -bin  -Fo build\DEBUGB.BIN -Fl=build\DEBUGB.LST -DBOOTDBG=1 src\debug.asm
+jwasm -nologo -bin  -Fo build\DEBUGB.BIN -Fl=build\DEBUGB.LST -DBOOTDBG=1 -DBCMD=1 src\debug.asm
 
 echo creating debugR.bin - a protected-mode "ring 0"  version
 jwasm -nologo -bin  -Fo build\DEBUGR.BIN -Fl=build\DEBUGR.LST -DRING0=1 src\debug.asm

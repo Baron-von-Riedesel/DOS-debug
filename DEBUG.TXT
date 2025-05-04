@@ -191,8 +191,8 @@
 
  ---
 [ENH:
-  The Breakpoint commands (BP/BC) are activated for DebugXg, DebugXv and
- DebugR(L|V) only, but optionally may be activated for all Debug variants.
+  The Breakpoint commands (BP/BC) are activated for DebugB, DebugXg, DebugXv
+ and DebugR(L|V); optionally they may be activated for all Debug variants.
  The commands use the 80386+ debug capabilities to set up to 4 "permanent"
  breakpoints. If not all 4 are used, the rest may be used internally by the
  G, T and P commands to set temporary breakpoints.
@@ -997,12 +997,16 @@
      activated, usually it's about 20 kB or 40 sectors of 512 bytes.
 
   2) the debugger is loaded into memory above conventional memory just before
-     the system is rebooting. This requires that conventional memory used by
-     DOS is reduced to make room for the debugger code. Additionally, DOS must
-     be able to restore some of the interrupt vectors it has modified. This
-     is true for MS-DOS, DR-DOS and FreeDOS, so all in all this approach is
-     probably far easier to follow, since the bootstrap code doesn't need
-     modification and no low-level disk writes are necessary.
+     the system does a (soft) reboot. This requires that 
+     a) the system can be put in an initial state without resetting the cpu.
+        Esspecially DOS must be able to restore some of the interrupt vectors
+        it has modified. This is true for MS-DOS, DR-DOS and FreeDOS.
+     b) conventional memory used by DOS is reduced to make room for the
+        debugger code.
+
+  All in all the second approach is probably easier to follow, since the
+ bootstrap code doesn't need modification and no low-level disk writes are
+ necessary.
 
   Initialization of the debugger is simple: it's a far call to the
  address the debugger has been loaded, with an offset of 0000 ( so it's a 
