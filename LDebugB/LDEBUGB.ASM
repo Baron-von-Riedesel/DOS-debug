@@ -4,7 +4,7 @@
 
 	.286
 	.model tiny
-	.const
+	.dosseg
 	.stack 2048
 	option casemap:none
 	.386
@@ -25,12 +25,34 @@ sym db text,'$'
 	exitm <offset sym>
 endm
 
+	.const
+helptxt label byte
+	db "LDebugB supplies file DEBUGB.BIN to FASTLOAD JLM.",13,10
+	db "Required:",13,10
+	db " - Jemm v5.86+",13,10
+	db " - Jemm loaded with option FASTLOAD",13,10
+	db " - FASTLOAD.DLL be loaded",13,10
+	db '$'
+
 	.code
 
 main proc
 
 local dwFB:dword
 
+	cld
+	mov si,81h
+nextchr:
+	lodsb es:[si]
+	cmp al,13
+	jz cmdl_done
+	cmp al,20h
+	jbe nextchr
+	mov dx,offset helptxt
+	mov ah,9
+	int 21h
+	ret
+cmdl_done:    
 	mov bx,4435h	;FASTBOOT/REBOOT device ID
 	mov ax,1684h	;get API entry point
 	int 2Fh
@@ -56,13 +78,17 @@ local dwFB:dword
 	mov ah,3
 	call dwFB
 	pop ds
-	jc no_debugb
+	jc no_debugb2
 	mov dx,DStr("DEBUGB.BIN loaded")
 	mov ah,9
 	int 21h
 	call lfout
 	ret
 
+no_debugb2:
+	mov dx,DStr("DEBUGB.BIN invalid",13,10)
+	mov ah,9
+	int 21h
 no_debugb:
 	mov dx,DStr("couldn't load DEBUGB.BIN")
 	mov ah,9
@@ -83,6 +109,8 @@ lfout proc
 	int 21h
 	ret
 lfout endp
+
+;--- get file size in EAX
 
 getfilesize proc
 	mov ax,4202h
@@ -114,13 +142,13 @@ loaddebugb proc
 	mov bx,ax
 	call getfilesize
 	jc open_error
+	cmp eax,10000h
+	jnc file_too_big
 	mov di,bx
 	mov si,ax
 	mov ebx,eax
 	add ebx,16-1
 	shr ebx,4
-	cmp ebx,0ffffh
-	jnc file_too_big
 	mov ah,48h
 	int 21h
 	jc out_of_memory
@@ -166,7 +194,7 @@ read_error:
 loaddebugb endp
 
 start:
-	mov ax,@data
+	mov ax,cs
 	mov ds,ax
 	mov dx,ss
 	sub dx,ax

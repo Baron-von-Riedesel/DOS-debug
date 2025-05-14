@@ -23,6 +23,9 @@ jwasm -nologo -bin -Fo build\DEBUGXV.COM -Fl=build\DEBUGXV.LST -D?DPMI=1 -DVXCHG
 echo creating debugB.bin - a "boot loader"  version
 jwasm -nologo -bin  -Fo build\DEBUGB.BIN -Fl=build\DEBUGB.LST -DBOOTDBG=1 -DBCMD=1 src\debug.asm
 
+echo creating debugBe.bin - a "boot loader"  version that won't use hw bps ( for 86Box and alikes )
+jwasm -nologo -bin  -Fo build\DEBUGBE.BIN -Fl=build\DEBUGBE.LST -DBOOTDBG=1 src\debug.asm
+
 echo creating debugR.bin - a protected-mode "ring 0"  version
 jwasm -nologo -bin  -Fo build\DEBUGR.BIN -Fl=build\DEBUGR.LST -DRING0=1 src\debug.asm
 

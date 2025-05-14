@@ -1028,11 +1028,13 @@
   During their initialization, most DOS variants will sooner or later modify
  interrupt vectors 1 and 3, thus virtually deactivating DebugB. This may
  require to patch the relevant code in the DOS kernel file - unless DOS
- can be convinced to desist from changing the vectors. If this isn't
- feasible, there's still the option to create a DebugB variant with
- watchpoint support - those use the 80386 debug registers, however, so it's
- restricted to such cpus. Even with this support, the task to find the
- locations where the vectors are modified may be non-trivial.
+ can be convinced to desist from changing the vectors. This is true for MS-DOS
+ 7.1 at least.
+
+  For DebugB there's no cmdline to scan. This implies that there's no /s option
+ to tell the debugger not to use hardware breakpoints. So if DebugB is to be
+ used in environments with unreliable emulation of such features, the simplest
+ "fix" is to create an DebugB variant without hw breakpoint support.
 
   Currently there are problems when the boot loader GRUB has to swap disk
  numbers - to achieve this it intrudes into conventional memory, but that's
