@@ -27,11 +27,11 @@ endm
 
 	.const
 helptxt label byte
-	db "LDebugB supplies file DEBUGB.BIN to FASTLOAD JLM.",13,10
+	db "LDebugB supplies file DEBUGB.BIN to FASTBOOT JLM.",13,10
 	db "Required:",13,10
 	db " - Jemm v5.86+",13,10
-	db " - Jemm loaded with option FASTLOAD",13,10
-	db " - FASTLOAD.DLL be loaded",13,10
+	db " - Jemm loaded with option FASTBOOT",13,10
+	db " - FASTBOOT.DLL be loaded",13,10
 	db '$'
 
 	.code
@@ -129,9 +129,10 @@ exit:
 	ret
 getfilesize endp
 
-;--- load file DEBUGB.BIN into memory
-;--- out: DI=segment where debugb.bin has been loaded
-;---      SI=size in bytes
+;--- load file DEBUGB.BIN into memory.
+;--- out: DI=segment where debugb.bin has been loaded,
+;---      SI=size in bytes;
+;---      C on errors.
 ;--- file debugb.bin must be in current directory.
 
 loaddebugb proc
@@ -169,27 +170,20 @@ loaddebugb proc
 	ret
 open_error:
 	mov dx,DStr("DEBUGB.BIN open error")
-	mov ah,9
-	int 21h
-	call lfout
-	ret
+	jmp error
 file_too_big:
 	mov dx,DStr("DEBUGB.BIN too big")
-	mov ah,9
-	int 21h
-	call lfout
-	ret
+	jmp error
 out_of_memory:
 	mov dx,DStr("out_of_memory")
-	mov ah,9
-	int 21h
-	call lfout
-	ret
+	jmp error
 read_error:
 	mov dx,DStr("DEBUGB.BIN read error")
+error:
 	mov ah,9
 	int 21h
 	call lfout
+	stc
 	ret
 loaddebugb endp
 
