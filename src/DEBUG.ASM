@@ -78,10 +78,13 @@ ifndef BOOTDBG
 BOOTDBG    equ 0	;1=create a bootstrap binary (DebugB)
 endif
 ifndef RING0
-RING0      equ 0	;1=create a ring0 debugger variant (DebugR)
+RING0      equ 0	;1=create a ring0 (=PL0) debugger variant (DebugR)
 endif
 ifndef ?DPMI
 ?DPMI      equ 0	;1=create a DPMI-aware variant (DebugX)
+endif
+ifndef V86M
+V86M       equ 0	;1=support v86 mode if RING0==1
 endif
 ifndef LMODE
 LMODE      equ 0	;1=long mode version if RING0==1 - this will define a 64-bit segment ( requires JWasm )
@@ -118,10 +121,6 @@ CS32	equ 40h		; check just the default size in legacy
 endif
 
 @VecAttr textequ <>
-
-ifndef V86M
-V86M       equ 0	; 1=support v86 mode ( for RING0 only )
-endif
 
 if RING0
  if LMODE
@@ -273,7 +272,9 @@ SYSRQINT   equ 9	;if CATCHSYSREQ==1, defines the method (int 09h or int 15h)
 
 ifndef CATCHINT01
 CATCHINT01 equ 1	;catch INT 01 (single-step)
-NOEXC01INDBG equ 1	;v2.01: ignore unexpected debug exceptions in debug itself
+endif
+ifndef CATCHINT02
+CATCHINT02 equ 0	;catch INT 02 (nmi)
 endif
 ifndef CATCHINT03
 CATCHINT03 equ 1	;catch INT 03 (break)
@@ -295,6 +296,10 @@ CATCHSYSREQ equ 0	;catch int 09h/15h (sysreq)
 endif
 ifndef CATCHINT41
 CATCHINT41 equ 0	;hook int 41h
+endif
+
+ifndef NOEXC01INDBG
+NOEXC01INDBG equ 1	;v2.01: ignore unexpected debug exceptions in debug itself
 endif
 
 ife ?DPMI
@@ -744,9 +749,9 @@ bFlagsPM db 0		;b0: 0=no default set for A cmd, b1 & b2: for ring0, SysReq suppo
  if RING0
 ;--- exceptions trapped ( modified by VC/VT ) - fields must be consecutive!
 wTrappedExc label word
-	dw (1 shl 0) or (1 shl 1) or (1 shl 3) or (CATCHINT06 shl 6) (CATCHINT07 shl 7) or \
+	dw (1 shl 0) or (1 shl 1) or (CATCHINT02 shl 2) or (1 shl 3) or (CATCHINT06 shl 6) (CATCHINT07 shl 7) or \
 		(CATCHINT0C shl 12 ) or (CATCHINT0D shl 13) or (1 shl 14)
-	dw (1 shl 0) or (1 shl 1) or (1 shl 3) or (CATCHINT06 shl 6) (CATCHINT07 shl 7) or \
+	dw (1 shl 0) or (1 shl 1) or (CATCHINT02 shl 2) or (1 shl 3) or (CATCHINT06 shl 6) (CATCHINT07 shl 7) or \
 		(CATCHINT0C shl 12 ) or (CATCHINT0D shl 13) or (1 shl 14)
   if FLATSS
 bChar   db 0
@@ -804,12 +809,16 @@ else
 INTVEC textequ <DWORD>
 endif
 
-;--- order in intsave must match order in inttab
+;--- order in intsave must match order in inttab.
+;--- for PL0 debugger variants, table exctabr0 must also match.
 
 intsave label dword
 oldi00	INTVEC 0	;saved vector i00
 if RING0 or CATCHINT01
 oldi01	INTVEC 0	;saved vector i01
+endif
+if CATCHINT02
+oldi02	INTVEC 0	;saved vector i02
 endif
 if RING0 or CATCHINT03
 oldi03	INTVEC 0	;saved vector i03
@@ -938,6 +947,9 @@ inttab label INTITEM
 	INTITEM <00h, @VecAttr intr00>
 if CATCHINT01
 	INTITEM <01h, @VecAttr intr01>
+endif
+if CATCHINT02
+	INTITEM <02h, @VecAttr intr02>
 endif
 if CATCHINT03
 	INTITEM <03h, @VecAttr intr03>
@@ -1212,6 +1224,9 @@ obsolete db '[obsolete]'
 
 int0msg	db 'Divide error',CR,LF,'$'
 int1msg	db 'Unexpected single-step interrupt',CR,LF,'$'
+if CATCHINT02
+int2msg	db 'NMI',CR,LF,'$'
+endif
 int3msg	db 'Unexpected breakpoint interrupt',CR,LF,'$'
 if CATCHINT06 or CATCHEXC06
 exc06msg db 'Invalid opcode fault',CR,LF,'$'
@@ -1243,6 +1258,9 @@ endif
 
 EXC00MSG equ offset int0msg  - offset int0msg
 EXC01MSG equ offset int1msg  - offset int0msg
+if CATCHINT02
+EXC02MSG equ offset int2msg  - offset int0msg
+endif
 EXC03MSG equ offset int3msg  - offset int0msg
 if CATCHINT06 or CATCHEXC06
 EXC06MSG equ offset exc06msg - offset int0msg
@@ -6583,7 +6601,11 @@ if RING0
 CONST segment
 
 exctabr0 label byte	; ring 0 exc table used by SK, VC, VT
-	db 0,1,3
+	db 0,1
+ if CATCHINT02
+	db 2
+ endif
+	db 3
  if CATCHINT06
 	db 6
  endif

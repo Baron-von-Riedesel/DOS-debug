@@ -1,6 +1,6 @@
 
 ;--- debugger entries for ring0 protected-mode
-;--- a) exceptions ( 0, 1, 3, 6, 7, C, D, E )
+;--- a) exceptions ( 0, 1, 2, 3, 6, 7, C, D, E )
 ;--- b) sysreq pressed
 
 ;--- v2.0: code changed so [run_int] is set only if entry is from
@@ -129,7 +129,7 @@ rendercr2:
 	pop es
 	ret
 
-;--- entries vectors 0,1,3,6,7,c,d,e
+;--- entries vectors 0,1,2,3,6,7,c,d,e
 
 intr00:				; divide error
 	push EXC00MSG or (0 shl 8)
@@ -140,6 +140,13 @@ intr01:				; single-step interrupt/debug exception
 	push EXC01MSG or (1 shl 8)
 	call intrtnp1
 	jmp cs:[oldi01]
+
+if CATCHINT02
+intr02:
+	push EXC02MSG or (2 shl 8)
+	call intrtnp1
+	jmp cs:[oldi02]
+endif
 
 intr03:				; breakpoint interrupt
 	push EXC03MSG or (3 shl 8)

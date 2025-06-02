@@ -356,3 +356,4 @@
        - Debug/DebugB fix: hw bp implementation for these variants was flawed.
        - DebugB: as default, b cmds and hw bps activated for this variant.
        - DebugB: added LDebugB to load DebugB into JLM FastBoot.
+       - DebugR: optionally handle exception 02 (NMI).

@@ -1072,8 +1072,9 @@
  VL: list (un)trapped vectors. Shows the vectors and in what ring they are
     trapped.
  VT vector [0|3]: trap vector, optionally specific for ring 0 or 3; what
-    vectors can be trapped depends on how DebugR(L|V) was assembled, usually
-    it's 0, 1, 3, 6, 0Ch, 0Dh and 0Eh.
+    vectors can be trapped depends on how DebugR(L|V) was assembled: 
+    supported are exceptions 0, 1, 2, 3, 6, 7, 0Ch, 0Dh and 0Eh; among those
+    exceptions 2 (NMI), 7 and 0Ch are optional.
  
  Commands G, T and P: since support for 80386+ hardware debug registers is
  active, it may be used by those commands in case a breakpoint is to be set. 
@@ -1094,6 +1095,11 @@
  
   DebugR(L|V) understand commandline option -m, that will instruct it to assume
  that exception and IRQ vectors ( interrupts 08-0Fh ) do not overlap.
+
+  If exception 02 (NMI) is trapped, the debugger may break into a program even
+ if interrupts are disabled. To trigger an NMI requires additional hardware on
+ real machines, but if the debugger runs in a VM it may be just a monitor
+ command.
 
 
  11. DEBUG Scripts

@@ -128,6 +128,10 @@ intr00:				; divide error
 	@DefEnt64 00
 intr01:				; single-step interrupt
 	@DefEnt64 01
+if CATCHINT02
+intr02:				; NMI
+	@DefEnt64 02
+endif
 intr03:				; breakpoint interrupt
 	@DefEnt64 03
 if CATCHINT06

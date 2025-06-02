@@ -263,6 +263,13 @@ intr01:				; single-step interrupt/debug exception
 	call intrtnp1
 	jmp cs:[oldi01]
 
+if CATCHINT02
+intr02:
+	push EXC02MSG or (2 shl 8)
+	call intrtnp1
+	jmp cs:[oldi02]
+endif
+
 intr03:				; breakpoint interrupt
 	push EXC03MSG or (3 shl 8)
 	call intrtnp1
