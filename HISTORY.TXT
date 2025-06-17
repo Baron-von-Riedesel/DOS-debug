@@ -338,7 +338,7 @@
        - DebugR(V) dt cmd: optionally displays trapped ports.
        - DebugRV di cmd: displays IDT & IVT vectors.
        - DebugR rn cmd: won't run cmd if CR0.EM is set.
-    2.51 []
+    2.51 [17.6.2025]
        - fix a cmd: size qualifiers weren't fully skipped if they contained
          digits (near16/32, far16/32).
        - fix DebugR dl cmd: the debugger assumed the limit of the LDT to be
@@ -356,4 +356,4 @@
        - Debug/DebugB fix: hw bp implementation for these variants was flawed.
        - DebugB: as default, b cmds and hw bps activated for this variant.
        - DebugB: added LDebugB to load DebugB into JLM FastBoot.
-       - DebugR: optionally handle exception 02 (NMI).
+       - DebugR: (optionally) handle exception 02 (NMI).
